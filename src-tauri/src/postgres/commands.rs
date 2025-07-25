@@ -1,94 +1,7 @@
-use crate::{tls::load_certificates, AppState};
-
-use super::errors::Error;
-use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
-use tokio_postgres_rustls::MakeRustlsConnect;
-use tokio_postgres::{tls::MakeTlsConnect, Client, Connection, NoTls, Socket};
 use uuid::Uuid;
 
+use crate::{error::Error, postgres::{connect::connect, types::{ConnectionConfig, ConnectionInfo, DatabaseConnection, QueryResult}}, AppState};
 
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectionConfig {
-    pub name: String,
-    pub connection_string: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectionInfo {
-    pub id: String,
-    pub name: String,
-    pub connection_string: String,
-    pub connected: bool,
-}
-
-#[derive(Debug)]
-pub struct DatabaseConnection {
-    info: ConnectionInfo,
-    client: Option<Client>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct QueryResult {
-    pub columns: Vec<String>,
-    pub rows: Vec<Vec<serde_json::Value>>,
-    pub row_count: usize,
-    pub duration_ms: u64,
-}
-
-async fn connect(connection_string: &str) -> Result<Client, Error> {
-    use tokio_postgres::config::SslMode;
-
-    let config: tokio_postgres::Config = connection_string.parse()?;
-
-    let client = match config.get_ssl_mode() {
-        SslMode::Require | SslMode::Prefer => {
-            let certificate_store = load_certificates().await;
-            let rustls_config = rustls::ClientConfig::builder()
-                .with_root_certificates(certificate_store)
-                .with_no_client_auth();
-            let tls = tokio_postgres_rustls::MakeRustlsConnect::new(rustls_config);
-            let (client, conn) = config.connect(tls).await?;
-
-            tokio::spawn(check_connection::<MakeRustlsConnect>(conn));
-
-            client
-        },
-        // Mostly SslMode::Disable, but the enum was marked as non_exhaustive
-        _other => {
-            let (client, conn) = config.connect(NoTls).await?;
-
-            tokio::spawn(check_connection::<NoTls>(conn));  
-
-            client
-        }
-    };
-
-    Ok(client)
-}
-
-async fn check_connection<T>(conn: Connection<Socket, T::Stream>)
-where
-    T: MakeTlsConnect<Socket>,
-{
-    match conn.await {
-        Ok(()) => println!("Connected successfully"),
-        Err(err) => eprintln!("Failed to connect to Postgres: {err}"),
-    }
-}
-
-#[tauri::command]
-pub async fn test_connection(config: ConnectionConfig) -> Result<bool, Error> {
-    log::info!("Testing connection: {}", config.connection_string);
-    match connect(&config.connection_string).await {
-        Ok(_) => Ok(true),
-        Err(e) => {
-            log::error!("Connection test failed: {}", e);
-            Ok(false)
-        }
-    }
-}
 
 #[tauri::command]
 pub async fn add_connection(
@@ -224,3 +137,15 @@ pub async fn remove_connection(
     state.connections.remove(&connection_id);
     Ok(())
 } 
+
+#[tauri::command]
+pub async fn test_connection(config: ConnectionConfig) -> Result<bool, Error> {
+    log::info!("Testing connection: {}", config.connection_string);
+    match connect(&config.connection_string).await {
+        Ok(_) => Ok(true),
+        Err(e) => {
+            log::error!("Connection test failed: {}", e);
+            Ok(false)
+        }
+    }
+}

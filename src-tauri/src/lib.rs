@@ -1,14 +1,10 @@
-mod commands;
-mod tls;
+mod error;
+mod postgres;
 
-use commands::default::{read, write};
-use commands::database::{
-    test_connection, add_connection, connect_to_database, disconnect_from_database,
-    execute_query, get_connections, remove_connection
-};
+
 use dashmap::DashMap;
 
-use crate::commands::database::DatabaseConnection;
+use crate::postgres::types::DatabaseConnection;
 
 #[derive(Debug)]
 pub struct AppState {
@@ -40,15 +36,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            read, 
-            write,
-            test_connection,
-            add_connection,
-            connect_to_database,
-            disconnect_from_database,
-            execute_query,
-            get_connections,
-            remove_connection
+            postgres::commands::test_connection,
+            postgres::commands::add_connection,
+            postgres::commands::connect_to_database,
+            postgres::commands::disconnect_from_database,
+            postgres::commands::execute_query,
+            postgres::commands::get_connections,
+            postgres::commands::remove_connection
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
