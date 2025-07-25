@@ -1,10 +1,11 @@
 mod error;
 mod postgres;
-
+mod storage;
 
 use dashmap::DashMap;
 
-use crate::postgres::types::DatabaseConnection;
+use crate::{postgres::types::DatabaseConnection, storage::Storage};
+pub use error::{Error, Result};
 
 #[derive(Debug)]
 pub struct AppState {
@@ -13,12 +14,16 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
+        let data_dir = dirs::data_dir().expect("Failed to get data directory");
+        let db_path = data_dir.join("pgpad").join("pgpad.db");
+
+        Storage::new(db_path);
+
         Self {
             connections: DashMap::new(),
         }
     }
 }
-
 
 #[allow(clippy::missing_panics_doc)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

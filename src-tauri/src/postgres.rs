@@ -1,6 +1,6 @@
 mod connect;
-mod tls;
 mod query;
+mod tls;
 
-pub mod types;
 pub mod commands;
+pub mod types;

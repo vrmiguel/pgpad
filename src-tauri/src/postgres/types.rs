@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionConfig {
     pub name: String,
