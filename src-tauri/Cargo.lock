@@ -96,6 +96,7 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "dashmap",
+ "dirs",
  "log",
  "rustls",
  "rustls-native-certs",

@@ -1,14 +1,13 @@
-use crate::tls::load_certificates;
+use crate::{tls::load_certificates, AppState};
 
 use super::errors::Error;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use tokio_postgres_rustls::MakeRustlsConnect;
-use std::sync::OnceLock;
 use tokio_postgres::{tls::MakeTlsConnect, Client, Connection, NoTls, Socket};
 use uuid::Uuid;
 
-static CONNECTIONS: OnceLock<DashMap<String, DatabaseConnection>> = OnceLock::new();
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionConfig {
@@ -25,7 +24,7 @@ pub struct ConnectionInfo {
 }
 
 #[derive(Debug)]
-struct DatabaseConnection {
+pub struct DatabaseConnection {
     info: ConnectionInfo,
     client: Option<Client>,
 }
@@ -36,10 +35,6 @@ pub struct QueryResult {
     pub rows: Vec<Vec<serde_json::Value>>,
     pub row_count: usize,
     pub duration_ms: u64,
-}
-
-fn conn_map() -> &'static DashMap<String, DatabaseConnection> {
-    CONNECTIONS.get_or_init(|| DashMap::new())
 }
 
 async fn connect(connection_string: &str) -> Result<Client, Error> {
@@ -96,7 +91,10 @@ pub async fn test_connection(config: ConnectionConfig) -> Result<bool, Error> {
 }
 
 #[tauri::command]
-pub async fn add_connection(config: ConnectionConfig) -> Result<ConnectionInfo, Error> {
+pub async fn add_connection(
+    config: ConnectionConfig,
+    state: tauri::State<'_, AppState>
+) -> Result<ConnectionInfo, Error> {
     let id = Uuid::new_v4().to_string();
     let info = ConnectionInfo {
         id: id.clone(),
@@ -110,15 +108,16 @@ pub async fn add_connection(config: ConnectionConfig) -> Result<ConnectionInfo, 
         client: None,
     };
 
-    conn_map().insert(id, connection);
+    state.connections.insert(id, connection);
     Ok(info)
 }
 
 #[tauri::command]
-pub async fn connect_to_database(connection_id: String) -> Result<bool, Error> {
-    let connections = conn_map();
-    
-    if let Some(mut connection_entry) = connections.get_mut(&connection_id) {
+pub async fn connect_to_database(
+    connection_id: String,
+    state: tauri::State<'_, AppState>
+) -> Result<bool, Error> {
+    if let Some(mut connection_entry) = state.connections.get_mut(&connection_id) {
         let connection = connection_entry.value_mut();
 
         match connect(&connection.info.connection_string).await {
@@ -139,10 +138,11 @@ pub async fn connect_to_database(connection_id: String) -> Result<bool, Error> {
 }
 
 #[tauri::command]
-pub async fn disconnect_from_database(connection_id: String) -> Result<(), Error> {
-    let connections = conn_map();
-    
-    if let Some(mut connection_entry) = connections.get_mut(&connection_id) {
+pub async fn disconnect_from_database(
+    connection_id: String,
+    state: tauri::State<'_, AppState>
+) -> Result<(), Error> {
+    if let Some(mut connection_entry) = state.connections.get_mut(&connection_id) {
         let connection = connection_entry.value_mut();
         connection.client = None;
         connection.info.connected = false;
@@ -153,10 +153,12 @@ pub async fn disconnect_from_database(connection_id: String) -> Result<(), Error
 }
 
 #[tauri::command]
-pub async fn execute_query(connection_id: String, query: String) -> Result<QueryResult, Error> {
-    let connections = conn_map();
-    
-    if let Some(connection_entry) = connections.get(&connection_id) {
+pub async fn execute_query(
+    connection_id: String,
+    query: String,
+    state: tauri::State<'_, AppState>
+) -> Result<QueryResult, Error> {
+    if let Some(connection_entry) = state.connections.get(&connection_id) {
         let connection = connection_entry.value();
         
         if let Some(client) = &connection.client {
@@ -206,9 +208,8 @@ pub async fn execute_query(connection_id: String, query: String) -> Result<Query
 }
 
 #[tauri::command]
-pub async fn get_connections() -> Result<Vec<ConnectionInfo>, Error> {
-    let connections = conn_map();
-    let result: Vec<ConnectionInfo> = connections
+pub async fn get_connections(state: tauri::State<'_, AppState>) -> Result<Vec<ConnectionInfo>, Error> {
+    let result: Vec<ConnectionInfo> = state.connections
         .iter()
         .map(|entry| entry.value().info.clone())
         .collect();
@@ -216,8 +217,10 @@ pub async fn get_connections() -> Result<Vec<ConnectionInfo>, Error> {
 }
 
 #[tauri::command]
-pub async fn remove_connection(connection_id: String) -> Result<(), Error> {
-    let connections = conn_map();
-    connections.remove(&connection_id);
+pub async fn remove_connection(
+    connection_id: String,
+    state: tauri::State<'_, AppState>
+) -> Result<(), Error> {
+    state.connections.remove(&connection_id);
     Ok(())
 } 
