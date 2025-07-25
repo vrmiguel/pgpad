@@ -1,11 +1,11 @@
 {
 	"name": "pgpad",
 	"private": true,
-	"version": "2.0.0",
-	"description": "A simple desktop application template combining Tauri 2 with Svelte 5 and shadcn-svelte with a basic ci/cd implemented.",
+	"version": "0.0.1",
+	"description": "",
 	"author": {
-		"name": "Alysonhower Veras Vieira",
-		"email": "contato@alysonhower.dev"
+		"name": "Vinícius R. Miguel",
+		"email": "vrmiguel99@gmail.com"
 	},
 	"type": "module",
 	"scripts": {
@@ -42,6 +42,7 @@
 		"@tauri-apps/api": "^2.5.0",
 		"@types/node": "^22.15.19",
 		"clsx": "^2.1.1",
+		"monaco-editor": "^0.52.2",
 		"tailwind-merge": "^3.3.0",
 		"tailwindcss": "^4.1.7"
 	}

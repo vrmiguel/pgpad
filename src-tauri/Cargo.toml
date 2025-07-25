@@ -1,10 +1,9 @@
 [package]
 name = "app"
 version = "1.0.0"
-description = "A simple desktop application template combining Tauri 2 with Svelte 5 and shadcn-svelte with a basic ci/cd implemented."
-authors = ["Alysonhower Veras Vieira"]
+description = ""
+authors = ["vrmiguel"]
 license = "MIT"
-repository = "alysonhower/pgpad"
 edition = "2021"
 rust-version = "1.77.2"
 

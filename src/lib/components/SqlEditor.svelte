@@ -2,6 +2,8 @@
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Table, FileText, Clock } from '@lucide/svelte';
 	import { DatabaseCommands, type ConnectionInfo, type QueryResult } from '$lib/commands.svelte';
+	import { createMonacoEditor, type CreateMonacoEditorOptions } from '$lib/monaco';
+	import { onMount, onDestroy } from 'svelte';
 
 	interface Props {
 		selectedConnection: string | null;
@@ -33,8 +35,27 @@ ORDER BY table_name, ordinal_position;`);
 		error?: string;
 	}>>([]);
 
+	// Monaco stuff **
+	let editorContainer: HTMLElement;
+	let monacoEditor: ReturnType<typeof createMonacoEditor> | null = null;
+    //              **
+
 	export async function handleExecuteQuery() {
 		if (!selectedConnection || !sqlQuery.trim()) return;
+		
+		if (!isConnected()) {
+			console.warn('Cannot execute query: No active database connection');
+			queryHistory.unshift({
+				id: Date.now(),
+				query: sqlQuery.trim(),
+				timestamp: new Date().toLocaleString(),
+				status: 'error',
+				rows: 0,
+				duration: '0ms',
+				error: 'No active database connection. Please connect to a database first.'
+			});
+			return;
+		}
 
 		isExecuting = true;
 		const start = Date.now();
@@ -43,7 +64,6 @@ ORDER BY table_name, ordinal_position;`);
 			const result = await DatabaseCommands.executeQuery(selectedConnection, sqlQuery.trim());
 			queryResult = result;
 			
-			// Add to history
 			queryHistory.unshift({
 				id: Date.now(),
 				query: sqlQuery.trim(),
@@ -55,7 +75,6 @@ ORDER BY table_name, ordinal_position;`);
 		} catch (error) {
 			console.error('Query execution failed:', error);
 			
-			// Add error to history
 			queryHistory.unshift({
 				id: Date.now(),
 				query: sqlQuery.trim(),
@@ -70,9 +89,40 @@ ORDER BY table_name, ordinal_position;`);
 		}
 	}
 
+	const isConnected = $derived(() => {
+		if (!selectedConnection) return false;
+		const connection = connections.find(c => c.id === selectedConnection);
+		return connection?.connected || false;
+	});
 
+	onMount(() => {
+		// waits a bit to ensure DOM is ready
+		setTimeout(() => {
+			if (editorContainer) {
+				monacoEditor = createMonacoEditor({
+					container: editorContainer,
+					value: sqlQuery,
+					onChange: (value) => {
+						sqlQuery = value;
+					},
+					onExecute: handleExecuteQuery,
+					disabled: false,
+					theme: 'light' // TODO
+				});
+			}
+		}, 0);
+	});
 
-	// Make results reactive based on queryResult
+	onDestroy(() => {
+		monacoEditor?.dispose();
+	});
+
+	$effect(() => {
+		if (monacoEditor) {
+			monacoEditor.updateValue(sqlQuery);
+		}
+	});
+
 	const results = $derived(queryResult?.rows.map(row => {
 		const rowObj: Record<string, any> = {};
 		queryResult?.columns.forEach((col, i) => {
@@ -92,12 +142,10 @@ ORDER BY table_name, ordinal_position;`);
 			</CardTitle>
 		</CardHeader>
 		<CardContent class="flex-1 p-0">
-			<textarea
-				bind:value={sqlQuery}
-				class="w-full h-full min-h-[300px] p-4 font-mono text-sm border-0 resize-none focus:outline-none focus:ring-0"
-				placeholder="Write your SQL query here..."
-				disabled={!selectedConnection}
-			></textarea>
+			<div 
+				bind:this={editorContainer}
+				class="w-full h-full min-h-[300px]"
+			></div>
 		</CardContent>
 	</Card>
 
