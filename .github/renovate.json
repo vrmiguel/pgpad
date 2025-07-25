@@ -1,0 +1,22 @@
+{
+	"extends": ["config:recommended", "group:all", "schedule:weekly", ":widenPeerDependencies"],
+	"enabledManagers": ["cargo", "github-actions", "npm"],
+	"packageRules": [
+		{
+			"matchUpdateTypes": ["patch"],
+			"enabled": false
+		},
+		{
+			"matchManagers": ["cargo"],
+			"automerge": true,
+			"minimumReleaseAge": "2 days"
+		},
+		{
+			"matchManagers": ["npm"],
+			"automerge": true,
+			"minimumReleaseAge": "2 days"
+		}
+	],
+	"timezone": "America/Sao_Paulo",
+	"dependencyDashboard": true
+}
