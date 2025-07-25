@@ -1,5 +1,11 @@
 mod commands;
 use commands::default::{read, write};
+use commands::database::{
+    test_connection, add_connection, connect_to_database, disconnect_from_database,
+    execute_query, get_connections, remove_connection
+};
+
+mod tls;
 
 #[allow(clippy::missing_panics_doc)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -15,7 +21,17 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![read, write])
+        .invoke_handler(tauri::generate_handler![
+            read, 
+            write,
+            test_connection,
+            add_connection,
+            connect_to_database,
+            disconnect_from_database,
+            execute_query,
+            get_connections,
+            remove_connection
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

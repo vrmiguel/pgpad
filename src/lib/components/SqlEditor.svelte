@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Table, FileText, Clock } from '@lucide/svelte';
+	import { DatabaseCommands, type ConnectionInfo, type QueryResult } from '$lib/commands.svelte';
 
 	interface Props {
 		selectedConnection: string | null;
+		connections: ConnectionInfo[];
 	}
 
-	let { selectedConnection }: Props = $props();
+	let { selectedConnection, connections }: Props = $props();
 	
 	let sqlQuery = $state(`-- Welcome to PgPad!
 -- Write your SQL queries here
@@ -19,42 +21,65 @@ FROM information_schema.columns
 WHERE table_schema = 'public'
 ORDER BY table_name, ordinal_position;`);
 
-	let results = $state([
-		{ table_name: 'users', column_name: 'id', data_type: 'integer' },
-		{ table_name: 'users', column_name: 'email', data_type: 'character varying' },
-		{ table_name: 'users', column_name: 'created_at', data_type: 'timestamp with time zone' },
-		{ table_name: 'posts', column_name: 'id', data_type: 'integer' },
-		{ table_name: 'posts', column_name: 'title', data_type: 'text' },
-		{ table_name: 'posts', column_name: 'content', data_type: 'text' },
-		{ table_name: 'posts', column_name: 'user_id', data_type: 'integer' }
-	]);
+	let queryResult = $state<QueryResult | null>(null);
+	let isExecuting = $state(false);
+	let queryHistory = $state<Array<{
+		id: number;
+		query: string;
+		timestamp: string;
+		status: 'success' | 'error';
+		rows: number;
+		duration: string;
+		error?: string;
+	}>>([]);
 
-	let queryHistory = $state([
-		{ 
-			id: 1, 
-			query: "SELECT * FROM users LIMIT 5;", 
-			timestamp: "2024-01-15 14:30:22",
-			status: "success",
-			rows: 5,
-			duration: "12ms"
-		},
-		{
-			id: 2,
-			query: "SELECT COUNT(*) FROM posts WHERE created_at > NOW() - INTERVAL '7 days';",
-			timestamp: "2024-01-15 14:28:15", 
-			status: "success",
-			rows: 1,
-			duration: "8ms"
-		},
-		{
-			id: 3,
-			query: "SELECT * FROM non_existent_table;",
-			timestamp: "2024-01-15 14:25:10",
-			status: "error",
-			rows: 0,
-			duration: "3ms"
+	export async function handleExecuteQuery() {
+		if (!selectedConnection || !sqlQuery.trim()) return;
+
+		isExecuting = true;
+		const start = Date.now();
+
+		try {
+			const result = await DatabaseCommands.executeQuery(selectedConnection, sqlQuery.trim());
+			queryResult = result;
+			
+			// Add to history
+			queryHistory.unshift({
+				id: Date.now(),
+				query: sqlQuery.trim(),
+				timestamp: new Date().toLocaleString(),
+				status: 'success',
+				rows: result.row_count,
+				duration: `${result.duration_ms}ms`
+			});
+		} catch (error) {
+			console.error('Query execution failed:', error);
+			
+			// Add error to history
+			queryHistory.unshift({
+				id: Date.now(),
+				query: sqlQuery.trim(),
+				timestamp: new Date().toLocaleString(),
+				status: 'error',
+				rows: 0,
+				duration: `${Date.now() - start}ms`,
+				error: String(error)
+			});
+		} finally {
+			isExecuting = false;
 		}
-	]);
+	}
+
+
+
+	// Make results reactive based on queryResult
+	const results = $derived(queryResult?.rows.map(row => {
+		const rowObj: Record<string, any> = {};
+		queryResult?.columns.forEach((col, i) => {
+			rowObj[col] = row[i];
+		});
+		return rowObj;
+	}) || []);
 </script>
 
 <div class="flex-1 flex flex-col p-4 gap-4">

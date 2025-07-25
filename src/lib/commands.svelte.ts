@@ -62,3 +62,52 @@ export class GlobalState {
         this.greet = '';
     }
 }
+
+export interface ConnectionConfig {
+	name: string;
+	connection_string: string;
+}
+
+export interface ConnectionInfo {
+	id: string;
+	name: string;
+	connection_string: string;
+	connected: boolean;
+}
+
+export interface QueryResult {
+	columns: string[];
+	rows: any[][];
+	row_count: number;
+	duration_ms: number;
+}
+
+export class DatabaseCommands {
+	static async testConnection(config: ConnectionConfig): Promise<boolean> {
+		return await invoke('test_connection', { config });
+	}
+
+	static async addConnection(config: ConnectionConfig): Promise<ConnectionInfo> {
+		return await invoke('add_connection', { config });
+	}
+
+	static async connectToDatabase(connectionId: string): Promise<boolean> {
+		return await invoke('connect_to_database', { connectionId });
+	}
+
+	static async disconnectFromDatabase(connectionId: string): Promise<void> {
+		return await invoke('disconnect_from_database', { connectionId });
+	}
+
+	static async executeQuery(connectionId: string, query: string): Promise<QueryResult> {
+		return await invoke('execute_query', { connectionId, query });
+	}
+
+	static async getConnections(): Promise<ConnectionInfo[]> {
+		return await invoke('get_connections');
+	}
+
+	static async removeConnection(connectionId: string): Promise<void> {
+		return await invoke('remove_connection', { connectionId });
+	}
+}

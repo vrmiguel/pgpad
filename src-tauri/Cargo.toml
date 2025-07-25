@@ -24,3 +24,13 @@ log = "0.4"
 tauri = { version = "2.6.2", features = [] }
 tauri-plugin-log = "2"
 thiserror = "2.0.12"
+# PostgreSQL dependencies
+tokio-postgres = "0.7"
+tokio = { version = "1.0", features = ["full"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+dashmap = "6.0"
+anyhow = "1.0.98"
+rustls = "0.23.29"
+rustls-native-certs = "0.8.1"
+webpki-roots = "1.0.2"
+tokio-postgres-rustls = "0.13.0"

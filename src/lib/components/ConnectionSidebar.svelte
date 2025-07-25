@@ -5,10 +5,7 @@
 	interface Connection {
 		id: string;
 		name: string;
-		host: string;
-		port: number;
-		database: string;
-		username: string;
+		connection_string: string;
 		connected: boolean;
 	}
 
@@ -16,9 +13,10 @@
 		connections: Connection[];
 		selectedConnection: string | null;
 		onSelect: (connectionId: string) => void;
+		onConnect?: (connectionId: string) => void;
 	}
 
-	let { connections, selectedConnection, onSelect }: Props = $props();
+	let { connections, selectedConnection, onSelect, onConnect }: Props = $props();
 </script>
 
 <div class="flex-1 overflow-y-auto">
@@ -38,6 +36,7 @@
 						variant={selectedConnection === connection.id ? "secondary" : "ghost"}
 						class="w-full justify-start p-3 h-auto"
 						onclick={() => onSelect(connection.id)}
+						ondblclick={() => onConnect?.(connection.id)}
 					>
 						<div class="flex items-start gap-3 w-full">
 							<div class="flex-shrink-0 mt-0.5">
@@ -52,11 +51,11 @@
 								<div class="font-medium text-sm text-gray-900 truncate">
 									{connection.name}
 								</div>
-								<div class="text-xs text-gray-500 mt-0.5">
-									{connection.username}@{connection.host}:{connection.port}
+								<div class="text-xs text-gray-500 mt-0.5 truncate">
+									{connection.connection_string.replace(/^postgresql?:\/\/[^@]*@/, '').replace(/\/[^?]*/, '')}
 								</div>
 								<div class="text-xs text-gray-400 mt-0.5 truncate">
-									{connection.database}
+									{connection.connection_string.split('/').pop()?.split('?')[0] || 'database'}
 								</div>
 								{#if !connection.connected}
 									<div class="flex items-center gap-1 mt-1">
