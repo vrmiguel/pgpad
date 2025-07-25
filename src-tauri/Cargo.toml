@@ -35,3 +35,4 @@ webpki-roots = "1.0.2"
 tokio-postgres-rustls = "0.13.0"
 dirs = "6.0.0"
 rusqlite = { version = "0.37.0", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }

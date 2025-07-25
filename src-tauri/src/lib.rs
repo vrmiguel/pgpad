@@ -10,26 +10,36 @@ pub use error::{Error, Result};
 #[derive(Debug)]
 pub struct AppState {
     pub connections: DashMap<String, DatabaseConnection>,
+    pub storage: Storage,
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let data_dir = dirs::data_dir().expect("Failed to get data directory");
         let db_path = data_dir.join("pgpad").join("pgpad.db");
 
-        Storage::new(db_path);
+        let storage = Storage::new(db_path)?;
 
-        Self {
+        Ok(Self {
             connections: DashMap::new(),
-        }
+            storage,
+        })
     }
 }
 
 #[allow(clippy::missing_panics_doc)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let app_state = match AppState::new() {
+        Ok(app_state) => app_state,
+        Err(e) => {
+            eprintln!("Error initializing app state: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     tauri::Builder::default()
-        .manage(AppState::new())
+        .manage(app_state)
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
