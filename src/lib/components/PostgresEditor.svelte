@@ -13,6 +13,7 @@
 	let connections = $state<ConnectionInfo[]>([]);
 	let isRunningQuery = $state(false);
 	let sqlEditorRef = $state<any>();
+	let establishingConnections = $state<Set<string>>(new Set());
 	
 	let isSidebarCollapsed = $state(false);
 
@@ -48,6 +49,9 @@
 	}
 
 	async function connectToDatabase(connectionId: string) {
+		establishingConnections = new Set([...establishingConnections, connectionId]);
+
+		
 		try {
 			const success = await DatabaseCommands.connectToDatabase(connectionId);
 			if (success) {
@@ -56,6 +60,8 @@
 			}
 		} catch (error) {
 			console.error('Failed to connect:', error);
+		} finally {
+			establishingConnections = new Set([...establishingConnections].filter(id => id !== connectionId));
 		}
 	}
 
@@ -174,12 +180,13 @@
 					</div>
 
 					<!-- Connections List -->
-					<ConnectionSidebar 
-						{connections} 
-						{selectedConnection}
-						onSelect={selectConnection}
-						onConnect={connectToDatabase}
-					/>
+											<ConnectionSidebar
+							{connections}
+							{selectedConnection}
+							{establishingConnections}
+							onSelect={selectConnection}
+							onConnect={connectToDatabase}
+						/>
 				</div>
 			</ResizablePane>
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Database, Circle, AlertTriangle } from '@lucide/svelte';
+	import { Database, Circle, AlertTriangle, Loader2 } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 
 	interface Connection {
@@ -12,11 +12,12 @@
 	interface Props {
 		connections: Connection[];
 		selectedConnection: string | null;
+		establishingConnections: Set<string>;
 		onSelect: (connectionId: string) => void;
 		onConnect?: (connectionId: string) => void;
 	}
 
-	let { connections, selectedConnection, onSelect, onConnect }: Props = $props();
+	let { connections, selectedConnection, establishingConnections, onSelect, onConnect }: Props = $props();
 </script>
 
 <div class="flex-1 overflow-y-auto">
@@ -42,6 +43,8 @@
 							<div class="flex-shrink-0 mt-0.5">
 								{#if connection.connected}
 									<Circle class="w-3 h-3 fill-green-500 text-green-500" />
+								{:else if establishingConnections.has(connection.id)}
+									<Loader2 class="w-3 h-3 text-blue-500 animate-spin" />
 								{:else}
 									<Circle class="w-3 h-3 fill-gray-300 text-gray-300" />
 								{/if}
@@ -59,8 +62,12 @@
 								</div>
 								{#if !connection.connected}
 									<div class="flex items-center gap-1 mt-1">
-										<AlertTriangle class="w-3 h-3 text-amber-500" />
-										<span class="text-xs text-amber-600">Disconnected</span>
+										{#if establishingConnections.has(connection.id)}
+											<span class="text-xs text-blue-600">Connecting...</span>
+										{:else}
+											<AlertTriangle class="w-3 h-3 text-amber-500" />
+											<span class="text-xs text-amber-600">Disconnected</span>
+										{/if}
 									</div>
 								{/if}
 							</div>
