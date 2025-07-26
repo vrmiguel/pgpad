@@ -82,6 +82,17 @@ export interface QueryResult {
 	duration_ms: number;
 }
 
+export interface QueryHistoryEntry {
+	id: number;
+	connection_id: string;
+	query_text: string;
+	executed_at: number;
+	duration_ms: number | null;
+	status: string;
+	row_count: number;
+	error_message: string | null;
+}
+
 export class DatabaseCommands {
 	static async testConnection(config: ConnectionConfig): Promise<boolean> {
 		return await invoke('test_connection', { config });
@@ -113,5 +124,27 @@ export class DatabaseCommands {
 
 	static async initializeConnections(): Promise<void> {
 		return await invoke('initialize_connections');
+	}
+
+	static async saveQueryToHistory(
+		connectionId: string,
+		query: string,
+		durationMs: number | null,
+		status: string,
+		rowCount: number,
+		errorMessage: string | null
+	): Promise<void> {
+		return await invoke('save_query_to_history', {
+			connectionId,
+			query,
+			durationMs,
+			status,
+			rowCount,
+			errorMessage
+		});
+	}
+
+	static async getQueryHistory(connectionId: string, limit?: number): Promise<QueryHistoryEntry[]> {
+		return await invoke('get_query_history', { connectionId, limit });
 	}
 }

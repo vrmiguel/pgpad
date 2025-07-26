@@ -3,7 +3,6 @@ mod postgres;
 mod storage;
 
 use dashmap::DashMap;
-use log::info;
 
 use crate::{postgres::types::DatabaseConnection, storage::Storage};
 pub use error::{Error, Result};
@@ -61,7 +60,9 @@ pub fn run() {
             postgres::commands::execute_query,
             postgres::commands::get_connections,
             postgres::commands::remove_connection,
-            postgres::commands::initialize_connections
+            postgres::commands::initialize_connections,
+            postgres::commands::save_query_to_history,
+            postgres::commands::get_query_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

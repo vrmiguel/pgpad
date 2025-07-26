@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Table, FileText, Clock } from '@lucide/svelte';
-	import { DatabaseCommands, type ConnectionInfo, type QueryResult } from '$lib/commands.svelte';
+	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryHistoryEntry } from '$lib/commands.svelte';
 	import { createMonacoEditor, type CreateMonacoEditorOptions } from '$lib/monaco';
 	import { onMount, onDestroy } from 'svelte';
 
@@ -25,15 +25,33 @@ ORDER BY table_name, ordinal_position;`);
 
 	let queryResult = $state<QueryResult | null>(null);
 	let isExecuting = $state(false);
-	let queryHistory = $state<Array<{
-		id: number;
-		query: string;
-		timestamp: string;
-		status: 'success' | 'error';
-		rows: number;
-		duration: string;
-		error?: string;
-	}>>([]);
+	let queryHistory = $state<QueryHistoryEntry[]>([]);
+
+	// Load query history from storage
+	async function loadQueryHistory() {
+		if (!selectedConnection) {
+			queryHistory = [];
+			return;
+		}
+
+		try {
+			const history = await DatabaseCommands.getQueryHistory(selectedConnection, 50);
+			queryHistory = history;
+		} catch (error) {
+			console.error('Failed to load query history:', error);
+			queryHistory = [];
+		}
+	}
+
+	// Helper functions for formatting
+	function formatTimestamp(timestamp: number): string {
+		return new Date(timestamp * 1000).toLocaleString();
+	}
+
+	function formatDuration(durationMs: number | null): string {
+		if (durationMs === null) return '0ms';
+		return `${durationMs}ms`;
+	}
 
 	// Monaco stuff **
 	let editorContainer: HTMLElement;
@@ -45,15 +63,20 @@ ORDER BY table_name, ordinal_position;`);
 		
 		if (!isConnected()) {
 			console.warn('Cannot execute query: No active database connection');
-			queryHistory.unshift({
-				id: Date.now(),
-				query: sqlQuery.trim(),
-				timestamp: new Date().toLocaleString(),
-				status: 'error',
-				rows: 0,
-				duration: '0ms',
-				error: 'No active database connection. Please connect to a database first.'
-			});
+			
+			try {
+				await DatabaseCommands.saveQueryToHistory(
+					selectedConnection,
+					sqlQuery.trim(),
+					null,
+					'error',
+					0,
+					'No active database connection. Please connect to a database first.'
+				);
+				await loadQueryHistory(); // Reload history
+			} catch (error) {
+				console.error('Failed to save query to history:', error);
+			}
 			return;
 		}
 
@@ -63,27 +86,37 @@ ORDER BY table_name, ordinal_position;`);
 		try {
 			const result = await DatabaseCommands.executeQuery(selectedConnection, sqlQuery.trim());
 			queryResult = result;
-			
-			queryHistory.unshift({
-				id: Date.now(),
-				query: sqlQuery.trim(),
-				timestamp: new Date().toLocaleString(),
-				status: 'success',
-				rows: result.row_count,
-				duration: `${result.duration_ms}ms`
-			});
+
+			try {
+				await DatabaseCommands.saveQueryToHistory(
+					selectedConnection,
+					sqlQuery.trim(),
+					result.duration_ms,
+					'success',
+					result.row_count,
+					null
+				);
+				await loadQueryHistory();
+			} catch (error) {
+				console.error('Failed to save query to history:', error);
+			}
 		} catch (error) {
 			console.error('Query execution failed:', error);
 			
-			queryHistory.unshift({
-				id: Date.now(),
-				query: sqlQuery.trim(),
-				timestamp: new Date().toLocaleString(),
-				status: 'error',
-				rows: 0,
-				duration: `${Date.now() - start}ms`,
-				error: String(error)
-			});
+			// Save error to persistent storage
+			try {
+				await DatabaseCommands.saveQueryToHistory(
+					selectedConnection,
+					sqlQuery.trim(),
+					Date.now() - start,
+					'error',
+					0,
+					String(error)
+				);
+				await loadQueryHistory();
+			} catch (historyError) {
+				console.error('Failed to save query to history:', historyError);
+			}
 		} finally {
 			isExecuting = false;
 		}
@@ -121,6 +154,10 @@ ORDER BY table_name, ordinal_position;`);
 		if (monacoEditor) {
 			monacoEditor.updateValue(sqlQuery);
 		}
+	});
+
+	$effect(() => {
+		loadQueryHistory();
 	});
 
 	const results = $derived(queryResult?.rows.map(row => {
@@ -213,20 +250,24 @@ ORDER BY table_name, ordinal_position;`);
 							{#each queryHistory as query}
 								<div class="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer">
 									<div class="font-mono text-xs text-gray-600 mb-1 truncate">
-										{query.query}
+										{query.query_text}
 									</div>
 									<div class="flex items-center justify-between text-xs text-gray-500">
-										<span>{query.timestamp}</span>
+										<span>{formatTimestamp(query.executed_at)}</span>
 										<div class="flex items-center gap-2">
 											<span class="px-1.5 py-0.5 rounded text-xs {query.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
 												{query.status}
 											</span>
-											<span>{query.duration}</span>
+											<span>{formatDuration(query.duration_ms)}</span>
 										</div>
 									</div>
 									{#if query.status === 'success'}
 										<div class="text-xs text-gray-400 mt-1">
-											{query.rows} row{query.rows !== 1 ? 's' : ''}
+											{query.row_count} row{query.row_count !== 1 ? 's' : ''}
+										</div>
+									{:else if query.error_message}
+										<div class="text-xs text-red-500 mt-1 truncate">
+											{query.error_message}
 										</div>
 									{/if}
 								</div>

@@ -1,6 +1,6 @@
 use anyhow::Context;
 use uuid::Uuid;
-use tokio_postgres::{types::Type, Row};
+use tokio_postgres::types::Type;
 
 use crate::{
     error::Error,
@@ -8,6 +8,7 @@ use crate::{
         connect::connect,
         types::{ConnectionConfig, ConnectionInfo, DatabaseConnection, QueryResult},
     },
+    storage::QueryHistoryEntry,
     AppState,
 };
 
@@ -319,6 +320,40 @@ pub async fn test_connection(config: ConnectionConfig) -> Result<bool, Error> {
             Ok(false)
         }
     }
+}
+
+#[tauri::command]
+pub async fn save_query_to_history(
+    connection_id: String,
+    query: String,
+    duration_ms: Option<u64>,
+    status: String,
+    row_count: u64,
+    error_message: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    let entry = QueryHistoryEntry {
+        id: 0, // Sqlite will assign,
+        connection_id,
+        query_text: query,
+        executed_at: chrono::Utc::now().timestamp(),
+        duration_ms: duration_ms.map(|d| d as i64),
+        status,
+        row_count: row_count as i64,
+        error_message,
+    };
+    
+    state.storage.save_query_history(&entry)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_query_history(
+    connection_id: String,
+    limit: Option<u32>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<QueryHistoryEntry>, Error> {
+    Ok(state.storage.get_query_history(&connection_id, limit.map(|l| l as i64))?)
 }
 
 #[tauri::command]
