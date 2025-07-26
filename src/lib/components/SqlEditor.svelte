@@ -16,6 +16,9 @@
 	let { selectedConnection, connections }: Props = $props();
 	
 	let sqlQuery = $state(`-- Welcome to PgPad!
+-- Keyboard shortcuts:
+--   Ctrl+Enter: Run selected text (or current line if nothing selected)
+--   Ctrl+R: Run entire script
 
 SELECT 
     table_name,
@@ -29,7 +32,6 @@ ORDER BY table_name, ordinal_position;`);
 	let isExecuting = $state(false);
 	let queryHistory: QueryHistoryEntry[] = $state([]);
 
-	// Table state for binding
 	let table: any = $state();
 	let globalFilter = $state('');
 
@@ -49,7 +51,6 @@ ORDER BY table_name, ordinal_position;`);
 		}
 	}
 
-	// Helper functions for formatting
 	function formatTimestamp(timestamp: number): string {
 		return new Date(timestamp * 1000).toLocaleString();
 	}
@@ -86,17 +87,34 @@ ORDER BY table_name, ordinal_position;`);
 			return;
 		}
 
+		await executeQuery(sqlQuery.trim());
+	}
+
+	async function handleExecuteSelection(selectedText: string) {
+		if (!selectedConnection || !selectedText) return;
+		
+		if (!isConnected()) {
+			console.warn('Cannot execute query: No active database connection');
+			return;
+		}
+
+		await executeQuery(selectedText);
+	}
+
+	async function executeQuery(queryText: string) {
+		if (!selectedConnection) return;
+		
 		isExecuting = true;
 		const start = Date.now();
 
 		try {
-			const result = await DatabaseCommands.executeQuery(selectedConnection, sqlQuery.trim());
+			const result = await DatabaseCommands.executeQuery(selectedConnection, queryText);
 			queryResult = result;
 
 			try {
 				await DatabaseCommands.saveQueryToHistory(
 					selectedConnection,
-					sqlQuery.trim(),
+					queryText,
 					result.duration_ms,
 					'success',
 					result.row_count,
@@ -113,7 +131,7 @@ ORDER BY table_name, ordinal_position;`);
 			try {
 				await DatabaseCommands.saveQueryToHistory(
 					selectedConnection,
-					sqlQuery.trim(),
+					queryText,
 					Date.now() - start,
 					'error',
 					0,
@@ -145,6 +163,7 @@ ORDER BY table_name, ordinal_position;`);
 						sqlQuery = value;
 					},
 					onExecute: handleExecuteQuery,
+					onExecuteSelection: handleExecuteSelection,
 					disabled: false,
 					theme: 'light' // TODO
 				});

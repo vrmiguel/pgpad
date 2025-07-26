@@ -33,12 +33,13 @@ export interface CreateMonacoEditorOptions {
 	value: string;
 	onChange?: (value: string) => void;
 	onExecute?: () => void;
+	onExecuteSelection?: (selectedText: string) => void;
 	disabled?: boolean;
 	theme?: 'light' | 'dark';
 }
 
 export function createMonacoEditor(options: CreateMonacoEditorOptions) {
-	const { container, value, onChange, onExecute, disabled = false, theme = 'light' } = options;
+	const { container, value, onChange, onExecute, onExecuteSelection, disabled = false, theme = 'light' } = options;
 
 	monaco.languages.registerCompletionItemProvider('sql', {
 		provideCompletionItems: (model, position, context, token) => {
@@ -160,9 +161,20 @@ export function createMonacoEditor(options: CreateMonacoEditorOptions) {
 
 	// Add keyboard shortcuts
 	editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+		// If user selected some section, execute just that
+		const selection = editor.getSelection();
+		if (selection && !selection.isEmpty()) {
+			const selectedText = editor.getModel()?.getValueInRange(selection);
+			if (selectedText && selectedText.trim()) {
+				onExecuteSelection?.(selectedText.trim());
+				return;
+			}
+		}
+		
 		onExecute?.();
 	});
 
+	// Keep Ctrl+R for full execution
 	editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyR, () => {
 		onExecute?.();
 	});
@@ -194,12 +206,36 @@ export function createMonacoEditor(options: CreateMonacoEditorOptions) {
 		monaco.editor.setTheme(newTheme === 'dark' ? 'vs-dark' : 'vs');
 	};
 
+	const getExecutableText = () => {
+		const selection = editor.getSelection();
+		if (selection && !selection.isEmpty()) {
+			// Return selected text
+			return editor.getModel()?.getValueInRange(selection)?.trim();
+		} else {
+			// Return current line if no selection
+			const position = editor.getPosition();
+			if (position) {
+				const lineContent = editor.getModel()?.getLineContent(position.lineNumber);
+				return lineContent?.trim();
+			}
+		}
+		return null;
+	};
+
 	return {
 		editor,
 		updateValue,
 		updateDisabled,
 		updateTheme,
 		focus: () => editor.focus(),
+		getExecutableText,
+		getSelectedText: () => {
+			const selection = editor.getSelection();
+			if (selection && !selection.isEmpty()) {
+				return editor.getModel()?.getValueInRange(selection)?.trim();
+			}
+			return null;
+		},
 		dispose: () => editor.dispose()
 	};
 }

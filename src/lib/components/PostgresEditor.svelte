@@ -223,6 +223,7 @@
 									class="gap-2 shadow-md hover:shadow-lg" 
 									disabled={!selectedConnection} 
 									onclick={() => sqlEditorRef?.handleExecuteQuery()}
+									title="Run Query (Ctrl+R for full script, Ctrl+Enter for selection)"
 								>
 									<Play class="w-4 h-4" />
 									Run Query
