@@ -138,7 +138,7 @@
 					{/each}
 				</thead>
 				<tbody>
-					{#each tableInstance.getRowModel().rows as row (row.id)}
+					{#each tableInstance.getPaginationRowModel().rows as row (row.id)}
 						<tr class="border-b border-border/50 hover:bg-muted/30 transition-colors">
 							{#each row.getVisibleCells() as cell (cell.column.id)}
 								{@const value = cell.getValue()}
