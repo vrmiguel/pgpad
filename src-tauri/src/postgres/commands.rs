@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use anyhow::Context;
 use uuid::Uuid;
 use tokio_postgres::types::Type;
@@ -6,7 +8,7 @@ use crate::{
     error::Error,
     postgres::{
         connect::connect,
-        types::{ConnectionConfig, ConnectionInfo, DatabaseConnection, QueryResult},
+        types::{ConnectionConfig, ConnectionInfo, DatabaseConnection, QueryResult, DatabaseSchema, TableInfo, ColumnInfo},
     },
     storage::QueryHistoryEntry,
     AppState,
@@ -372,4 +374,80 @@ pub async fn initialize_connections(
     
     log::info!("Initialized {} connections from storage", state.connections.len());
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_database_schema(
+    connection_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<DatabaseSchema, Error> {
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+
+    let connection = connection_entry.value();
+
+    let client = connection
+        .client
+        .as_ref()
+        .with_context(|| format!("Connection not active: {}", connection_id))?;
+
+    let schema_query = r#"
+        SELECT 
+            t.table_schema,
+            t.table_name,
+            c.column_name,
+            c.data_type,
+            c.is_nullable::boolean,
+            c.column_default
+        FROM 
+            information_schema.tables t
+        JOIN 
+            information_schema.columns c 
+            ON t.table_name = c.table_name 
+            AND t.table_schema = c.table_schema
+        WHERE 
+            t.table_type = 'BASE TABLE'
+            AND t.table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+        ORDER BY 
+            t.table_schema, t.table_name, c.ordinal_position
+    "#;
+
+    let rows = client.query(schema_query, &[]).await
+        .context("Failed to query database schema")?;
+
+    let mut tables_map: HashMap<String, TableInfo> = std::collections::HashMap::new();
+    let mut schemas_set: HashSet<String> = std::collections::HashSet::new();
+
+    for row in rows {
+        let schema: String = row.get(0);
+        let table_name: String = row.get(1);  
+        let column_name: String = row.get(2);
+        let data_type: String = row.get(3);
+        let is_nullable: bool = row.get(4);
+        let default_value: Option<String> = row.get(5);
+
+        schemas_set.insert(schema.clone());
+
+        let table_key = format!("{}.{}", schema, table_name);
+        
+        let table_info = tables_map.entry(table_key.clone()).or_insert_with(|| TableInfo {
+            name: table_name.clone(),
+            schema: schema.clone(),
+            columns: Vec::new(),
+        });
+
+        table_info.columns.push(ColumnInfo {
+            name: column_name,
+            data_type,
+            is_nullable,
+            default_value,
+        });
+    }
+
+    let tables: Vec<TableInfo> = tables_map.into_values().collect();
+    let schemas: Vec<String> = schemas_set.into_iter().collect();
+
+    Ok(DatabaseSchema { tables, schemas })
 }

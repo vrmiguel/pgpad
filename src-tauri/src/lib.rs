@@ -62,7 +62,8 @@ pub fn run() {
             postgres::commands::remove_connection,
             postgres::commands::initialize_connections,
             postgres::commands::save_query_to_history,
-            postgres::commands::get_query_history
+            postgres::commands::get_query_history,
+            postgres::commands::get_database_schema
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,5 @@
 import * as monaco from 'monaco-editor';
+import type { DatabaseSchema, TableInfo, ColumnInfo } from './commands.svelte';
 
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
@@ -28,6 +29,62 @@ self.MonacoEnvironment = {
 	}
 };
 
+function generateSchemaCompletions(schema: DatabaseSchema | null, word: any, range: any): monaco.languages.CompletionItem[] {
+	if (!schema) {
+		return [];
+	}
+
+	const suggestions: monaco.languages.CompletionItem[] = [];
+
+	for (const table of schema.tables) {
+		const tableName = table.schema === 'public' ? table.name : `${table.schema}.${table.name}`;
+		suggestions.push({
+			label: tableName,
+			kind: monaco.languages.CompletionItemKind.Class,
+			insertText: tableName,
+			documentation: `Table: ${tableName} (${table.columns.length} columns)`,
+			range,
+			detail: 'table'
+		});
+
+		for (const column of table.columns) {
+			suggestions.push({
+				label: `${tableName}.${column.name}`,
+				kind: monaco.languages.CompletionItemKind.Field,
+				insertText: column.name,
+				documentation: `Column: ${column.name} (${column.data_type})${column.is_nullable ? ', nullable' : ', not null'}`,
+				range,
+				detail: `${tableName} column`,
+				filterText: `${tableName} ${column.name}`
+			});
+
+			suggestions.push({
+				label: column.name,
+				kind: monaco.languages.CompletionItemKind.Field,
+				insertText: column.name,
+				documentation: `Column: ${column.name} (${column.data_type}) from ${tableName}`,
+				range,
+				detail: 'column'
+			});
+		}
+	}
+
+	for (const schemaName of schema.schemas) {
+		if (schemaName !== 'public') {
+			suggestions.push({
+				label: schemaName,
+				kind: monaco.languages.CompletionItemKind.Module,
+				insertText: schemaName,
+				documentation: `Schema: ${schemaName}`,
+				range,
+				detail: 'schema'
+			});
+		}
+	}
+
+	return suggestions;
+}
+
 export interface CreateMonacoEditorOptions {
 	container: HTMLElement;
 	value: string;
@@ -36,12 +93,15 @@ export interface CreateMonacoEditorOptions {
 	onExecuteSelection?: (selectedText: string) => void;
 	disabled?: boolean;
 	theme?: 'light' | 'dark';
+	schema?: DatabaseSchema | null;
 }
 
 export function createMonacoEditor(options: CreateMonacoEditorOptions) {
-	const { container, value, onChange, onExecute, onExecuteSelection, disabled = false, theme = 'light' } = options;
+	const { container, value, onChange, onExecute, onExecuteSelection, disabled = false, theme = 'light', schema = null } = options;
 
-	monaco.languages.registerCompletionItemProvider('sql', {
+	let currentSchema = schema;
+
+	const completionProvider = monaco.languages.registerCompletionItemProvider('sql', {
 		provideCompletionItems: (model, position, context, token) => {
 			const word = model.getWordUntilPosition(position);
 			const range = {
@@ -51,7 +111,8 @@ export function createMonacoEditor(options: CreateMonacoEditorOptions) {
 				endColumn: word.endColumn
 			};
 
-			const suggestions: monaco.languages.CompletionItem[] = [
+			// Static SQL keyword suggestions
+			const staticSuggestions: monaco.languages.CompletionItem[] = [
 				{
 					label: 'SELECT',
 					kind: monaco.languages.CompletionItemKind.Keyword,
@@ -109,22 +170,61 @@ export function createMonacoEditor(options: CreateMonacoEditorOptions) {
 					range
 				},
 				{
-					label: 'information_schema.columns',
-					kind: monaco.languages.CompletionItemKind.Module,
-					insertText: 'information_schema.columns',
-					documentation: 'PostgreSQL system view for column information',
+					label: 'ORDER BY',
+					kind: monaco.languages.CompletionItemKind.Keyword,
+					insertText: 'ORDER BY ',
+					documentation: 'ORDER BY clause',
 					range
 				},
 				{
-					label: 'information_schema.tables',
-					kind: monaco.languages.CompletionItemKind.Module,
-					insertText: 'information_schema.tables',
-					documentation: 'PostgreSQL system view for table information',
+					label: 'GROUP BY',
+					kind: monaco.languages.CompletionItemKind.Keyword,
+					insertText: 'GROUP BY ',
+					documentation: 'GROUP BY clause',
+					range
+				},
+				{
+					label: 'HAVING',
+					kind: monaco.languages.CompletionItemKind.Keyword,
+					insertText: 'HAVING ',
+					documentation: 'HAVING clause',
+					range
+				},
+				{
+					label: 'JOIN',
+					kind: monaco.languages.CompletionItemKind.Keyword,
+					insertText: 'JOIN ',
+					documentation: 'JOIN clause',
+					range
+				},
+				{
+					label: 'LEFT JOIN',
+					kind: monaco.languages.CompletionItemKind.Keyword,
+					insertText: 'LEFT JOIN ',
+					documentation: 'LEFT JOIN clause', 
+					range
+				},
+				{
+					label: 'RIGHT JOIN',
+					kind: monaco.languages.CompletionItemKind.Keyword,
+					insertText: 'RIGHT JOIN ',
+					documentation: 'RIGHT JOIN clause',
+					range
+				},
+				{
+					label: 'INNER JOIN',
+					kind: monaco.languages.CompletionItemKind.Keyword,
+					insertText: 'INNER JOIN ',
+					documentation: 'INNER JOIN clause',
 					range
 				}
 			];
 
-			return { suggestions };
+			const schemaSuggestions = generateSchemaCompletions(currentSchema, word, range);
+
+			const allSuggestions = [...staticSuggestions, ...schemaSuggestions];
+
+			return { suggestions: allSuggestions };
 		}
 	});
 
@@ -236,7 +336,13 @@ export function createMonacoEditor(options: CreateMonacoEditorOptions) {
 			}
 			return null;
 		},
-		dispose: () => editor.dispose()
+		updateSchema: (newSchema: DatabaseSchema | null) => {
+			currentSchema = newSchema;
+		},
+		dispose: () => {
+			completionProvider.dispose();
+			editor.dispose();
+		}
 	};
 }
 

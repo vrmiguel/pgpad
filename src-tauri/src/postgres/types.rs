@@ -28,3 +28,24 @@ pub struct QueryResult {
     pub row_count: usize,
     pub duration_ms: u64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnInfo {
+    pub name: String,
+    pub data_type: String,
+    pub is_nullable: bool,
+    pub default_value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableInfo {
+    pub name: String,
+    pub schema: String,
+    pub columns: Vec<ColumnInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatabaseSchema {
+    pub tables: Vec<TableInfo>,
+    pub schemas: Vec<String>,
+}

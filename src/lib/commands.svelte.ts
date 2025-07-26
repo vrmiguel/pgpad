@@ -93,6 +93,24 @@ export interface QueryHistoryEntry {
 	error_message: string | null;
 }
 
+export interface ColumnInfo {
+	name: string;
+	data_type: string;
+	is_nullable: boolean;
+	default_value: string | null;
+}
+
+export interface TableInfo {
+	name: string;
+	schema: string;
+	columns: ColumnInfo[];
+}
+
+export interface DatabaseSchema {
+	tables: TableInfo[];
+	schemas: string[];
+}
+
 export class DatabaseCommands {
 	static async testConnection(config: ConnectionConfig): Promise<boolean> {
 		return await invoke('test_connection', { config });
@@ -146,5 +164,9 @@ export class DatabaseCommands {
 
 	static async getQueryHistory(connectionId: string, limit?: number): Promise<QueryHistoryEntry[]> {
 		return await invoke('get_query_history', { connectionId, limit });
+	}
+
+	static async getDatabaseSchema(connectionId: string): Promise<DatabaseSchema> {
+		return await invoke('get_database_schema', { connectionId });
 	}
 }

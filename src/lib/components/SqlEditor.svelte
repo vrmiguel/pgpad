@@ -3,7 +3,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { Table, FileText, Clock, Search } from '@lucide/svelte';
-	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryHistoryEntry } from '$lib/commands.svelte';
+	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryHistoryEntry, type DatabaseSchema } from '$lib/commands.svelte';
 	import { createMonacoEditor, type CreateMonacoEditorOptions } from '$lib/monaco';
 	import { onMount, onDestroy } from 'svelte';
 	import QueryResultsTable from './QueryResultsTable.svelte';
@@ -31,6 +31,7 @@ ORDER BY table_name, ordinal_position;`);
 	let queryResult = $state<QueryResult | null>(null);
 	let isExecuting = $state(false);
 	let queryHistory: QueryHistoryEntry[] = $state([]);
+	let databaseSchema = $state<DatabaseSchema | null>(null);
 
 	let table: any = $state();
 	let globalFilter = $state('');
@@ -48,6 +49,32 @@ ORDER BY table_name, ordinal_position;`);
 		} catch (error) {
 			console.error('Failed to load query history:', error);
 			queryHistory = [];
+		}
+	}
+
+	async function loadDatabaseSchema() {
+		if (!selectedConnection) {
+			databaseSchema = null;
+			return;
+		}
+
+		const connection = connections.find(c => c.id === selectedConnection);
+		if (!connection?.connected) {
+			databaseSchema = null;
+			return;
+		}
+
+		try {
+			const schema = await DatabaseCommands.getDatabaseSchema(selectedConnection);
+			databaseSchema = schema;
+			console.log('Loaded database schema:', schema);
+			
+			if (monacoEditor) {
+				monacoEditor.updateSchema(schema);
+			}
+		} catch (error) {
+			console.error('Failed to load database schema:', error);
+			databaseSchema = null;
 		}
 	}
 
@@ -80,7 +107,7 @@ ORDER BY table_name, ordinal_position;`);
 					0,
 					'No active database connection. Please connect to a database first.'
 				);
-				await loadQueryHistory(); // Reload history
+				await loadQueryHistory();
 			} catch (error) {
 				console.error('Failed to save query to history:', error);
 			}
@@ -127,7 +154,6 @@ ORDER BY table_name, ordinal_position;`);
 		} catch (error) {
 			console.error('Query execution failed:', error);
 			
-			// Save error to persistent storage
 			try {
 				await DatabaseCommands.saveQueryToHistory(
 					selectedConnection,
@@ -165,7 +191,8 @@ ORDER BY table_name, ordinal_position;`);
 					onExecute: handleExecuteQuery,
 					onExecuteSelection: handleExecuteSelection,
 					disabled: false,
-					theme: 'light' // TODO
+					theme: 'light', // TODO
+					schema: databaseSchema
 				});
 			}
 		}, 0);
@@ -181,8 +208,14 @@ ORDER BY table_name, ordinal_position;`);
 		}
 	});
 
+	// Load query history on connection changes
 	$effect(() => {
 		loadQueryHistory();
+	});
+
+	// Load database schema on connection changes
+	$effect(() => {
+		loadDatabaseSchema();
 	});
 
 	const results = $derived(queryResult?.rows.map(row => {
