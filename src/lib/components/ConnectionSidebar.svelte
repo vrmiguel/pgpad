@@ -20,53 +20,60 @@
 	let { connections, selectedConnection, establishingConnections, onSelect, onConnect }: Props = $props();
 </script>
 
-<div class="flex-1 overflow-y-auto">
-	<div class="p-2">
-		<h2 class="text-sm font-medium text-gray-500 mb-3 px-2">CONNECTIONS</h2>
+<div class="flex-1 overflow-y-auto bg-gradient-to-b from-transparent to-muted/10">
+	<div class="p-4">
+		<h2 class="text-sm font-semibold text-muted-foreground/80 mb-4 px-3 uppercase tracking-wider">Connections</h2>
 		
 		{#if connections.length === 0}
-			<div class="text-center py-8 text-gray-500">
-				<Database class="w-8 h-8 mx-auto mb-2 opacity-50" />
-				<p class="text-sm">No connections yet</p>
-				<p class="text-xs text-gray-400 mt-1">Add your first connection to get started</p>
+			<div class="text-center py-12 px-4">
+				<div class="p-4 rounded-xl bg-muted/30 border border-border/50 inline-flex mb-4">
+					<Database class="w-8 h-8 text-muted-foreground/50" />
+				</div>
+				<p class="text-sm font-medium text-muted-foreground mb-2">No connections yet</p>
+				<p class="text-xs text-muted-foreground/70">Add your first connection to get started</p>
 			</div>
 		{:else}
-			<div class="space-y-1">
+			<div class="space-y-2">
 				{#each connections as connection (connection.id)}
 					<Button
 						variant={selectedConnection === connection.id ? "secondary" : "ghost"}
-						class="w-full justify-start p-3 h-auto"
+						class="w-full justify-start p-4 h-auto shadow-sm hover:shadow-md transition-all duration-200 {selectedConnection === connection.id ? 'shadow-md bg-primary/10 border border-primary/20' : ''}"
 						onclick={() => onSelect(connection.id)}
 						ondblclick={() => onConnect?.(connection.id)}
 					>
-						<div class="flex items-start gap-3 w-full">
-							<div class="flex-shrink-0 mt-0.5">
+						<div class="flex items-start gap-4 w-full">
+							<div class="flex-shrink-0 mt-1">
 								{#if connection.connected}
-									<Circle class="w-3 h-3 fill-green-500 text-green-500" />
+									<div class="w-3 h-3 rounded-full bg-success border-2 border-success-light shadow-sm"></div>
 								{:else if establishingConnections.has(connection.id)}
-									<Loader2 class="w-3 h-3 text-blue-500 animate-spin" />
+									<Loader2 class="w-3 h-3 text-primary animate-spin" />
 								{:else}
-									<Circle class="w-3 h-3 fill-gray-300 text-gray-300" />
+									<div class="w-3 h-3 rounded-full bg-muted-foreground/40 border-2 border-muted-foreground/20"></div>
 								{/if}
 							</div>
 							
 							<div class="flex-1 text-left min-w-0">
-								<div class="font-medium text-sm text-gray-900 truncate">
+								<div class="font-medium text-sm text-foreground truncate mb-1">
 									{connection.name}
 								</div>
-								<div class="text-xs text-gray-500 mt-0.5 truncate">
+								<div class="text-xs text-muted-foreground/80 truncate mb-1">
 									{connection.connection_string.replace(/^postgresql?:\/\/[^@]*@/, '').replace(/\/[^?]*/, '')}
 								</div>
-								<div class="text-xs text-gray-400 mt-0.5 truncate">
+								<div class="text-xs text-muted-foreground/60 truncate mb-2">
 									{connection.connection_string.split('/').pop()?.split('?')[0] || 'database'}
 								</div>
 								{#if !connection.connected}
-									<div class="flex items-center gap-1 mt-1">
+									<div class="flex items-center gap-2 mt-2">
 										{#if establishingConnections.has(connection.id)}
-											<span class="text-xs text-blue-600">Connecting...</span>
+											<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-primary/10 border border-primary/20">
+												<Loader2 class="w-3 h-3 text-primary animate-spin" />
+												<span class="text-xs font-medium text-primary">Connecting...</span>
+											</div>
 										{:else}
-											<AlertTriangle class="w-3 h-3 text-amber-500" />
-											<span class="text-xs text-amber-600">Disconnected</span>
+											<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-warning-light/30 border border-warning/20">
+												<AlertTriangle class="w-3 h-3 text-warning" />
+												<span class="text-xs font-medium text-warning-foreground/80">Disconnected</span>
+											</div>
 										{/if}
 									</div>
 								{/if}

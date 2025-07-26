@@ -66,107 +66,127 @@
 	}
 </script>
 
-<form onsubmit={handleSubmit} class="space-y-4">
-	<div class="flex items-center justify-between mb-6">
-		<div class="flex items-center gap-2">
-			<Database class="w-5 h-5 text-blue-600" />
-			<h2 class="text-lg font-semibold">Add Connection</h2>
+<form onsubmit={handleSubmit} class="space-y-6">
+	<div class="flex items-center justify-between mb-8">
+		<div class="flex items-center gap-3">
+			<div class="p-2 rounded-lg bg-primary/10 border border-primary/20">
+				<Database class="w-5 h-5 text-primary" />
+			</div>
+			<h2 class="text-xl font-bold text-foreground">Add Connection</h2>
 		</div>
 		<Button
 			type="button"
 			variant="ghost"
-			size="sm"
+			size="icon-sm"
 			onclick={onCancel}
-			class="p-1"
+			class="hover:shadow-md"
 		>
 			<X class="w-4 h-4" />
 		</Button>
 	</div>
 
-	<div class="space-y-4">
+	<div class="space-y-6">
 		<div>
-			<label for="name" class="block text-sm font-medium text-gray-700 mb-1">
-				Connection Name *
+			<label for="name" class="block text-sm font-semibold text-foreground mb-2">
+				Connection Name <span class="text-error">*</span>
 			</label>
 			<Input
 				id="name"
 				type="text"
 				bind:value={connectionName}
 				placeholder="e.g., Local Development"
-				class={errors.name ? 'border-red-500' : ''}
+				class={`shadow-sm focus:shadow-md transition-shadow ${errors.name ? 'border-error focus:ring-error/30' : 'focus:ring-primary/30'}`}
 			/>
 			{#if errors.name}
-				<p class="text-sm text-red-600 mt-1">{errors.name}</p>
+				<p class="text-sm text-error mt-2 flex items-center gap-2">
+					<AlertCircle class="w-4 h-4" />
+					{errors.name}
+				</p>
 			{/if}
 		</div>
 
 		<div>
-			<label for="connectionString" class="block text-sm font-medium text-gray-700 mb-1">
-				PostgreSQL Connection String *
+			<label for="connectionString" class="block text-sm font-semibold text-foreground mb-2">
+				PostgreSQL Connection String <span class="text-error">*</span>
 			</label>
 			<Input
 				id="connectionString"
 				type="text"
 				bind:value={connectionString}
 				placeholder="postgresql://username:password@localhost:5432/database"
-				class={errors.connectionString ? 'border-red-500' : ''}
+				class={`shadow-sm focus:shadow-md transition-shadow ${errors.connectionString ? 'border-error focus:ring-error/30' : 'focus:ring-primary/30'}`}
 			/>
 			{#if errors.connectionString}
-				<p class="text-sm text-red-600 mt-1">{errors.connectionString}</p>
+				<p class="text-sm text-error mt-2 flex items-center gap-2">
+					<AlertCircle class="w-4 h-4" />
+					{errors.connectionString}
+				</p>
 			{/if}
 			
-			<div class="mt-2 p-3 bg-blue-50 rounded-md">
-				<div class="flex items-start gap-2">
-					<Info class="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-					<div class="text-sm text-blue-800">
-						<p class="font-medium mb-1">Connection String Format:</p>
-						<code class="text-xs bg-blue-100 px-1 py-0.5 rounded">
-							postgresql://username:password@hostname:port/database
+			<div class="mt-4 p-4 bg-primary/5 border border-primary/20 rounded-lg">
+				<div class="flex items-start gap-3">
+					<Info class="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+					<div class="text-sm text-muted-foreground">
+						<p class="font-medium text-foreground mb-1">Connection String Format:</p>
+						<p class="mb-2">Use the following format for your PostgreSQL connection:</p>
+						<code class="block bg-muted/50 p-2 rounded text-xs font-mono border">
+							postgresql://username:password@host:port/database
 						</code>
-						<p class="mt-1 text-xs">
-							Example: <code class="bg-blue-100 px-1 py-0.5 rounded">postgresql://postgres:mypass@localhost:5432/mydb</code>
+						<p class="mt-2 text-xs">
+							Replace <span class="font-medium">username</span>, <span class="font-medium">password</span>, 
+							<span class="font-medium">host</span>, <span class="font-medium">port</span>, and 
+							<span class="font-medium">database</span> with your actual connection details.
 						</p>
 					</div>
 				</div>
 			</div>
 		</div>
-
-		<!-- Test Connection -->
-		<div class="border-t pt-4">
-			<Button 
-				type="button" 
-				variant="outline" 
-				onclick={testConnection}
-				disabled={isTestingConnection || !connectionName.trim() || !connectionString.trim()}
-				class="w-full mb-3"
-			>
-				{#if isTestingConnection}
-					Testing Connection...
-				{:else}
-					Test Connection
-				{/if}
-			</Button>
-
-			{#if testResult === 'success'}
-				<div class="flex items-center gap-2 text-green-600 text-sm">
-					<CheckCircle class="w-4 h-4" />
-					Connection successful!
-				</div>
-			{:else if testResult === 'error'}
-				<div class="flex items-center gap-2 text-red-600 text-sm">
-					<AlertCircle class="w-4 h-4" />
-					Connection failed. Please check your connection string.
-				</div>
-			{/if}
-		</div>
 	</div>
 
-	<div class="flex gap-2 pt-4">
-		<Button type="submit" class="flex-1" disabled={!connectionName.trim() || !connectionString.trim()}>
-			Add Connection
+	<div class="flex items-center gap-3 pt-6 border-t border-border/50">
+		<Button
+			type="button"
+			variant="outline"
+			onclick={testConnection}
+			disabled={isTestingConnection}
+			class="gap-2 shadow-sm hover:shadow-md"
+		>
+			{#if isTestingConnection}
+				<div class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+				Testing...
+			{:else}
+				Test Connection
+			{/if}
 		</Button>
-		<Button type="button" variant="outline" onclick={onCancel}>
+
+		{#if testResult === 'success'}
+			<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-success-light/50 border border-success/20">
+				<CheckCircle class="w-4 h-4 text-success" />
+				<span class="text-sm font-medium text-success-foreground/80">Connection successful!</span>
+			</div>
+		{:else if testResult === 'error'}
+			<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-error-light/50 border border-error/20">
+				<AlertCircle class="w-4 h-4 text-error" />
+				<span class="text-sm font-medium text-error-foreground/80">Connection failed</span>
+			</div>
+		{/if}
+
+		<div class="flex-1"></div>
+
+		<Button
+			type="button"
+			variant="ghost"
+			onclick={onCancel}
+			class="shadow-sm hover:shadow-md"
+		>
 			Cancel
+		</Button>
+		<Button
+			type="submit"
+			class="gap-2 shadow-md hover:shadow-lg"
+		>
+			<Database class="w-4 h-4" />
+			Add Connection
 		</Button>
 	</div>
 </form> 

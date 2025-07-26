@@ -71,27 +71,29 @@
 	}
 </script>
 
-<div class="flex h-screen bg-gray-50">
+<div class="flex h-screen bg-gradient-to-br from-background via-background to-muted/20">
 	{#if isSidebarCollapsed}
 		<!-- Collapsed Sidebar -->
-		<div class="w-12 bg-white border-r border-gray-200 flex flex-col relative transition-all duration-200">
+		<div class="w-16 bg-sidebar/80 glass-subtle border-r border-sidebar-border flex flex-col relative transition-all duration-300 ease-out">
 			<!-- Collapse/Expand Button -->
 			<button
-				class="absolute top-4 right-2 z-10 p-1 rounded hover:bg-gray-100 transition-colors"
+				class="absolute top-4 right-2 z-10 p-2 rounded-lg hover:bg-sidebar-accent/80 transition-all duration-200 hover:shadow-md"
 				onclick={toggleSidebar}
 				title="Expand sidebar"
 			>
-				<ChevronRight class="w-4 h-4 text-gray-600" />
+				<ChevronRight class="w-4 h-4 text-sidebar-foreground/70" />
 			</button>
 
 			<!-- Collapsed sidebar content -->
-			<div class="p-2 border-b border-gray-200">
-				<div class="flex flex-col items-center gap-2">
-					<Database class="w-6 h-6 text-blue-600" />
+			<div class="p-3 border-b border-sidebar-border/50">
+				<div class="flex flex-col items-center gap-3">
+					<div class="p-2 rounded-lg bg-primary/10 border border-primary/20">
+						<Database class="w-6 h-6 text-primary" />
+					</div>
 					<Button
-						size="sm"
+						size="icon-sm"
 						variant="outline"
-						class="w-8 h-8 p-0"
+						class="shadow-md hover:shadow-lg"
 						onclick={() => showConnectionForm = true}
 						title="Add Connection"
 					>
@@ -101,44 +103,77 @@
 			</div>
 			
 			<!-- Collapsed connections indicators -->
-			<div class="flex-1 p-2 space-y-2">
+			<div class="flex-1 p-3 space-y-3">
 				{#each connections as connection}
 					<button
-						class="w-full h-8 rounded flex items-center justify-center transition-colors {selectedConnection === connection.id ? 'bg-blue-100 border border-blue-300' : 'hover:bg-gray-100'}"
+						class="w-full h-10 rounded-lg flex items-center justify-center transition-all duration-200 hover:shadow-md {selectedConnection === connection.id ? 'bg-primary/20 border border-primary/30 shadow-md' : 'hover:bg-sidebar-accent/60'}"
 						onclick={() => selectConnection(connection.id)}
 						title={connection.name}
 					>
-						<div class="w-2 h-2 rounded-full {connection.connected ? 'bg-green-500' : 'bg-gray-400'}"></div>
+						<div class="w-3 h-3 rounded-full shadow-sm {connection.connected ? 'bg-success shadow-success/30' : establishingConnections.has(connection.id) ? 'bg-primary animate-pulse shadow-primary/30' : 'bg-muted-foreground/40'}"></div>
 					</button>
 				{/each}
 			</div>
 		</div>
 
 		<!-- Main Editor Area (Full Width) -->
-		<div class="flex-1 flex flex-col">
+		<div class="flex-1 flex flex-col bg-background/50">
 			<!-- Toolbar -->
-			<div class="bg-white border-b border-gray-200 p-4">
-				<div class="flex items-center gap-2">
-					<Button class="gap-2" disabled={!selectedConnection} onclick={() => sqlEditorRef?.handleExecuteQuery()}>
-						<Play class="w-4 h-4" />
-						Run Query
-					</Button>
-					<Button variant="outline" class="gap-2">
-						<Save class="w-4 h-4" />
-						Save Script
-					</Button>
-					
-					{#if selectedConnection}
-						{@const connection = connections.find(c => c.id === selectedConnection)}
-						<div class="ml-auto flex items-center gap-2 text-sm text-gray-600">
-							<div class="w-2 h-2 rounded-full bg-green-500"></div>
-							Connected to: {connection?.name}
+			<div class="glass-card border-b border-border/50 p-6 shadow-md">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-4">
+						<div class="flex items-center gap-3">
+							<Button 
+								class="gap-2 shadow-md hover:shadow-lg" 
+								disabled={!selectedConnection} 
+								onclick={() => sqlEditorRef?.handleExecuteQuery()}
+							>
+								<Play class="w-4 h-4" />
+								Run Query
+							</Button>
+							<Button variant="outline" class="gap-2 shadow-sm hover:shadow-md">
+								<Save class="w-4 h-4" />
+								Save Script
+							</Button>
 						</div>
-					{:else}
-						<div class="ml-auto text-sm text-gray-500">
-							Select a connection to start
-						</div>
-					{/if}
+						
+						{#if selectedConnection}
+							{@const connection = connections.find(c => c.id === selectedConnection)}
+							{#if connection}
+								{#if connection.connected}
+									<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-success-light/20 border border-success/30">
+										<div class="w-2 h-2 rounded-full bg-success shadow-sm"></div>
+										<span class="text-sm font-semibold text-gray-900">Connected to: {connection.name}</span>
+									</div>
+								{:else if establishingConnections.has(connection.id)}
+									<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/30">
+										<div class="w-2 h-2 rounded-full bg-primary animate-pulse shadow-sm"></div>
+										<span class="text-sm font-semibold text-gray-900">Connecting to: {connection.name}</span>
+									</div>
+								{:else}
+									<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/20 border border-border">
+										<div class="w-2 h-2 rounded-full bg-muted-foreground/60 shadow-sm"></div>
+										<span class="text-sm font-semibold text-gray-900">Selected: {connection.name} (double-click to connect)</span>
+									</div>
+								{/if}
+							{/if}
+						{:else}
+							<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-warning-light/30 border border-warning/20">
+								<span class="text-sm font-semibold text-warning-foreground">Select a connection to start</span>
+							</div>
+						{/if}
+					</div>
+					<div class="flex items-center gap-3">
+						<Button
+							variant="ghost"
+							size="sm"
+							onclick={toggleSidebar}
+							class="hover:shadow-md"
+						>
+							<ChevronLeft class="w-4 h-4" />
+							Show Sidebar
+						</Button>
+					</div>
 				</div>
 			</div>
 
@@ -152,25 +187,27 @@
 		<ResizablePaneGroup direction="horizontal" class="flex-1">
 			<!-- Sidebar Pane -->
 			<ResizablePane defaultSize={25} minSize={20} maxSize={40}>
-				<div class="h-full bg-white border-r border-gray-200 flex flex-col relative">
+				<div class="h-full bg-sidebar/60 glass-card border-r border-sidebar-border flex flex-col relative">
 					<!-- Collapse/Expand Button -->
 					<button
-						class="absolute top-4 right-2 z-10 p-1 rounded hover:bg-gray-100 transition-colors"
+						class="absolute top-6 right-4 z-10 p-2 rounded-lg hover:bg-sidebar-accent/80 transition-all duration-200 hover:shadow-md"
 						onclick={toggleSidebar}
 						title="Collapse sidebar"
 					>
-						<ChevronLeft class="w-4 h-4 text-gray-600" />
+						<ChevronLeft class="w-4 h-4 text-sidebar-foreground/70" />
 					</button>
 
 					<!-- Header -->
-					<div class="p-4 border-b border-gray-200">
-						<div class="flex items-center gap-2 mb-4">
-							<Database class="w-6 h-6 text-blue-600" />
-							<h1 class="text-xl font-semibold text-gray-900">PgPad</h1>
+					<div class="p-6 border-b border-sidebar-border/50">
+						<div class="flex items-center gap-3 mb-6">
+							<div class="p-2 rounded-lg bg-primary/10 border border-primary/20">
+								<Database class="w-6 h-6 text-primary" />
+							</div>
+							<h1 class="text-xl font-bold text-sidebar-foreground">PgPad</h1>
 						</div>
 						
 						<Button
-							class="w-full justify-start gap-2"
+							class="w-full justify-start gap-2 shadow-md hover:shadow-lg"
 							variant="outline"
 							onclick={() => showConnectionForm = true}
 						>
@@ -180,13 +217,13 @@
 					</div>
 
 					<!-- Connections List -->
-											<ConnectionSidebar
-							{connections}
-							{selectedConnection}
-							{establishingConnections}
-							onSelect={selectConnection}
-							onConnect={connectToDatabase}
-						/>
+					<ConnectionSidebar
+						{connections}
+						{selectedConnection}
+						{establishingConnections}
+						onSelect={selectConnection}
+						onConnect={connectToDatabase}
+					/>
 				</div>
 			</ResizablePane>
 
@@ -194,35 +231,57 @@
 
 			<!-- Main Editor Pane -->
 			<ResizablePane defaultSize={75}>
-				<div class="flex flex-col h-full">
+				<div class="flex flex-col h-full bg-background/50">
 					<!-- Toolbar -->
-					<div class="bg-white border-b border-gray-200 p-4">
-						<div class="flex items-center gap-2">
-							<Button class="gap-2" disabled={!selectedConnection} onclick={() => sqlEditorRef?.handleExecuteQuery()}>
-								<Play class="w-4 h-4" />
-								Run Query
-							</Button>
-							<Button variant="outline" class="gap-2">
-								<Save class="w-4 h-4" />
-								Save Script
-							</Button>
-							
-							{#if selectedConnection}
-								{@const connection = connections.find(c => c.id === selectedConnection)}
-								<div class="ml-auto flex items-center gap-2 text-sm text-gray-600">
-									<div class="w-2 h-2 rounded-full bg-green-500"></div>
-									Connected to: {connection?.name}
+					<div class="glass-card border-b border-border/50 p-6 shadow-md">
+						<div class="flex items-center justify-between">
+							<div class="flex items-center gap-4">
+								<div class="flex items-center gap-3">
+									<Button 
+										class="gap-2 shadow-md hover:shadow-lg" 
+										disabled={!selectedConnection} 
+										onclick={() => sqlEditorRef?.handleExecuteQuery()}
+									>
+										<Play class="w-4 h-4" />
+										Run Query
+									</Button>
+									<Button variant="outline" class="gap-2 shadow-sm hover:shadow-md">
+										<Save class="w-4 h-4" />
+										Save Script
+									</Button>
 								</div>
-							{:else}
-								<div class="ml-auto text-sm text-gray-500">
-									Select a connection to start
-								</div>
-							{/if}
+								
+								{#if selectedConnection}
+									{@const connection = connections.find(c => c.id === selectedConnection)}
+									{#if connection}
+										{#if connection.connected}
+											<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-success-light/20 border border-success/30">
+												<div class="w-2 h-2 rounded-full bg-success shadow-sm"></div>
+												<span class="text-sm font-semibold text-gray-900">Connected to: {connection.name}</span>
+											</div>
+										{:else if establishingConnections.has(connection.id)}
+											<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/30">
+												<div class="w-2 h-2 rounded-full bg-primary animate-pulse shadow-sm"></div>
+												<span class="text-sm font-semibold text-gray-900">Connecting to: {connection.name}</span>
+											</div>
+										{:else}
+											<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/20 border border-border">
+												<div class="w-2 h-2 rounded-full bg-muted-foreground/60 shadow-sm"></div>
+												<span class="text-sm font-semibold text-gray-900">Selected: {connection.name} (double-click to connect)</span>
+											</div>
+										{/if}
+									{/if}
+								{:else}
+									<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-warning-light/30 border border-warning/20">
+										<span class="text-sm font-semibold text-warning-foreground">Select a connection to start</span>
+									</div>
+								{/if}
+							</div>
 						</div>
 					</div>
 
 					<!-- Editor and Results -->
-					<div class="flex-1 flex flex-col">
+					<div class="flex-1 flex flex-col bg-background/30">
 						<SqlEditor {selectedConnection} {connections} bind:this={sqlEditorRef} />
 					</div>
 				</div>
@@ -233,8 +292,8 @@
 
 <!-- Connection Form Modal -->
 {#if showConnectionForm}
-	<div class="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
-		<div class="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+	<div class="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+		<div class="glass-card rounded-xl shadow-xl p-8 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto hover-lift">
 			<ConnectionForm 
 				onSubmit={addConnection}
 				onCancel={() => showConnectionForm = false}
