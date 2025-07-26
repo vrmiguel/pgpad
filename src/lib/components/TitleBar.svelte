@@ -38,9 +38,9 @@
 	}
 </script>
 
-<div class="flex items-center h-8 bg-background border-b border-border/50 select-none" data-tauri-drag-region>
+<div class="flex items-center h-8 bg-background border-b border-border/50 select-none">
 	{#if isMacOS}
-		<!-- macOS-style controls (left side) -->
+		<!-- macOS-style controls (left side) - NOT draggable -->
 		<div class="flex items-center gap-2 px-4">
 			<!-- Close (red) -->
 			<button
@@ -76,69 +76,69 @@
 			</button>
 		</div>
 
-		<!-- Center section - App info and connection status -->
+		<!-- Center section - App info and connection status - DRAGGABLE -->
 		<div class="flex items-center gap-3 px-4 flex-1 justify-center" data-tauri-drag-region>
-			<div class="flex items-center gap-2">
-				<Database class="w-4 h-4 text-primary" />
-				<span class="text-sm font-semibold text-foreground">pgpad</span>
+			<div class="flex items-center gap-2" data-tauri-drag-region>
+				<Database class="w-4 h-4 text-primary" data-tauri-drag-region />
+				<span class="text-sm font-semibold text-foreground" data-tauri-drag-region>pgpad</span>
 			</div>
 			
 			<!-- Connection status -->
 			{#if currentConnection}
-				<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/30">
+				<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/30" data-tauri-drag-region>
 					{#if isConnecting}
-						<div class="w-2 h-2 rounded-full bg-warning animate-pulse"></div>
-						<span class="text-xs text-muted-foreground">Connecting...</span>
+						<div class="w-2 h-2 rounded-full bg-warning animate-pulse" data-tauri-drag-region></div>
+						<span class="text-xs text-muted-foreground" data-tauri-drag-region>Connecting...</span>
 					{:else if currentConnection.connected}
-						<div class="w-2 h-2 rounded-full bg-success"></div>
-						<span class="text-xs text-foreground">{currentConnection.name}</span>
+						<div class="w-2 h-2 rounded-full bg-success" data-tauri-drag-region></div>
+						<span class="text-xs text-foreground" data-tauri-drag-region>{currentConnection.name}</span>
 					{:else}
-						<div class="w-2 h-2 rounded-full bg-muted-foreground/40"></div>
-						<span class="text-xs text-muted-foreground">{currentConnection.name} (disconnected)</span>
+						<div class="w-2 h-2 rounded-full bg-muted-foreground/40" data-tauri-drag-region></div>
+						<span class="text-xs text-muted-foreground" data-tauri-drag-region>{currentConnection.name} (disconnected)</span>
 					{/if}
 				</div>
 			{:else}
-				<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/20">
-					<Circle class="w-2 h-2 text-muted-foreground/50" />
-					<span class="text-xs text-muted-foreground">No connection</span>
+				<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/20" data-tauri-drag-region>
+					<Circle class="w-2 h-2 text-muted-foreground/50" data-tauri-drag-region />
+					<span class="text-xs text-muted-foreground" data-tauri-drag-region>No connection</span>
 				</div>
 			{/if}
 		</div>
 
-		<!-- Right spacer to balance layout -->
-		<div class="w-16"></div>
+		<!-- Right spacer to balance layout - DRAGGABLE -->
+		<div class="w-16" data-tauri-drag-region></div>
 	{:else}
-		<!-- Windows/Linux-style controls (right side) -->
-		<!-- Left section - App info -->
+		<!-- Windows/Linux controls (right side) -->
+		<!-- Left section - App info - DRAGGABLE -->
 		<div class="flex items-center gap-3 px-4 flex-1" data-tauri-drag-region>
-			<div class="flex items-center gap-2">
-				<Database class="w-4 h-4 text-primary" />
-				<span class="text-sm font-semibold text-foreground">pgpad</span>
+			<div class="flex items-center gap-2" data-tauri-drag-region>
+				<Database class="w-4 h-4 text-primary" data-tauri-drag-region />
+				<span class="text-sm font-semibold text-foreground" data-tauri-drag-region>pgpad</span>
 			</div>
 			
 			<!-- Connection status -->
 			{#if currentConnection}
-				<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/30">
+				<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/30" data-tauri-drag-region>
 					{#if isConnecting}
-						<div class="w-2 h-2 rounded-full bg-warning animate-pulse"></div>
-						<span class="text-xs text-muted-foreground">Connecting...</span>
+						<div class="w-2 h-2 rounded-full bg-warning animate-pulse" data-tauri-drag-region></div>
+						<span class="text-xs text-muted-foreground" data-tauri-drag-region>Connecting...</span>
 					{:else if currentConnection.connected}
-						<div class="w-2 h-2 rounded-full bg-success"></div>
-						<span class="text-xs text-foreground">{currentConnection.name}</span>
+						<div class="w-2 h-2 rounded-full bg-success" data-tauri-drag-region></div>
+						<span class="text-xs text-foreground" data-tauri-drag-region>{currentConnection.name}</span>
 					{:else}
-						<div class="w-2 h-2 rounded-full bg-muted-foreground/40"></div>
-						<span class="text-xs text-muted-foreground">{currentConnection.name} (disconnected)</span>
+						<div class="w-2 h-2 rounded-full bg-muted-foreground/40" data-tauri-drag-region></div>
+						<span class="text-xs text-muted-foreground" data-tauri-drag-region>{currentConnection.name} (disconnected)</span>
 					{/if}
 				</div>
 			{:else}
-				<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/20">
-					<Circle class="w-2 h-2 text-muted-foreground/50" />
-					<span class="text-xs text-muted-foreground">No connection</span>
+				<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/20" data-tauri-drag-region>
+					<Circle class="w-2 h-2 text-muted-foreground/50" data-tauri-drag-region />
+					<span class="text-xs text-muted-foreground" data-tauri-drag-region>No connection</span>
 				</div>
 			{/if}
 		</div>
 
-		<!-- Right section - Window controls -->
+		<!-- Right section - Window controls - NOT draggable -->
 		<div class="flex items-center">
 			<Button
 				variant="ghost"
