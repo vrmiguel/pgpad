@@ -179,9 +179,8 @@ ORDER BY table_name, ordinal_position;`);
 	});
 
 	onMount(() => {
-		// waits a bit to ensure DOM is ready
-		setTimeout(() => {
-			if (editorContainer) {
+		const initializeEditor = () => {
+			if (editorContainer && editorContainer.offsetParent !== null) {
 				monacoEditor = createMonacoEditor({
 					container: editorContainer,
 					value: sqlQuery,
@@ -194,8 +193,13 @@ ORDER BY table_name, ordinal_position;`);
 					theme: 'light', // TODO
 					schema: databaseSchema
 				});
+			} else {
+				// Try again if DOM not ready
+				requestAnimationFrame(initializeEditor);
 			}
-		}, 0);
+		};
+		
+		requestAnimationFrame(initializeEditor);
 	});
 
 	onDestroy(() => {

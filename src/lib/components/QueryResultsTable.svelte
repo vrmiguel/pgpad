@@ -138,9 +138,9 @@
 					{/each}
 				</thead>
 				<tbody>
-					{#each tableInstance.getRowModel().rows as row}
+					{#each tableInstance.getRowModel().rows as row (row.id)}
 						<tr class="border-b border-border/50 hover:bg-muted/30 transition-colors">
-							{#each row.getVisibleCells() as cell}
+							{#each row.getVisibleCells() as cell (cell.column.id)}
 								{@const value = cell.getValue()}
 								<td class="px-4 py-3 align-middle">
 									{#if value === null || value === undefined}
