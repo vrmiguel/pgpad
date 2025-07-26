@@ -4,6 +4,7 @@
 	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryHistoryEntry } from '$lib/commands.svelte';
 	import { createMonacoEditor, type CreateMonacoEditorOptions } from '$lib/monaco';
 	import { onMount, onDestroy } from 'svelte';
+	import QueryResultsTable from './QueryResultsTable.svelte';
 
 	interface Props {
 		selectedConnection: string | null;
@@ -187,7 +188,7 @@ ORDER BY table_name, ordinal_position;`);
 	</Card>
 
 	<!-- Results Section -->
-	<div class="flex gap-4 h-80">
+	<div class="flex gap-4 min-h-96">
 		<!-- Query Results -->
 		<Card class="flex-1">
 			<CardHeader>
@@ -199,39 +200,21 @@ ORDER BY table_name, ordinal_position;`);
 					{/if}
 				</CardTitle>
 			</CardHeader>
-			<CardContent class="p-0">
-				<div class="overflow-auto h-60">
-					{#if results.length > 0}
-						<table class="w-full text-sm">
-							<thead class="bg-gray-50 sticky top-0">
-								<tr>
-									{#each Object.keys(results[0]) as column}
-										<th class="text-left p-3 font-medium text-gray-700 border-b">
-											{column}
-										</th>
-									{/each}
-								</tr>
-							</thead>
-							<tbody>
-								{#each results as row, i}
-									<tr class="border-b hover:bg-gray-50">
-										{#each Object.values(row) as value}
-											<td class="p-3 text-gray-900">{value}</td>
-										{/each}
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					{:else}
-						<div class="flex items-center justify-center h-60 text-gray-500">
-							<div class="text-center">
-								<Table class="w-8 h-8 mx-auto mb-2 opacity-50" />
-								<p class="text-sm">No results to display</p>
-								<p class="text-xs text-gray-400 mt-1">Run a query to see results here</p>
-							</div>
+			<CardContent class="p-4">
+				{#if results.length > 0 && queryResult?.columns}
+					<QueryResultsTable
+						data={results}
+						columns={queryResult.columns}
+					/>
+				{:else}
+					<div class="flex items-center justify-center h-80 text-muted-foreground">
+						<div class="text-center">
+							<Table class="w-8 h-8 mx-auto mb-2 opacity-50" />
+							<p class="text-sm">No results to display</p>
+							<p class="text-xs text-muted-foreground/70 mt-1">Run a query to see results here</p>
 						</div>
-					{/if}
-				</div>
+					</div>
+				{/if}
 			</CardContent>
 		</Card>
 
