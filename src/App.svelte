@@ -1,6 +1,7 @@
 <script lang="ts">
 	import TitleBar from '$lib/components/TitleBar.svelte';
 	import PostgresEditor from '$lib/components/PostgresEditor.svelte';
+	import '$lib/stores/theme';
 
 	// Connection state for title bar
 	let currentConnection: { name: string; connected: boolean } | null = $state(null);

@@ -240,23 +240,23 @@
 									{#if connection.connected}
 										<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-success-light/20 border border-success/30">
 											<div class="w-2 h-2 rounded-full bg-success shadow-sm"></div>
-											<span class="text-sm font-semibold text-gray-900">Connected to: {connection.name}</span>
+											<span class="text-sm font-semibold text-foreground">Connected to: {connection.name}</span>
 										</div>
 									{:else if establishingConnections.has(connection.id)}
 										<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/30">
 											<div class="w-2 h-2 rounded-full bg-primary animate-pulse shadow-sm"></div>
-											<span class="text-sm font-semibold text-gray-900">Connecting to: {connection.name}</span>
+											<span class="text-sm font-semibold text-foreground">Connecting to: {connection.name}</span>
 										</div>
 									{:else}
 										<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/20 border border-border">
 											<div class="w-2 h-2 rounded-full bg-muted-foreground/60 shadow-sm"></div>
-											<span class="text-sm font-semibold text-gray-900">Selected: {connection.name} (double-click to connect)</span>
+											<span class="text-sm font-semibold text-foreground">Selected: {connection.name} (double-click to connect)</span>
 										</div>
 									{/if}
 								{/if}
 							{:else}
-								<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-warning-light/30 border border-warning/20">
-									<span class="text-sm font-semibold text-warning-foreground">Select a connection to start</span>
+								<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/30 border border-border">
+									<span class="text-sm font-semibold text-muted-foreground">Select a connection to start</span>
 								</div>
 							{/if}
 						</div>

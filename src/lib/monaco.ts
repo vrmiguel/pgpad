@@ -1,5 +1,7 @@
 import * as monaco from 'monaco-editor';
 import type { DatabaseSchema, TableInfo, ColumnInfo } from './commands.svelte';
+import { theme as themeStore, registerMonacoThemeCallback } from './stores/theme';
+import { get } from 'svelte/store';
 
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 
@@ -72,12 +74,14 @@ export interface CreateMonacoEditorOptions {
 	onExecute?: () => void;
 	onExecuteSelection?: (selectedText: string) => void;
 	disabled?: boolean;
-	theme?: 'light' | 'dark';
 	schema?: DatabaseSchema | null;
 }
 
 export function createMonacoEditor(options: CreateMonacoEditorOptions) {
-	const { container, value, onChange, onExecute, onExecuteSelection, disabled = false, theme = 'light', schema = null } = options;
+	const { container, value, onChange, onExecute, onExecuteSelection, disabled = false, schema = null } = options;
+
+	let currentTheme: 'light' | 'dark' = get(themeStore);
+	const unsubscribeTheme = themeStore.subscribe(t => currentTheme = t);
 
 	let currentSchema = schema;
 
@@ -181,7 +185,7 @@ export function createMonacoEditor(options: CreateMonacoEditorOptions) {
 					label: 'LEFT JOIN',
 					kind: monaco.languages.CompletionItemKind.Keyword,
 					insertText: 'LEFT JOIN ',
-					documentation: 'LEFT JOIN clause', 
+					documentation: 'LEFT JOIN clause',
 					range
 				},
 				{
@@ -211,7 +215,7 @@ export function createMonacoEditor(options: CreateMonacoEditorOptions) {
 	const editor = monaco.editor.create(container, {
 		value,
 		language: 'sql',
-		theme: theme === 'dark' ? 'vs-dark' : 'vs',
+		theme: currentTheme === 'dark' ? 'vs-dark' : 'vs',
 		wordWrap: 'on',
 		lineNumbers: 'on',
 		minimap: {
@@ -250,7 +254,7 @@ export function createMonacoEditor(options: CreateMonacoEditorOptions) {
 				return;
 			}
 		}
-		
+
 		onExecute?.();
 	});
 
@@ -286,6 +290,8 @@ export function createMonacoEditor(options: CreateMonacoEditorOptions) {
 		monaco.editor.setTheme(newTheme === 'dark' ? 'vs-dark' : 'vs');
 	};
 
+	const unregisterThemeCallback = registerMonacoThemeCallback(updateTheme);
+
 	const getExecutableText = () => {
 		const selection = editor.getSelection();
 		if (selection && !selection.isEmpty()) {
@@ -320,6 +326,8 @@ export function createMonacoEditor(options: CreateMonacoEditorOptions) {
 			currentSchema = newSchema;
 		},
 		dispose: () => {
+			unsubscribeTheme();
+			unregisterThemeCallback();
 			completionProvider.dispose();
 			editor.dispose();
 		}

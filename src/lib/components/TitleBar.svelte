@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Database, Minus, Square, X, Circle } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
+	import ThemeToggle from './ThemeToggle.svelte';
 	import { onMount } from 'svelte';
 
 	interface Props {
@@ -105,8 +106,10 @@
 			{/if}
 		</div>
 
-		<!-- Right spacer to balance layout - DRAGGABLE -->
-		<div class="w-16" data-tauri-drag-region></div>
+		<!-- Right section with theme toggle - NOT draggable on macOS -->
+		<div class="flex items-center pr-4">
+			<ThemeToggle size="sm" class="h-6 w-6 p-0" />
+		</div>
 	{:else}
 		<!-- Windows/Linux controls (right side) -->
 		<!-- Left section - App info - DRAGGABLE -->
@@ -138,8 +141,9 @@
 			{/if}
 		</div>
 
-		<!-- Right section - Window controls - NOT draggable -->
-		<div class="flex items-center">
+		<!-- Right section - Theme toggle and Window controls - NOT draggable -->
+		<div class="flex items-center gap-1">
+			<ThemeToggle size="sm" class="h-7 w-7 p-0 mr-1" />
 			<Button
 				variant="ghost"
 				size="sm"

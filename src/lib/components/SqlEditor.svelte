@@ -333,10 +333,10 @@ ORDER BY table_name, ordinal_position;`);
 										<div class="space-y-2 p-3">
 											{#each queryHistory as query}
 												<div class="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer">
-													<div class="font-mono text-xs text-gray-600 mb-1 truncate">
+													<div class="font-mono text-xs text-muted-foreground mb-1 truncate">
 														{query.query_text}
 													</div>
-													<div class="flex items-center justify-between text-xs text-gray-500">
+													<div class="flex items-center justify-between text-xs text-muted-foreground">
 														<span>{formatTimestamp(query.executed_at)}</span>
 														<div class="flex items-center gap-2">
 															<span class="px-1.5 py-0.5 rounded text-xs {query.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
@@ -346,7 +346,7 @@ ORDER BY table_name, ordinal_position;`);
 														</div>
 													</div>
 													{#if query.status === 'success'}
-														<div class="text-xs text-gray-400 mt-1">
+														<div class="text-xs text-muted-foreground/70 mt-1">
 															{query.row_count} row{query.row_count !== 1 ? 's' : ''}
 														</div>
 													{:else if query.error_message}
@@ -358,11 +358,11 @@ ORDER BY table_name, ordinal_position;`);
 											{/each}
 										</div>
 									{:else}
-										<div class="flex items-center justify-center h-full text-gray-500">
+										<div class="flex items-center justify-center h-full text-muted-foreground">
 											<div class="text-center">
 												<Clock class="w-8 h-8 mx-auto mb-2 opacity-50" />
 												<p class="text-sm">No queries yet</p>
-												<p class="text-xs text-gray-400 mt-1">Your query history will appear here</p>
+												<p class="text-xs text-muted-foreground/70 mt-1">Your query history will appear here</p>
 											</div>
 										</div>
 									{/if}

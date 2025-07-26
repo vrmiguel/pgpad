@@ -70,9 +70,9 @@
 												<span class="text-xs font-medium text-primary">Connecting...</span>
 											</div>
 										{:else}
-											<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-warning-light/30 border border-warning/20">
-												<AlertTriangle class="w-3 h-3 text-warning" />
-												<span class="text-xs font-medium text-warning-foreground/80">Disconnected</span>
+											<div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/30 border border-border">
+												<AlertTriangle class="w-3 h-3 text-muted-foreground" />
+												<span class="text-xs font-medium text-muted-foreground">Disconnected</span>
 											</div>
 										{/if}
 									</div>
