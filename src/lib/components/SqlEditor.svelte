@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
+	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { Table, FileText, Clock, Search } from '@lucide/svelte';
 	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryHistoryEntry } from '$lib/commands.svelte';
 	import { createMonacoEditor, type CreateMonacoEditorOptions } from '$lib/monaco';
@@ -174,129 +175,147 @@ ORDER BY table_name, ordinal_position;`);
 	}) || []);
 </script>
 
-<div class="flex-1 flex flex-col p-4 gap-4">
-	<!-- SQL Editor -->
-	<Card class="flex-1">
-		<CardHeader>
-			<CardTitle class="flex items-center gap-2">
-				<FileText class="w-4 h-4" />
-				SQL Editor
-			</CardTitle>
-		</CardHeader>
-		<CardContent class="flex-1 p-0">
-			<div 
-				bind:this={editorContainer}
-				class="w-full h-full min-h-[300px]"
-			></div>
-		</CardContent>
-	</Card>
+<div class="flex-1 flex flex-col">
+	<ResizablePaneGroup direction="vertical" class="flex-1">
+		<!-- SQL Editor Pane -->
+		<ResizablePane defaultSize={60} minSize={30} maxSize={80}>
+			<div class="h-full p-4 pb-2">
+				<Card class="h-full flex flex-col">
+					<CardHeader class="flex-shrink-0">
+						<CardTitle class="flex items-center gap-2">
+							<FileText class="w-4 h-4" />
+							SQL Editor
+						</CardTitle>
+					</CardHeader>
+					<CardContent class="flex-1 p-0 min-h-0">
+						<div 
+							bind:this={editorContainer}
+							class="w-full h-full"
+						></div>
+					</CardContent>
+				</Card>
+			</div>
+		</ResizablePane>
 
-	<!-- Results Section -->
-	<div class="flex gap-4 h-96">
-		<!-- Query Results -->
-		<Card class="flex-1 flex flex-col overflow-hidden h-full">
-			<CardHeader class="pb-2 flex-shrink-0">
-				<CardTitle class="flex items-center gap-2 mb-3">
-					<Table class="w-4 h-4" />
-					Results
-					{#if results.length > 0}
-						<span class="text-sm font-normal text-muted-foreground">({results.length} rows)</span>
-					{/if}
-				</CardTitle>
-				
-				{#if results.length > 0 && queryResult?.columns}
-					<!-- Search integrated into header -->
-					<div class="flex items-center justify-between gap-4">
-						<div class="flex items-center gap-2 flex-1 max-w-sm">
-							<Search class="w-4 h-4 text-muted-foreground" />
-							<Input
-								placeholder="Search all columns..."
-								bind:value={globalFilter}
-								class="h-8"
-							/>
-						</div>
-						
-						<div class="flex items-center gap-2 text-sm text-muted-foreground">
-							<span>
-								{table?.getFilteredRowModel().rows.length || 0} of {table?.getCoreRowModel().rows.length || 0} row(s)
-							</span>
-						</div>
-					</div>
-				{/if}
-			</CardHeader>
-			
-			{#if results.length > 0 && queryResult?.columns}
-				<!-- Table fills remaining space -->
-				<div class="flex-1 flex flex-col min-h-0">
-					<QueryResultsTable
-						data={results}
-						columns={queryResult.columns}
-						bind:table
-						bind:globalFilter
-					/>
-				</div>
-			{:else}
-				<div class="flex-1 flex items-center justify-center text-muted-foreground">
-					<div class="text-center">
-						<div class="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mx-auto mb-4">
-							<Table class="w-8 h-8 text-muted-foreground/50" />
-						</div>
-						<p class="text-sm font-medium">No results to display</p>
-						<p class="text-xs text-muted-foreground/70 mt-1">Run a query to see results here</p>
-					</div>
-				</div>
-			{/if}
-		</Card>
+		<ResizableHandle />
 
-		<!-- Query History -->
-		<Card class="w-80">
-			<CardHeader>
-				<CardTitle class="flex items-center gap-2">
-					<Clock class="w-4 h-4" />
-					Query History
-				</CardTitle>
-			</CardHeader>
-			<CardContent class="p-0">
-				<div class="overflow-auto h-60">
-					{#if queryHistory.length > 0}
-						<div class="space-y-2 p-3">
-							{#each queryHistory as query}
-								<div class="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer">
-									<div class="font-mono text-xs text-gray-600 mb-1 truncate">
-										{query.query_text}
-									</div>
-									<div class="flex items-center justify-between text-xs text-gray-500">
-										<span>{formatTimestamp(query.executed_at)}</span>
-										<div class="flex items-center gap-2">
-											<span class="px-1.5 py-0.5 rounded text-xs {query.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
-												{query.status}
+		<!-- Results Section Pane -->
+		<ResizablePane defaultSize={40} minSize={20}>
+			<div class="h-full px-4 pt-2 pb-4">
+				<ResizablePaneGroup direction="horizontal" class="h-full">
+					<!-- Query Results Pane -->
+					<ResizablePane defaultSize={70} minSize={40}>
+						<Card class="h-full flex flex-col overflow-hidden mr-2">
+							<CardHeader class="pb-2 flex-shrink-0">
+								<CardTitle class="flex items-center gap-2 mb-3">
+									<Table class="w-4 h-4" />
+									Results
+									{#if results.length > 0}
+										<span class="text-sm font-normal text-muted-foreground">({results.length} rows)</span>
+									{/if}
+								</CardTitle>
+								
+								{#if results.length > 0 && queryResult?.columns}
+									<!-- Search integrated into header -->
+									<div class="flex items-center justify-between gap-4">
+										<div class="flex items-center gap-2 flex-1 max-w-sm">
+											<Search class="w-4 h-4 text-muted-foreground" />
+											<Input
+												placeholder="Search all columns..."
+												bind:value={globalFilter}
+												class="h-8"
+											/>
+										</div>
+										
+										<div class="flex items-center gap-2 text-sm text-muted-foreground">
+											<span>
+												{table?.getFilteredRowModel().rows.length || 0} of {table?.getCoreRowModel().rows.length || 0} row(s)
 											</span>
-											<span>{formatDuration(query.duration_ms)}</span>
 										</div>
 									</div>
-									{#if query.status === 'success'}
-										<div class="text-xs text-gray-400 mt-1">
-											{query.row_count} row{query.row_count !== 1 ? 's' : ''}
+								{/if}
+							</CardHeader>
+							
+							{#if results.length > 0 && queryResult?.columns}
+								<!-- Table fills remaining space -->
+								<div class="flex-1 flex flex-col min-h-0">
+									<QueryResultsTable
+										data={results}
+										columns={queryResult.columns}
+										bind:table
+										bind:globalFilter
+									/>
+								</div>
+							{:else}
+								<div class="flex-1 flex items-center justify-center text-muted-foreground">
+									<div class="text-center">
+										<div class="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mx-auto mb-4">
+											<Table class="w-8 h-8 text-muted-foreground/50" />
 										</div>
-									{:else if query.error_message}
-										<div class="text-xs text-red-500 mt-1 truncate">
-											{query.error_message}
+										<p class="text-sm font-medium">No results to display</p>
+										<p class="text-xs text-muted-foreground/70 mt-1">Run a query to see results here</p>
+									</div>
+								</div>
+							{/if}
+						</Card>
+					</ResizablePane>
+
+					<ResizableHandle />
+
+					<!-- Query History Pane -->
+					<ResizablePane defaultSize={30} minSize={25} maxSize={50}>
+						<Card class="h-full flex flex-col ml-2">
+							<CardHeader class="flex-shrink-0">
+								<CardTitle class="flex items-center gap-2">
+									<Clock class="w-4 h-4" />
+									Query History
+								</CardTitle>
+							</CardHeader>
+							<CardContent class="p-0 flex-1 min-h-0">
+								<div class="overflow-auto h-full">
+									{#if queryHistory.length > 0}
+										<div class="space-y-2 p-3">
+											{#each queryHistory as query}
+												<div class="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer">
+													<div class="font-mono text-xs text-gray-600 mb-1 truncate">
+														{query.query_text}
+													</div>
+													<div class="flex items-center justify-between text-xs text-gray-500">
+														<span>{formatTimestamp(query.executed_at)}</span>
+														<div class="flex items-center gap-2">
+															<span class="px-1.5 py-0.5 rounded text-xs {query.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+																{query.status}
+															</span>
+															<span>{formatDuration(query.duration_ms)}</span>
+														</div>
+													</div>
+													{#if query.status === 'success'}
+														<div class="text-xs text-gray-400 mt-1">
+															{query.row_count} row{query.row_count !== 1 ? 's' : ''}
+														</div>
+													{:else if query.error_message}
+														<div class="text-xs text-red-500 mt-1 truncate">
+															{query.error_message}
+														</div>
+													{/if}
+												</div>
+											{/each}
+										</div>
+									{:else}
+										<div class="flex items-center justify-center h-full text-gray-500">
+											<div class="text-center">
+												<Clock class="w-8 h-8 mx-auto mb-2 opacity-50" />
+												<p class="text-sm">No queries yet</p>
+												<p class="text-xs text-gray-400 mt-1">Your query history will appear here</p>
+											</div>
 										</div>
 									{/if}
 								</div>
-							{/each}
-						</div>
-					{:else}
-						<div class="flex items-center justify-center h-60 text-gray-500">
-							<div class="text-center">
-								<Clock class="w-8 h-8 mx-auto mb-2 opacity-50" />
-								<p class="text-sm">No queries yet</p>
-								<p class="text-xs text-gray-400 mt-1">Your query history will appear here</p>
-							</div>
-						</div>
-					{/if}
-				</div>
-			</CardContent>
-		</Card>
-	</div>
+							</CardContent>
+						</Card>
+					</ResizablePane>
+				</ResizablePaneGroup>
+			</div>
+		</ResizablePane>
+	</ResizablePaneGroup>
 </div> 
