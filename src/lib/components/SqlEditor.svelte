@@ -15,7 +15,6 @@
 	let { selectedConnection, connections }: Props = $props();
 	
 	let sqlQuery = $state(`-- Welcome to PgPad!
--- Write your SQL queries here
 
 SELECT 
     table_name,

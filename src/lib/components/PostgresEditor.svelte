@@ -8,6 +8,16 @@
 	import { DatabaseCommands, type ConnectionInfo, type ConnectionConfig } from '$lib/commands.svelte';
 	import { onMount } from 'svelte';
 
+	interface Props {
+		currentConnection?: {
+			name: string;
+			connected: boolean;
+		} | null;
+		isConnecting?: boolean;
+	}
+
+	let { currentConnection = $bindable(), isConnecting = $bindable() }: Props = $props();
+
 	let showConnectionForm = $state(false);
 	let selectedConnection = $state<string | null>(null);
 	let connections = $state<ConnectionInfo[]>([]);
@@ -16,6 +26,23 @@
 	let establishingConnections = $state<Set<string>>(new Set());
 	
 	let isSidebarCollapsed = $state(false);
+
+	// Derived connection state for title bar
+	$effect(() => {
+		if (selectedConnection) {
+			const connection = connections.find(c => c.id === selectedConnection);
+			if (connection) {
+				currentConnection = {
+					name: connection.name,
+					connected: connection.connected
+				};
+				isConnecting = establishingConnections.has(connection.id);
+			}
+		} else {
+			currentConnection = null;
+			isConnecting = false;
+		}
+	});
 
 	onMount(async () => {
 		try {

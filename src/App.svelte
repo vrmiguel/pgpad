@@ -1,5 +1,15 @@
 <script lang="ts">
+	import TitleBar from '$lib/components/TitleBar.svelte';
 	import PostgresEditor from '$lib/components/PostgresEditor.svelte';
+
+	// Connection state for title bar
+	let currentConnection: { name: string; connected: boolean } | null = $state(null);
+	let isConnecting = $state(false);
 </script>
 
-<PostgresEditor />
+<div class="h-screen flex flex-col overflow-hidden">
+	<TitleBar {currentConnection} {isConnecting} />
+	<div class="flex-1 overflow-hidden">
+		<PostgresEditor bind:currentConnection bind:isConnecting />
+	</div>
+</div>
