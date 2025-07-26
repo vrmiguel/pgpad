@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Table, FileText, Clock } from '@lucide/svelte';
+	import { Input } from '$lib/components/ui/input';
+	import { Table, FileText, Clock, Search } from '@lucide/svelte';
 	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryHistoryEntry } from '$lib/commands.svelte';
 	import { createMonacoEditor, type CreateMonacoEditorOptions } from '$lib/monaco';
 	import { onMount, onDestroy } from 'svelte';
@@ -26,7 +27,11 @@ ORDER BY table_name, ordinal_position;`);
 
 	let queryResult = $state<QueryResult | null>(null);
 	let isExecuting = $state(false);
-	let queryHistory = $state<QueryHistoryEntry[]>([]);
+	let queryHistory: QueryHistoryEntry[] = $state([]);
+
+	// Table state for binding
+	let table: any = $state();
+	let globalFilter = $state('');
 
 	// Load query history from storage
 	async function loadQueryHistory() {
@@ -188,34 +193,60 @@ ORDER BY table_name, ordinal_position;`);
 	</Card>
 
 	<!-- Results Section -->
-	<div class="flex gap-4 min-h-96">
+	<div class="flex gap-4 h-96">
 		<!-- Query Results -->
-		<Card class="flex-1">
-			<CardHeader>
-				<CardTitle class="flex items-center gap-2">
+		<Card class="flex-1 flex flex-col overflow-hidden h-full">
+			<CardHeader class="pb-2 flex-shrink-0">
+				<CardTitle class="flex items-center gap-2 mb-3">
 					<Table class="w-4 h-4" />
 					Results
 					{#if results.length > 0}
-						<span class="text-sm font-normal text-gray-500">({results.length} rows)</span>
+						<span class="text-sm font-normal text-muted-foreground">({results.length} rows)</span>
 					{/if}
 				</CardTitle>
-			</CardHeader>
-			<CardContent class="p-4">
+				
 				{#if results.length > 0 && queryResult?.columns}
-					<QueryResultsTable
-						data={results}
-						columns={queryResult.columns}
-					/>
-				{:else}
-					<div class="flex items-center justify-center h-80 text-muted-foreground">
-						<div class="text-center">
-							<Table class="w-8 h-8 mx-auto mb-2 opacity-50" />
-							<p class="text-sm">No results to display</p>
-							<p class="text-xs text-muted-foreground/70 mt-1">Run a query to see results here</p>
+					<!-- Search integrated into header -->
+					<div class="flex items-center justify-between gap-4">
+						<div class="flex items-center gap-2 flex-1 max-w-sm">
+							<Search class="w-4 h-4 text-muted-foreground" />
+							<Input
+								placeholder="Search all columns..."
+								bind:value={globalFilter}
+								class="h-8"
+							/>
+						</div>
+						
+						<div class="flex items-center gap-2 text-sm text-muted-foreground">
+							<span>
+								{table?.getFilteredRowModel().rows.length || 0} of {table?.getCoreRowModel().rows.length || 0} row(s)
+							</span>
 						</div>
 					</div>
 				{/if}
-			</CardContent>
+			</CardHeader>
+			
+			{#if results.length > 0 && queryResult?.columns}
+				<!-- Table fills remaining space -->
+				<div class="flex-1 flex flex-col min-h-0">
+					<QueryResultsTable
+						data={results}
+						columns={queryResult.columns}
+						bind:table
+						bind:globalFilter
+					/>
+				</div>
+			{:else}
+				<div class="flex-1 flex items-center justify-center text-muted-foreground">
+					<div class="text-center">
+						<div class="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mx-auto mb-4">
+							<Table class="w-8 h-8 text-muted-foreground/50" />
+						</div>
+						<p class="text-sm font-medium">No results to display</p>
+						<p class="text-xs text-muted-foreground/70 mt-1">Run a query to see results here</p>
+					</div>
+				</div>
+			{/if}
 		</Card>
 
 		<!-- Query History -->

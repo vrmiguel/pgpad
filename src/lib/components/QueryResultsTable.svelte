@@ -17,14 +17,15 @@
 	interface Props {
 		data: Record<string, any>[];
 		columns: string[];
+		table?: any;
+		globalFilter?: string;
 	}
 
-	let { data, columns }: Props = $props();
+	let { data, columns, table = $bindable(), globalFilter = $bindable('') }: Props = $props();
 
 	// Table state
 	let sorting = $state<SortingState>([]);
 	let columnFilters = $state<ColumnFiltersState>([]);
-	let globalFilter = $state('');
 	let pagination = $state<PaginationState>({
 		pageIndex: 0,
 		pageSize: 50
@@ -58,7 +59,7 @@
 	);
 
 	// Create the table
-	const table = createSvelteTable({
+	const tableInstance = createSvelteTable({
 		get data() {
 			return data;
 		},
@@ -96,41 +97,26 @@
 		getFilteredRowModel: getFilteredRowModel(),
 		getPaginationRowModel: getPaginationRowModel()
 	});
+
+	// Expose table to parent
+	table = tableInstance;
 </script>
 
-<div class="space-y-4">
-	<!-- Search and Controls -->
-	<div class="flex items-center justify-between gap-4">
-		<div class="flex items-center gap-2 flex-1 max-w-sm">
-			<Search class="w-4 h-4 text-muted-foreground" />
-			<Input
-				placeholder="Search all columns..."
-				bind:value={globalFilter}
-				class="h-8"
-			/>
-		</div>
-		
-		<div class="flex items-center gap-2 text-sm text-muted-foreground">
-			<span>
-				{table.getFilteredRowModel().rows.length} of {table.getCoreRowModel().rows.length} row(s)
-			</span>
-		</div>
-	</div>
-
-	<!-- Table -->
-	<div class="rounded-lg border border-border shadow-sm overflow-hidden">
-		<div class="overflow-auto max-h-[400px]">
+<div class="flex flex-col h-full">
+	<!-- Table content - constrain height to force scrolling -->
+	<div class="flex-1 min-h-0">
+		<div class="h-full overflow-auto">
 			<table class="w-full text-sm">
-				<thead class="bg-muted/50 sticky top-0">
-					{#each table.getHeaderGroups() as headerGroup}
-						<tr class="border-b border-border">
+				<thead class="bg-muted/80 backdrop-blur-sm sticky top-0 z-10 border-b border-border">
+					{#each tableInstance.getHeaderGroups() as headerGroup}
+						<tr>
 							{#each headerGroup.headers as header}
-								<th class="h-12 px-4 text-left align-middle font-semibold text-muted-foreground">
+								<th class="h-11 px-4 text-left align-middle font-semibold text-foreground bg-muted/90 backdrop-blur-sm">
 									{#if !header.isPlaceholder}
 										<Button
 											variant="ghost"
 											size="sm"
-											class="h-8 p-0 font-semibold hover:bg-accent"
+											class="h-8 p-0 font-semibold hover:bg-accent/50 -ml-2"
 											onclick={() => header.column.toggleSorting(header.column.getIsSorted() === 'asc')}
 										>
 											<FlexRender
@@ -138,11 +124,11 @@
 												context={header.getContext()}
 											/>
 											{#if header.column.getIsSorted() === 'asc'}
-												<ChevronUp class="ml-2 h-4 w-4" />
+												<ChevronUp class="ml-1 h-3 w-3 text-muted-foreground" />
 											{:else if header.column.getIsSorted() === 'desc'}
-												<ChevronDown class="ml-2 h-4 w-4" />
+												<ChevronDown class="ml-1 h-3 w-3 text-muted-foreground" />
 											{:else}
-												<ChevronsUpDown class="ml-2 h-4 w-4" />
+												<ChevronsUpDown class="ml-1 h-3 w-3 text-muted-foreground/60" />
 											{/if}
 										</Button>
 									{/if}
@@ -152,27 +138,27 @@
 					{/each}
 				</thead>
 				<tbody>
-					{#each table.getRowModel().rows as row}
-						<tr class="border-b border-border hover:bg-muted/50 transition-colors">
+					{#each tableInstance.getRowModel().rows as row}
+						<tr class="border-b border-border/50 hover:bg-muted/30 transition-colors">
 							{#each row.getVisibleCells() as cell}
 								{@const value = cell.getValue()}
-								<td class="p-4 align-middle">
+								<td class="px-4 py-3 align-middle">
 									{#if value === null || value === undefined}
-										<span class="text-muted-foreground italic text-xs">NULL</span>
+										<span class="text-muted-foreground italic text-xs bg-muted/30 px-1.5 py-0.5 rounded">NULL</span>
 									{:else if typeof value === 'boolean'}
-										<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {value ? 'bg-success-light/20 text-success-foreground' : 'bg-muted/20 text-muted-foreground'}">
+										<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {value ? 'bg-success-light/30 text-success-foreground border border-success/20' : 'bg-muted/40 text-muted-foreground border border-border'}">
 											{value ? 'true' : 'false'}
 										</span>
 									{:else if typeof value === 'number'}
-										<span class="font-mono">{value.toLocaleString()}</span>
+										<span class="font-mono text-foreground">{value.toLocaleString()}</span>
 									{:else}
 										{@const stringValue = String(value)}
 										{#if stringValue.length > 100}
-											<span class="truncate max-w-xs block" title={stringValue}>
+											<span class="truncate max-w-xs block text-foreground" title={stringValue}>
 												{stringValue}
 											</span>
 										{:else}
-											{stringValue}
+											<span class="text-foreground">{stringValue}</span>
 										{/if}
 									{/if}
 								</td>
@@ -180,8 +166,16 @@
 						</tr>
 					{:else}
 						<tr>
-							<td colspan={columns.length} class="h-24 text-center text-muted-foreground">
-								No results found.
+							<td colspan={columns.length} class="h-32 text-center text-muted-foreground">
+								<div class="flex flex-col items-center gap-2">
+									<div class="w-12 h-12 rounded-full bg-muted/20 flex items-center justify-center">
+										<Search class="w-5 h-5 text-muted-foreground/50" />
+									</div>
+									<div>
+										<p class="text-sm font-medium">No results found</p>
+										<p class="text-xs text-muted-foreground/70">Try adjusting your search terms</p>
+									</div>
+								</div>
 							</td>
 						</tr>
 					{/each}
@@ -190,48 +184,50 @@
 		</div>
 	</div>
 
-	<!-- Pagination -->
-	{#if table.getPageCount() > 1}
-		<div class="flex items-center justify-between">
-			<div class="flex items-center gap-2">
+	<!-- Pagination at bottom -->
+	{#if tableInstance.getPageCount() > 1}
+		<div class="flex items-center justify-between pt-3 px-4 flex-shrink-0 border-t border-border/30">
+			<div class="flex items-center gap-3">
 				<p class="text-sm text-muted-foreground">
-					Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+					Page {tableInstance.getState().pagination.pageIndex + 1} of {tableInstance.getPageCount()}
 				</p>
-				<select
-					bind:value={pagination.pageSize}
-					class="h-8 w-16 rounded border border-border bg-background text-sm"
-				>
-					{#each [25, 50, 100, 200] as pageSize}
-						<option value={pageSize}>{pageSize}</option>
-					{/each}
-				</select>
-				<span class="text-sm text-muted-foreground">rows per page</span>
+				<div class="flex items-center gap-2">
+					<select
+						bind:value={pagination.pageSize}
+						class="h-8 w-16 rounded-md border border-border bg-background text-sm focus:ring-2 focus:ring-ring focus:ring-offset-1"
+					>
+						{#each [25, 50, 100, 200] as pageSize}
+							<option value={pageSize}>{pageSize}</option>
+						{/each}
+					</select>
+					<span class="text-sm text-muted-foreground">rows</span>
+				</div>
 			</div>
 
-			<div class="flex items-center gap-2">
+			<div class="flex items-center gap-1">
 				<Button
 					variant="outline"
 					size="sm"
-					onclick={() => table.previousPage()}
-					disabled={!table.getCanPreviousPage()}
+					onclick={() => tableInstance.previousPage()}
+					disabled={!tableInstance.getCanPreviousPage()}
 					class="h-8 w-8 p-0"
 				>
 					<ChevronLeft class="h-4 w-4" />
 				</Button>
 				
 				<!-- Page numbers -->
-				{#each Array.from({ length: Math.min(5, table.getPageCount()) }, (_, i) => {
-					const currentPage = table.getState().pagination.pageIndex;
-					const totalPages = table.getPageCount();
+				{#each Array.from({ length: Math.min(5, tableInstance.getPageCount()) }, (_, i) => {
+					const currentPage = tableInstance.getState().pagination.pageIndex;
+					const totalPages = tableInstance.getPageCount();
 					let startPage = Math.max(0, currentPage - 2);
 					let endPage = Math.min(totalPages - 1, startPage + 4);
 					startPage = Math.max(0, endPage - 4);
 					return startPage + i;
 				}) as pageIndex}
 					<Button
-						variant={pageIndex === table.getState().pagination.pageIndex ? "default" : "outline"}
+						variant={pageIndex === tableInstance.getState().pagination.pageIndex ? "default" : "outline"}
 						size="sm"
-						onclick={() => table.setPageIndex(pageIndex)}
+						onclick={() => tableInstance.setPageIndex(pageIndex)}
 						class="h-8 w-8 p-0"
 					>
 						{pageIndex + 1}
@@ -241,8 +237,8 @@
 				<Button
 					variant="outline"
 					size="sm"
-					onclick={() => table.nextPage()}
-					disabled={!table.getCanNextPage()}
+					onclick={() => tableInstance.nextPage()}
+					disabled={!tableInstance.getCanNextPage()}
 					class="h-8 w-8 p-0"
 				>
 					<ChevronRight class="h-4 w-4" />
