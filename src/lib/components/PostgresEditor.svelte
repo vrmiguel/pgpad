@@ -17,7 +17,12 @@
 	let isSidebarCollapsed = $state(false);
 
 	onMount(async () => {
-		await loadConnections();
+		try {
+			await DatabaseCommands.initializeConnections();
+			await loadConnections();
+		} catch (error) {
+			console.error('Failed to initialize connections:', error);
+		}
 	});
 
 	async function loadConnections() {

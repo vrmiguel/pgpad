@@ -49,6 +49,6 @@ where
 {
     match conn.await {
         Ok(()) => println!("Connected successfully"),
-        Err(err) => eprintln!("Failed to connect to Postgres: {err}"),
+        Err(err) => eprintln!("Failed to connect to Postgres: {err:?}"),
     }
 }

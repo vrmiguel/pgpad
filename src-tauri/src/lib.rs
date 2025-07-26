@@ -3,6 +3,7 @@ mod postgres;
 mod storage;
 
 use dashmap::DashMap;
+use log::info;
 
 use crate::{postgres::types::DatabaseConnection, storage::Storage};
 pub use error::{Error, Result};
@@ -17,6 +18,8 @@ impl AppState {
     pub fn new() -> Result<Self> {
         let data_dir = dirs::data_dir().expect("Failed to get data directory");
         let db_path = data_dir.join("pgpad").join("pgpad.db");
+
+        dbg!(&db_path);
 
         let storage = Storage::new(db_path)?;
 
@@ -57,7 +60,8 @@ pub fn run() {
             postgres::commands::disconnect_from_database,
             postgres::commands::execute_query,
             postgres::commands::get_connections,
-            postgres::commands::remove_connection
+            postgres::commands::remove_connection,
+            postgres::commands::initialize_connections
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

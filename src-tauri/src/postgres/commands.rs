@@ -1,5 +1,6 @@
 use anyhow::Context;
 use uuid::Uuid;
+use tokio_postgres::{types::Type, Row};
 
 use crate::{
     error::Error,
@@ -9,6 +10,123 @@ use crate::{
     },
     AppState,
 };
+
+/// Taken from https://github.com/sfackler/rust-postgres/issues/879#issuecomment-1084149480
+#[derive(Debug)]
+struct NullChecker(bool);
+
+impl tokio_postgres::types::FromSql<'_> for NullChecker {
+    fn from_sql(_ty: &tokio_postgres::types::Type, _raw: &[u8]) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        Ok(Self(false))
+    }
+
+    fn from_sql_null(_ty: &tokio_postgres::types::Type) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        Ok(Self(true))
+    }
+
+    fn accepts(_ty: &tokio_postgres::types::Type) -> bool {
+        true
+    }
+}
+
+/// Move to a separate file
+fn postgres_value_to_json(
+    row: &tokio_postgres::Row,
+    column_index: usize,
+) -> Result<serde_json::Value, anyhow::Error> {
+    let column = &row.columns()[column_index];
+    let pg_type = column.type_();
+
+    // Check for NULL
+    if row.try_get::<_, NullChecker>(column_index)?.0 {
+        return Ok(serde_json::Value::Null);
+    }
+
+    match *pg_type {
+        Type::BOOL => {
+            let value: bool = row.try_get(column_index)?;
+            Ok(serde_json::Value::Bool(value))
+        }
+
+        Type::INT2 => {
+            let value: i16 = row.try_get(column_index)?;
+            Ok(serde_json::Value::Number(value.into()))
+        }
+        Type::INT4 => {
+            let value: i32 = row.try_get(column_index)?;
+            Ok(serde_json::Value::Number(value.into()))
+        }
+        Type::INT8 => {
+            let value: i64 = row.try_get(column_index)?;
+            Ok(serde_json::Value::Number(value.into()))
+        }
+
+        Type::FLOAT4 => {
+            let value: f32 = row.try_get(column_index)?;
+            if let Some(num) = serde_json::Number::from_f64(value as f64) {
+                Ok(serde_json::Value::Number(num))
+            } else {
+                Ok(serde_json::Value::String(value.to_string()))
+            }
+        }
+        Type::FLOAT8 => {
+            let value: f64 = row.try_get(column_index)?;
+            if let Some(num) = serde_json::Number::from_f64(value) {
+                Ok(serde_json::Value::Number(num))
+            } else {
+                Ok(serde_json::Value::String(value.to_string()))
+            }
+        }
+
+        Type::NUMERIC => {
+            let value: String = row.try_get(column_index)?;
+            if let Ok(parsed) = value.parse::<i64>() {
+                Ok(serde_json::Value::Number(parsed.into()))
+            } else if let Ok(parsed) = value.parse::<f64>() {
+                if let Some(num) = serde_json::Number::from_f64(parsed) {
+                    Ok(serde_json::Value::Number(num))
+                } else {
+                    Ok(serde_json::Value::String(value))
+                }
+            } else {
+                Ok(serde_json::Value::String(value))
+            }
+        }
+
+        Type::JSON | Type::JSONB => {
+            let value: &str = row.try_get(column_index)?;
+            match serde_json::from_str(&value) {
+                Ok(json_value) => Ok(json_value),
+                Err(_) => Ok(serde_json::Value::String(value.to_string())),
+            }
+        }
+
+        Type::TEXT_ARRAY => {
+            let value: Vec<String> = row.try_get(column_index)?;
+            Ok(serde_json::Value::Array(
+                value.into_iter().map(serde_json::Value::String).collect()
+            ))
+        }
+        Type::INT4_ARRAY => {
+            let value: Vec<i32> = row.try_get(column_index)?;
+            Ok(serde_json::Value::Array(
+                value.into_iter().map(|v| serde_json::Value::Number(v.into())).collect()
+            ))
+        }
+        Type::INT8_ARRAY => {
+            let value: Vec<i64> = row.try_get(column_index)?;
+            Ok(serde_json::Value::Array(
+                value.into_iter().map(|v| serde_json::Value::Number(v.into())).collect()
+            ))
+        }
+
+        // Text and string types (default case)
+        _ => {
+            let value: String = row.try_get(column_index)?;
+            Ok(serde_json::Value::String(value))
+        }
+    }
+}
 
 #[tauri::command]
 pub async fn add_connection(
@@ -23,12 +141,15 @@ pub async fn add_connection(
         connected: false,
     };
 
+    
+    state.storage.save_connection(&info)?;
+
     let connection = DatabaseConnection {
         info: info.clone(),
         client: None,
     };
-
     state.connections.insert(id, connection);
+    
     Ok(info)
 }
 
@@ -37,6 +158,17 @@ pub async fn connect_to_database(
     connection_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<bool, Error> {
+    if !state.connections.contains_key(&connection_id) {
+        let stored_connections = state.storage.get_connections()?;
+        if let Some(stored_connection) = stored_connections.iter().find(|c| c.id == connection_id) {
+            let connection = DatabaseConnection {
+                info: stored_connection.clone(),
+                client: None,
+            };
+            state.connections.insert(connection_id.clone(), connection);
+        }
+    }
+
     let mut connection_entry = state
         .connections
         .get_mut(&connection_id)
@@ -48,6 +180,11 @@ pub async fn connect_to_database(
         Ok(client) => {
             connection.client = Some(client);
             connection.info.connected = true;
+            
+            if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                log::warn!("Failed to update last connected timestamp: {}", e);
+            }
+            
             Ok(true)
         }
         Err(e) => {
@@ -93,8 +230,12 @@ pub async fn execute_query(
 
     let start = std::time::Instant::now();
 
+    log::info!("Executing query: {}", query);
+
     match client.query(&query, &[]).await {
         Ok(rows) => {
+            log::info!("Query executed successfully, got rows: {:?}", rows);
+
             let duration = start.elapsed().as_millis() as u64;
 
             let columns = if rows.is_empty() {
@@ -111,12 +252,15 @@ pub async fn execute_query(
             for row in rows.iter() {
                 let mut result_row = Vec::new();
                 for i in 0..row.len() {
-                    let value: Option<String> = row.try_get(i).unwrap_or(None);
-                    result_row.push(
-                        value
-                            .map(serde_json::Value::String)
-                            .unwrap_or(serde_json::Value::Null),
-                    );
+                    let value = match postgres_value_to_json(row, i) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            log::error!("Error deserializing column: {:?}", e);
+                            serde_json::Value::Null
+                        }
+                    };
+                    log::info!("Deserialized value: {:?}", value);
+                    result_row.push(value);
                 }
                 result_rows.push(result_row);
             }
@@ -129,7 +273,7 @@ pub async fn execute_query(
             })
         }
         Err(e) => {
-            log::error!("Query execution failed: {}", e);
+            log::error!("Query execution failed: {:?}", e);
             Err(Error::Any(anyhow::anyhow!("Query failed: {}", e)))
         }
     }
@@ -139,12 +283,17 @@ pub async fn execute_query(
 pub async fn get_connections(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ConnectionInfo>, Error> {
-    let result: Vec<ConnectionInfo> = state
-        .connections
-        .iter()
-        .map(|entry| entry.value().info.clone())
-        .collect();
-    Ok(result)
+    let mut stored_connections = state.storage.get_connections()?;
+    
+    for connection in &mut stored_connections {
+        if let Some(runtime_connection) = state.connections.get(&connection.id) {
+            connection.connected = runtime_connection.info.connected;
+        } else {
+            connection.connected = false;
+        }
+    }
+    
+    Ok(stored_connections)
 }
 
 #[tauri::command]
@@ -152,7 +301,11 @@ pub async fn remove_connection(
     connection_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    
+    state.storage.remove_connection(&connection_id)?;
+    
     state.connections.remove(&connection_id);
+    
     Ok(())
 }
 
@@ -166,4 +319,22 @@ pub async fn test_connection(config: ConnectionConfig) -> Result<bool, Error> {
             Ok(false)
         }
     }
+}
+
+#[tauri::command]
+pub async fn initialize_connections(
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    let stored_connections = state.storage.get_connections()?;
+    
+    for stored_connection in stored_connections {
+        let connection = DatabaseConnection {
+            info: stored_connection,
+            client: None,
+        };
+        state.connections.insert(connection.info.id.clone(), connection);
+    }
+    
+    log::info!("Initialized {} connections from storage", state.connections.len());
+    Ok(())
 }

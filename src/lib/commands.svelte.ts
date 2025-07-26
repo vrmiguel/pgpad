@@ -110,4 +110,8 @@ export class DatabaseCommands {
 	static async removeConnection(connectionId: string): Promise<void> {
 		return await invoke('remove_connection', { connectionId });
 	}
+
+	static async initializeConnections(): Promise<void> {
+		return await invoke('initialize_connections');
+	}
 }
