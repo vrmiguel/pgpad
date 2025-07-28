@@ -15,6 +15,7 @@
 		currentScript: Script | null;
 		hasUnsavedChanges: boolean;
 		onContentChange?: (content: string) => void;
+		onLoadFromHistory?: (historyQuery: string) => void;
 	}
 
 	let { 
@@ -22,7 +23,8 @@
 		connections = $bindable(), 
 		currentScript = $bindable(),
 		hasUnsavedChanges = $bindable(),
-		onContentChange
+		onContentChange,
+		onLoadFromHistory
 	}: Props = $props();
 
 	let editorContainer = $state<HTMLElement>();
@@ -148,9 +150,9 @@ SELECT 1 as test;`);
 	}
 
 	function loadQueryFromHistory(historyQuery: string) {
-		sqlQuery = historyQuery;
-		if (monacoEditor) {
-			monacoEditor.updateValue(historyQuery);
+		if (onLoadFromHistory) {
+			// Create new tab with history content
+			onLoadFromHistory(historyQuery);
 		}
 	}
 

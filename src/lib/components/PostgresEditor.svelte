@@ -33,6 +33,10 @@
 	let unsavedChanges = $state<Set<number>>(new Set());
 	let scriptContents = $state<Map<number, string>>(new Map());
 	let currentEditorContent = $state<string>('');
+	// Scripts not yet persisted in SQLite
+	let newScripts = $state<Set<number>>(new Set());
+	// Let's use negative IDs for unpersisted scripts
+	let nextTempId = $state(-1);
 
 	let isSidebarCollapsed = $state(false);
 	let lastResizeTime = $state(0);
@@ -62,8 +66,15 @@
 	$effect(() => {
 		if (activeScriptId !== null && currentEditorContent !== undefined) {
 			const savedContent = scripts.find(s => s.id === activeScriptId)?.query_text || '';
+			const isNewScript = newScripts.has(activeScriptId);
 			
-			if (currentEditorContent !== savedContent) {
+			// For new scripts, only show unsaved changes if there's actual content
+			// For existing scripts, show unsaved changes if content differs from saved version
+			const shouldShowUnsaved = isNewScript 
+				? currentEditorContent.length > 0
+				: currentEditorContent !== savedContent;
+			
+			if (shouldShowUnsaved) {
 				if (!unsavedChanges.has(activeScriptId)) {
 					unsavedChanges = new Set([...unsavedChanges, activeScriptId]);
 				}
@@ -151,6 +162,7 @@
 		// Clean up state
 		scriptContents.delete(scriptId);
 		unsavedChanges = new Set([...unsavedChanges].filter(id => id !== scriptId));
+		newScripts.delete(scriptId);
 		
 		// If closing active tab, switch to another or clear active
 		if (activeScriptId === scriptId) {
@@ -172,11 +184,38 @@
 		openScript(script);
 	}
 
+	async function loadQueryFromHistory(historyQuery: string) {
+		const name = generateScriptName();
+		const tempId = nextTempId--;
+		
+		const newScript: Script = {
+			id: tempId,
+			name,
+			description: null,
+			query_text: historyQuery,
+			connection_id: null,
+			tags: null,
+			created_at: Date.now() / 1000,
+			updated_at: Date.now() / 1000,
+			favorite: false
+		};
+		
+		scripts.push(newScript);
+		// Mark as new/unsaved
+		newScripts.add(tempId);
+		openScript(newScript);
+	}
+
 	onMount(async () => {
 		try {
 			await DatabaseCommands.initializeConnections();
 			await loadConnections();
 			await loadScripts();
+			
+			// Create a new script on startup if no scripts are open
+			if (openScripts.length === 0) {
+				await createNewScript();
+			}
 		} catch (error) {
 			console.error('Failed to initialize connections:', error);
 		}
@@ -253,10 +292,10 @@
 		try {
 			const name = generateScriptName();
 			const content = '';
-			const scriptId = await DatabaseCommands.saveScript(name, content);
+			const tempId = nextTempId--; // Use negative ID for new scripts
 			
 			const newScript: Script = {
-				id: scriptId,
+				id: tempId,
 				name,
 				description: null,
 				query_text: content,
@@ -268,6 +307,8 @@
 			};
 			
 			scripts.push(newScript);
+			 // Mark as new/unsaved
+			newScripts.add(tempId);
 			openScript(newScript);
 		} catch (error) {
 			console.error('Failed to create new script:', error);
@@ -286,24 +327,63 @@
 			const currentScript = scripts.find(s => s.id === activeScriptId);
 			if (!currentScript) return;
 
-			await DatabaseCommands.updateScript(
-				activeScriptId,
-				currentScript.name,
-				content,
-				currentScript.connection_id,
-				currentScript.description
-			);
+			const isNewScript = newScripts.has(activeScriptId);
 			
-			// Update local state
-			currentScript.query_text = content;
-			currentScript.updated_at = Date.now() / 1000;
-			scriptContents.set(activeScriptId, content);
-			unsavedChanges = new Set([...unsavedChanges].filter(id => id !== activeScriptId));
-			
-			// Update scripts list
-			const scriptIndex = scripts.findIndex(s => s.id === activeScriptId);
-			if (scriptIndex !== -1) {
-				scripts[scriptIndex] = { ...currentScript };
+			if (isNewScript) {
+				const scriptId = await DatabaseCommands.saveScript(
+					currentScript.name,
+					content,
+					currentScript.connection_id || undefined,
+					currentScript.description || undefined
+				);
+				
+				// Update the script with the real database ID
+				const updatedScript = {
+					...currentScript,
+					id: scriptId,
+					query_text: content,
+					updated_at: Date.now() / 1000
+				};
+				
+				// Update all references to use the new ID
+				const scriptIndex = scripts.findIndex(s => s.id === activeScriptId);
+				if (scriptIndex !== -1) {
+					scripts[scriptIndex] = updatedScript;
+				}
+				
+				const openScriptIndex = openScripts.findIndex(s => s.id === activeScriptId);
+				if (openScriptIndex !== -1) {
+					openScripts[openScriptIndex] = updatedScript;
+				}
+				
+				// Update state management
+				scriptContents.delete(activeScriptId);
+				scriptContents.set(scriptId, content);
+				unsavedChanges.delete(activeScriptId);
+				newScripts.delete(activeScriptId);
+				
+				// Update active script ID
+				activeScriptId = scriptId;
+			} else {
+				await DatabaseCommands.updateScript(
+					activeScriptId,
+					currentScript.name,
+					content,
+					currentScript.connection_id || undefined,
+					currentScript.description || undefined
+				);
+				
+				// Update local state
+				currentScript.query_text = content;
+				currentScript.updated_at = Date.now() / 1000;
+				scriptContents.set(activeScriptId, content);
+				unsavedChanges = new Set([...unsavedChanges].filter(id => id !== activeScriptId));
+				
+				// Update scripts list
+				const scriptIndex = scripts.findIndex(s => s.id === activeScriptId);
+				if (scriptIndex !== -1) {
+					scripts[scriptIndex] = { ...currentScript };
+				}
 			}
 		} catch (error) {
 			console.error('Failed to save script:', error);
@@ -312,13 +392,21 @@
 
 	async function deleteScript(script: Script) {
 		try {
-			await DatabaseCommands.deleteScript(script.id);
+			const isNewScript = newScripts.has(script.id);
+			
+			if (!isNewScript) {
+				// delete from SQLite only if it was there before
+				await DatabaseCommands.deleteScript(script.id);
+			}
+			
+			// drop from local state
 			scripts = scripts.filter(s => s.id !== script.id);
 			
 			if (activeScriptId === script.id) {
 				activeScriptId = null;
 				scriptContents.delete(script.id);
 				unsavedChanges = new Set([...unsavedChanges].filter(id => id !== script.id));
+				newScripts.delete(script.id);
 			}
 		} catch (error) {
 			console.error('Failed to delete script:', error);
@@ -330,13 +418,18 @@
 			const script = scripts.find(s => s.id === scriptId);
 			if (!script) return;
 
-			await DatabaseCommands.updateScript(
-				scriptId,
-				newName,
-				script.query_text,
-				script.connection_id,
-				script.description
-			);
+			const isNewScript = newScripts.has(scriptId);
+			
+			if (!isNewScript) {
+				// Only update in SQLite if it was previously saved
+				await DatabaseCommands.updateScript(
+					scriptId,
+					newName,
+					script.query_text,
+					script.connection_id || undefined,
+					script.description || undefined
+				);
+			}
 
 			// Update the script in the scripts array
 			const scriptIndex = scripts.findIndex(s => s.id === scriptId);
@@ -348,7 +441,6 @@
 				};
 			}
 
-			// Update the script in the openScripts array (this is what the tabs display!)
 			const openScriptIndex = openScripts.findIndex(s => s.id === scriptId);
 			if (openScriptIndex !== -1) {
 				openScripts[openScriptIndex] = {
@@ -651,10 +743,11 @@
 					<SqlEditor 
 						{selectedConnection} 
 						{connections} 
-						currentScript={activeScriptId !== null ? scripts.find(s => s.id === activeScriptId) : null}
+						currentScript={activeScriptId !== null ? (scripts.find(s => s.id === activeScriptId) || null) : null}
 						hasUnsavedChanges={activeScriptId !== null && unsavedChanges.has(activeScriptId)}
 						bind:this={sqlEditorRef} 
 						onContentChange={handleEditorContentChange}
+						onLoadFromHistory={loadQueryFromHistory}
 					/>
 				</div>
 			</div>	

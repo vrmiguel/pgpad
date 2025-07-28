@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { X, Plus, Circle } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
 	import type { Script } from '$lib/commands.svelte';
 
 	interface Props {
@@ -103,13 +102,13 @@
 				>
 					<!-- Script name -->
 					{#if editingScriptId === script.id}
-						<Input
+						<input
 							bind:this={nameInput}
 							bind:value={editingName}
 							onkeydown={handleNameKeydown}
 							onblur={finishEditingName}
 							onclick={(e) => e.stopPropagation()}
-							class="h-6 text-sm font-medium bg-transparent border-none shadow-none p-0 focus:ring-1 focus:ring-primary"
+							class="h-6 text-sm font-medium bg-transparent border-none shadow-none p-0 focus:ring-1 focus:ring-primary focus:outline-none"
 						/>
 					{:else}
 						<span class="truncate font-medium">
