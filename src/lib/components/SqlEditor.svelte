@@ -2,8 +2,8 @@
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
-	import { Table, FileText, Clock, Search } from '@lucide/svelte';
-	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryHistoryEntry, type DatabaseSchema } from '$lib/commands.svelte';
+	import { Table, FileText, Clock, Search, Circle } from '@lucide/svelte';
+	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryHistoryEntry, type DatabaseSchema, type Script } from '$lib/commands.svelte';
 	import { createMonacoEditor, type CreateMonacoEditorOptions } from '$lib/monaco';
 	import { onMount, onDestroy } from 'svelte';
 	import QueryResultsTable from './QueryResultsTable.svelte';
@@ -11,10 +11,65 @@
 	interface Props {
 		selectedConnection: string | null;
 		connections: ConnectionInfo[];
+		currentScript?: Script | null;
+		hasUnsavedChanges?: boolean;
+		onScriptRename?: (scriptId: number, newName: string) => void;
 	}
 
-	let { selectedConnection, connections }: Props = $props();
+	let { selectedConnection, connections, currentScript = null, hasUnsavedChanges = false, onScriptRename }: Props = $props();
 	
+	// Script name editing state
+	let isEditingName = $state(false);
+	let editingName = $state('');
+	let nameInput = $state<HTMLInputElement>();
+
+	// Reset editing state if the current script changes
+	$effect(() => {
+		isEditingName = false;
+		editingName = '';
+	});
+
+	function startEditingName() {
+		if (!currentScript) return;
+		isEditingName = true;
+		editingName = currentScript.name;
+		// Auto-focus the input
+		setTimeout(() => {
+			if (nameInput) {
+				nameInput.focus();
+				nameInput.select();
+			}
+		}, 0);
+	}
+
+	function finishEditingName() {
+		if (!currentScript || !editingName.trim()) {
+			isEditingName = false;
+			editingName = '';
+			return;
+		}
+		
+		if (editingName.trim() !== currentScript.name) {
+			onScriptRename?.(currentScript.id, editingName.trim());
+		}
+		
+		isEditingName = false;
+		editingName = '';
+	}
+
+	function handleNameKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			event.stopPropagation();
+			finishEditingName();
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			event.stopPropagation();
+			isEditingName = false;
+			editingName = '';
+		}
+	}
+
 	let sqlQuery = $state(`-- Welcome to PgPad!
 -- Keyboard shortcuts:
 --   Ctrl+Enter: Run selected text (or current line if nothing selected)
@@ -248,12 +303,37 @@ ORDER BY table_name, ordinal_position;`);
 		<ResizablePane defaultSize={60} minSize={30} maxSize={80}>
 			<div class="h-full p-4 pb-2">
 				<Card class="h-full flex flex-col">
-					<CardHeader class="flex-shrink-0">
-						<CardTitle class="flex items-center gap-2">
-							<FileText class="w-4 h-4" />
-							SQL Editor
-						</CardTitle>
-					</CardHeader>
+					<div class="flex-shrink-0 px-3 bg-white border-b border-border/50 flex items-center gap-2 min-h-8">
+						<div class="flex items-center gap-2 text-sm">
+							<FileText class="w-4 h-4 text-muted-foreground" />
+							{#if isEditingName}
+								<Input
+									bind:this={nameInput}
+									bind:value={editingName}
+									onkeydown={handleNameKeydown}
+									onblur={finishEditingName}
+									class="w-auto h-6 px-1 text-sm font-medium focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-offset-0 border border-border rounded"
+								/>
+							{:else}
+								<button 
+									type="button"
+									class="font-medium hover:bg-muted/50 px-1 py-0.5 rounded transition-colors text-left"
+									onclick={startEditingName}
+								>
+									{currentScript?.name || 'Untitled'}
+								</button>
+							{/if}
+							{#if hasUnsavedChanges}
+								<Circle class="w-2 h-2 fill-orange-500 text-orange-500" />
+							{/if}
+						</div>
+						<div class="flex-1"></div>
+						{#if currentScript}
+							<div class="text-xs text-muted-foreground">
+								Last saved: {new Date(currentScript.updated_at * 1000).toLocaleString()}
+							</div>
+						{/if}
+					</div>
 					<CardContent class="flex-1 p-0 min-h-0">
 						<div 
 							bind:this={editorContainer}

@@ -243,6 +243,37 @@
 			console.error('Failed to delete script:', error);
 		}
 	}
+
+	async function renameScript(scriptId: number, newName: string) {
+		try {
+			const script = scripts.find(s => s.id === scriptId);
+			if (!script) return;
+
+			await DatabaseCommands.updateScript(
+				scriptId,
+				newName,
+				script.query_text,
+				script.connection_id,
+				script.description
+			);
+
+			script.name = newName;
+			script.updated_at = Date.now() / 1000;
+
+			// Update current script if it is being renamed
+			if (currentScript?.id === scriptId) {
+				currentScript.name = newName;
+				currentScript.updated_at = script.updated_at;
+			}
+
+			const scriptIndex = scripts.findIndex(s => s.id === scriptId);
+			if (scriptIndex !== -1) {
+				scripts[scriptIndex] = { ...script };
+			}
+		} catch (error) {
+			console.error('Failed to rename script:', error);
+		}
+	}
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -513,28 +544,22 @@
 									<span class="text-sm font-semibold text-muted-foreground">Select a connection to start</span>
 								</div>
 							{/if}
-
-							<!-- Current Script Indicator -->
-							{#if currentScript}
-								<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 border border-blue-200">
-									<FileText class="w-4 h-4 text-blue-600" />
-									<span class="text-sm font-semibold text-blue-700">
-										{currentScript.name}
-										{#if hasUnsavedChanges}
-											<span class="text-orange-500">*</span>
-										{/if}
-									</span>
-								</div>
-							{/if}
 						</div>
 					</div>
 				</div>
 
 				<!-- Editor and Results - same component instance always -->
 				<div class="flex-1 flex flex-col bg-background/30">
-					<SqlEditor {selectedConnection} {connections} bind:this={sqlEditorRef} />
+					<SqlEditor 
+						{selectedConnection} 
+						{connections} 
+						{currentScript}
+						{hasUnsavedChanges}
+						onScriptRename={renameScript}
+						bind:this={sqlEditorRef} 
+					/>
 				</div>
-			</div>
+			</div>	
 		</ResizablePane>
 	</ResizablePaneGroup>
 </div>
