@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Database, Plus, Play, Save, ChevronLeft, ChevronRight } from '@lucide/svelte';
+	import { Database, Plus, Play, Save, ChevronLeft, ChevronRight, FileText } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
+	import { Accordion, AccordionItem, AccordionContent } from '$lib/components/ui/accordion';
 	import ConnectionSidebar from './ConnectionSidebar.svelte';
 	import SqlEditor from './SqlEditor.svelte';
 	import ConnectionForm from './ConnectionForm.svelte';
@@ -181,30 +182,108 @@
 					</button>
 
 					<div class="p-6 border-b border-sidebar-border/50">
-						<div class="flex items-center gap-3 mb-6">
+						<div class="flex items-center gap-3">
 							<div class="p-2 rounded-lg bg-primary/10 border border-primary/20">
 								<Database class="w-6 h-6 text-primary" />
 							</div>
 							<h1 class="text-xl font-bold text-sidebar-foreground">PgPad</h1>
 						</div>
-						
-						<Button
-							class="w-full justify-start gap-2 shadow-md hover:shadow-lg"
-							variant="outline"
-							onclick={() => showConnectionForm = true}
-						>
-							<Plus class="w-4 h-4" />
-							Add Connection
-						</Button>
 					</div>
 
-					<ConnectionSidebar
-						{connections}
-						{selectedConnection}
-						{establishingConnections}
-						onSelect={selectConnection}
-						onConnect={connectToDatabase}
-					/>
+					<div class="flex-1 overflow-y-auto p-4">
+						<Accordion>
+							{#snippet children()}
+								<!-- Connections Accordion -->
+								<AccordionItem title="Connections" icon={Database} open={true}>
+									{#snippet children()}
+										<AccordionContent>
+											{#snippet children()}
+												<div class="space-y-3">
+													<Button
+														class="w-full justify-start gap-2 shadow-sm hover:shadow-md"
+														variant="outline"
+														onclick={() => showConnectionForm = true}
+													>
+														<Plus class="w-4 h-4" />
+														Add Connection
+													</Button>
+													
+													<div class="space-y-2">
+														{#if connections.length === 0}
+															<div class="text-center py-8 px-4">
+																<div class="p-3 rounded-lg bg-muted/30 border border-border/50 inline-flex mb-3">
+																	<Database class="w-6 h-6 text-muted-foreground/50" />
+																</div>
+																<p class="text-xs font-medium text-muted-foreground mb-1">No connections yet</p>
+																<p class="text-xs text-muted-foreground/70">Add your first connection to get started</p>
+															</div>
+														{:else}
+															{#each connections as connection (connection.id)}
+																<Button
+																	variant={selectedConnection === connection.id ? "secondary" : "ghost"}
+																	class="w-full justify-start p-3 h-auto shadow-sm hover:shadow-md transition-all duration-200 {selectedConnection === connection.id ? 'shadow-md bg-primary/10 border border-primary/20' : ''}"
+																	onclick={() => selectConnection(connection.id)}
+																	ondblclick={() => connectToDatabase(connection.id)}
+																>
+																	<div class="flex items-start gap-3 w-full">
+																		<div class="flex-shrink-0 mt-1">
+																			{#if connection.connected}
+																				<div class="w-2.5 h-2.5 rounded-full bg-success border border-success-light shadow-sm"></div>
+																			{:else if establishingConnections.has(connection.id)}
+																				<div class="w-2.5 h-2.5 rounded-full bg-primary animate-pulse border border-primary-light shadow-sm"></div>
+																			{:else}
+																				<div class="w-2.5 h-2.5 rounded-full bg-muted-foreground/40 border border-muted-foreground/20"></div>
+																			{/if}
+																		</div>
+																		
+																		<div class="flex-1 text-left min-w-0">
+																			<div class="font-medium text-xs text-foreground truncate mb-1">
+																				{connection.name}
+																			</div>
+																			<div class="text-xs text-muted-foreground/80 truncate">
+																				{connection.connection_string.replace(/^postgresql?:\/\/[^@]*@/, '').replace(/\/[^?]*/, '')}
+																			</div>
+																		</div>
+																	</div>
+																</Button>
+															{/each}
+														{/if}
+													</div>
+												</div>
+											{/snippet}
+										</AccordionContent>
+									{/snippet}
+								</AccordionItem>
+
+								<!-- Scripts Accordion -->
+								<AccordionItem title="Scripts" icon={FileText} open={false}>
+									{#snippet children()}
+										<AccordionContent>
+											{#snippet children()}
+												<div class="space-y-3">
+													<Button
+														class="w-full justify-start gap-2 shadow-sm hover:shadow-md"
+														variant="outline"
+													>
+														<Plus class="w-4 h-4" />
+														New Script
+													</Button>
+													
+													<div class="text-center py-8 px-4">
+														<div class="p-3 rounded-lg bg-muted/30 border border-border/50 inline-flex mb-3">
+															<FileText class="w-6 h-6 text-muted-foreground/50" />
+														</div>
+														<p class="text-xs font-medium text-muted-foreground mb-1">No saved scripts yet</p>
+														<p class="text-xs text-muted-foreground/70">Save your SQL queries to access them later</p>
+													</div>
+												</div>
+											{/snippet}
+										</AccordionContent>
+									{/snippet}
+								</AccordionItem>
+							{/snippet}
+						</Accordion>
+					</div>
 				{/if}
 			</div>
 		</ResizablePane>
