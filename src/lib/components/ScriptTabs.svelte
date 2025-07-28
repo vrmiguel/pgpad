@@ -89,7 +89,7 @@
 	}
 </script>
 
-<div class="flex items-center bg-white border-b border-border/50 overflow-hidden">
+<div class="flex items-center bg-card border-b border-border/50 overflow-hidden">
 	<!-- Tab bar -->
 	<div class="flex flex-1 overflow-x-auto">
 		{#each openScripts as script (script.id)}
@@ -126,7 +126,7 @@
 				<!-- Close button (separate from tab button) -->
 				<button
 					type="button"
-					class="opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600 rounded p-0.5 transition-all flex-shrink-0 mr-2"
+					class="opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive rounded p-0.5 transition-all flex-shrink-0 mr-2"
 					onclick={(e) => handleTabClose(e, script.id)}
 					title="Close tab"
 				>
