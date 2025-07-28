@@ -25,7 +25,8 @@
 	>
 		<div class="flex items-center gap-2">
 			{#if icon}
-				<svelte:component this={icon} class="w-4 h-4 text-muted-foreground" />
+				{@const IconComponent = icon}
+				<IconComponent class="w-4 h-4 text-muted-foreground" />
 			{/if}
 			<span class="text-sm font-medium text-foreground">{title}</span>
 		</div>

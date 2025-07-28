@@ -117,6 +117,17 @@ ORDER BY table_name, ordinal_position;`);
 		await executeQuery(sqlQuery.trim());
 	}
 
+	export function getContent(): string {
+		return sqlQuery;
+	}
+
+	export function setContent(content: string) {
+		sqlQuery = content;
+		if (monacoEditor) {
+			monacoEditor.updateValue(content);
+		}
+	}
+
 	async function handleExecuteSelection(selectedText: string) {
 		if (!selectedConnection || !selectedText) return;
 		

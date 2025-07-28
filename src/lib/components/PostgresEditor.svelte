@@ -6,7 +6,7 @@
 	import ConnectionSidebar from './ConnectionSidebar.svelte';
 	import SqlEditor from './SqlEditor.svelte';
 	import ConnectionForm from './ConnectionForm.svelte';
-	import { DatabaseCommands, type ConnectionInfo, type ConnectionConfig } from '$lib/commands.svelte';
+	import { DatabaseCommands, type ConnectionInfo, type ConnectionConfig, type Script } from '$lib/commands.svelte';
 	import { onMount } from 'svelte';
 
 	interface Props {
@@ -25,6 +25,11 @@
 	let isRunningQuery = $state(false);
 	let sqlEditorRef = $state<any>();
 	let establishingConnections = $state<Set<string>>(new Set());
+	
+	let scripts = $state<Script[]>([]);
+	let currentScript = $state<Script | null>(null);
+	let hasUnsavedChanges = $state(false);
+	let lastSavedContent = $state('');
 	
 	let isSidebarCollapsed = $state(false);
 	let lastResizeTime = $state(0);
@@ -73,10 +78,27 @@
 		try {
 			await DatabaseCommands.initializeConnections();
 			await loadConnections();
+			await loadScripts();
 		} catch (error) {
 			console.error('Failed to initialize connections:', error);
 		}
 	});
+
+	// Any new unsaved change?
+	$effect(() => {
+		if (currentScript && sqlEditorRef) {
+			const currentContent = sqlEditorRef.getContent?.() || '';
+			hasUnsavedChanges = currentContent !== lastSavedContent;
+		}
+	});
+
+	// Handle saving with Ctrl+S
+	function handleKeydown(event: KeyboardEvent) {
+		if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+			event.preventDefault();
+			saveCurrentScript();
+		}
+	}
 
 	async function loadConnections() {
 		try {
@@ -121,7 +143,109 @@
 	function toggleSidebar() {
 		isSidebarCollapsed = !isSidebarCollapsed;
 	}
+
+	async function loadScripts() {
+		try {
+			scripts = await DatabaseCommands.getScripts();
+		} catch (error) {
+			console.error('Failed to load scripts:', error);
+		}
+	}
+
+	function generateScriptName(): string {
+		const now = new Date();
+		const timestamp = now.toISOString().split('T')[0]; // YYYY-MM-DD
+		const existingUntitled = scripts.filter(s => s.name.startsWith('Untitled Script')).length;
+		return existingUntitled === 0 ? 'Untitled Script' : `Untitled Script ${existingUntitled + 1}`;
+	}
+
+	async function createNewScript() {
+		try {
+			const name = generateScriptName();
+			const content = '';
+			const scriptId = await DatabaseCommands.saveScript(name, content);
+			
+			const newScript: Script = {
+				id: scriptId,
+				name,
+				description: null,
+				query_text: content,
+				connection_id: null,
+				tags: null,
+				created_at: Date.now() / 1000,
+				updated_at: Date.now() / 1000,
+				favorite: false
+			};
+			
+			scripts.push(newScript);
+			selectScript(newScript);
+		} catch (error) {
+			console.error('Failed to create new script:', error);
+		}
+	}
+
+	function selectScript(script: Script) {
+		if (currentScript && hasUnsavedChanges) {
+			// TODO: handle unsaved changes when switching to another script
+		}
+		
+		currentScript = script;
+		lastSavedContent = script.query_text;
+		hasUnsavedChanges = false;
+		
+		if (sqlEditorRef) {
+			sqlEditorRef.setContent(script.query_text);
+		}
+	}
+
+	async function saveCurrentScript() {
+		if (!currentScript) {
+			// Create a new script if none is selected
+			await createNewScript();
+			return;
+		}
+
+		try {
+			const content = sqlEditorRef?.getContent() || '';
+			await DatabaseCommands.updateScript(
+				currentScript.id,
+				currentScript.name,
+				content,
+				currentScript.connection_id,
+				currentScript.description
+			);
+			
+			currentScript.query_text = content;
+			currentScript.updated_at = Date.now() / 1000;
+			lastSavedContent = content;
+			hasUnsavedChanges = false;
+			
+			const scriptIndex = scripts.findIndex(s => s.id === currentScript.id);
+			if (scriptIndex !== -1) {
+				scripts[scriptIndex] = { ...currentScript };
+			}
+		} catch (error) {
+			console.error('Failed to save script:', error);
+		}
+	}
+
+	async function deleteScript(script: Script) {
+		try {
+			await DatabaseCommands.deleteScript(script.id);
+			scripts = scripts.filter(s => s.id !== script.id);
+			
+			if (currentScript?.id === script.id) {
+				currentScript = null;
+				lastSavedContent = '';
+				hasUnsavedChanges = false;
+			}
+		} catch (error) {
+			console.error('Failed to delete script:', error);
+		}
+	}
 </script>
+
+<svelte:window on:keydown={handleKeydown} />
 
 <div class="flex h-screen bg-gradient-to-br from-background via-background to-muted/20">
 	<ResizablePaneGroup direction="horizontal" class="flex-1" onLayoutChange={handlePaneResize}>
@@ -264,17 +388,64 @@
 													<Button
 														class="w-full justify-start gap-2 shadow-sm hover:shadow-md"
 														variant="outline"
+														onclick={createNewScript}
 													>
 														<Plus class="w-4 h-4" />
 														New Script
 													</Button>
 													
-													<div class="text-center py-8 px-4">
-														<div class="p-3 rounded-lg bg-muted/30 border border-border/50 inline-flex mb-3">
-															<FileText class="w-6 h-6 text-muted-foreground/50" />
-														</div>
-														<p class="text-xs font-medium text-muted-foreground mb-1">No saved scripts yet</p>
-														<p class="text-xs text-muted-foreground/70">Save your SQL queries to access them later</p>
+													<div class="space-y-2">
+														{#if scripts.length === 0}
+															<div class="text-center py-8 px-4">
+																<div class="p-3 rounded-lg bg-muted/30 border border-border/50 inline-flex mb-3">
+																	<FileText class="w-6 h-6 text-muted-foreground/50" />
+																</div>
+																<p class="text-xs font-medium text-muted-foreground mb-1">No saved scripts yet</p>
+																<p class="text-xs text-muted-foreground/70">Save your SQL queries to access them later</p>
+															</div>
+														{:else}
+															{#each scripts as script (script.id)}
+																<div class="group relative">
+																	<Button
+																		variant={currentScript?.id === script.id ? "secondary" : "ghost"}
+																		class="w-full justify-start p-3 h-auto shadow-sm hover:shadow-md transition-all duration-200 {currentScript?.id === script.id ? 'shadow-md bg-primary/10 border border-primary/20' : ''}"
+																		onclick={() => selectScript(script)}
+																	>
+																		<div class="flex items-start gap-3 w-full">
+																			<div class="flex-shrink-0 mt-1">
+																				<FileText class="w-3 h-3 text-muted-foreground" />
+																			</div>
+																			
+																			<div class="flex-1 text-left min-w-0">
+																				<div class="font-medium text-xs text-foreground truncate mb-1">
+																					{script.name}
+																					{#if currentScript?.id === script.id && hasUnsavedChanges}
+																						<span class="text-orange-500">*</span>
+																					{/if}
+																				</div>
+																				<div class="text-xs text-muted-foreground/80 truncate">
+																					Modified {new Date(script.updated_at * 1000).toLocaleDateString()}
+																				</div>
+																			</div>
+																		</div>
+																	</Button>
+																	
+																	<!-- Delete button (visible on hover) -->
+																	<button
+																		class="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600 transition-all"
+																		onclick={(e) => {
+																			e.stopPropagation();
+																			deleteScript(script);
+																		}}
+																		title="Delete script"
+																	>
+																		<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+																			<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+																		</svg>
+																	</button>
+																</div>
+															{/each}
+														{/if}
 													</div>
 												</div>
 											{/snippet}
@@ -307,9 +478,13 @@
 									<Play class="w-4 h-4" />
 									Run Query
 								</Button>
-								<Button variant="outline" class="gap-2 shadow-sm hover:shadow-md">
+								<Button 
+									variant="outline" 
+									class="gap-2 shadow-sm hover:shadow-md {hasUnsavedChanges ? 'border-orange-300 bg-orange-50' : ''}"
+									onclick={saveCurrentScript}
+								>
 									<Save class="w-4 h-4" />
-									Save Script
+									Save Script {hasUnsavedChanges ? '*' : ''}
 								</Button>
 							</div>
 							
@@ -338,20 +513,20 @@
 									<span class="text-sm font-semibold text-muted-foreground">Select a connection to start</span>
 								</div>
 							{/if}
+
+							<!-- Current Script Indicator -->
+							{#if currentScript}
+								<div class="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 border border-blue-200">
+									<FileText class="w-4 h-4 text-blue-600" />
+									<span class="text-sm font-semibold text-blue-700">
+										{currentScript.name}
+										{#if hasUnsavedChanges}
+											<span class="text-orange-500">*</span>
+										{/if}
+									</span>
+								</div>
+							{/if}
 						</div>
-						{#if isSidebarCollapsed}
-							<div class="flex items-center gap-3">
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={toggleSidebar}
-									class="hover:shadow-md"
-								>
-									<ChevronRight class="w-4 h-4" />
-									Show Sidebar
-								</Button>
-							</div>
-						{/if}
 					</div>
 				</div>
 

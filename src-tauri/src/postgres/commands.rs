@@ -1,16 +1,19 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Context;
-use uuid::Uuid;
 use tokio_postgres::types::Type;
+use uuid::Uuid;
 
 use crate::{
     error::Error,
     postgres::{
         connect::connect,
-        types::{ConnectionConfig, ConnectionInfo, DatabaseConnection, QueryResult, DatabaseSchema, TableInfo, ColumnInfo},
+        types::{
+            ColumnInfo, ConnectionConfig, ConnectionInfo, DatabaseConnection, DatabaseSchema,
+            QueryResult, TableInfo,
+        },
     },
-    storage::QueryHistoryEntry,
+    storage::{QueryHistoryEntry, SavedQuery},
     AppState,
 };
 
@@ -19,11 +22,16 @@ use crate::{
 struct NullChecker(bool);
 
 impl tokio_postgres::types::FromSql<'_> for NullChecker {
-    fn from_sql(_ty: &tokio_postgres::types::Type, _raw: &[u8]) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    fn from_sql(
+        _ty: &tokio_postgres::types::Type,
+        _raw: &[u8],
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
         Ok(Self(false))
     }
 
-    fn from_sql_null(_ty: &tokio_postgres::types::Type) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    fn from_sql_null(
+        _ty: &tokio_postgres::types::Type,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
         Ok(Self(true))
     }
 
@@ -107,19 +115,25 @@ fn postgres_value_to_json(
         Type::TEXT_ARRAY => {
             let value: Vec<String> = row.try_get(column_index)?;
             Ok(serde_json::Value::Array(
-                value.into_iter().map(serde_json::Value::String).collect()
+                value.into_iter().map(serde_json::Value::String).collect(),
             ))
         }
         Type::INT4_ARRAY => {
             let value: Vec<i32> = row.try_get(column_index)?;
             Ok(serde_json::Value::Array(
-                value.into_iter().map(|v| serde_json::Value::Number(v.into())).collect()
+                value
+                    .into_iter()
+                    .map(|v| serde_json::Value::Number(v.into()))
+                    .collect(),
             ))
         }
         Type::INT8_ARRAY => {
             let value: Vec<i64> = row.try_get(column_index)?;
             Ok(serde_json::Value::Array(
-                value.into_iter().map(|v| serde_json::Value::Number(v.into())).collect()
+                value
+                    .into_iter()
+                    .map(|v| serde_json::Value::Number(v.into()))
+                    .collect(),
             ))
         }
 
@@ -144,7 +158,6 @@ pub async fn add_connection(
         connected: false,
     };
 
-    
     state.storage.save_connection(&info)?;
 
     let connection = DatabaseConnection {
@@ -152,7 +165,7 @@ pub async fn add_connection(
         client: None,
     };
     state.connections.insert(id, connection);
-    
+
     Ok(info)
 }
 
@@ -183,11 +196,11 @@ pub async fn connect_to_database(
         Ok(client) => {
             connection.client = Some(client);
             connection.info.connected = true;
-            
+
             if let Err(e) = state.storage.update_last_connected(&connection_id) {
                 log::warn!("Failed to update last connected timestamp: {}", e);
             }
-            
+
             Ok(true)
         }
         Err(e) => {
@@ -287,7 +300,7 @@ pub async fn get_connections(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ConnectionInfo>, Error> {
     let mut stored_connections = state.storage.get_connections()?;
-    
+
     for connection in &mut stored_connections {
         if let Some(runtime_connection) = state.connections.get(&connection.id) {
             connection.connected = runtime_connection.info.connected;
@@ -295,7 +308,7 @@ pub async fn get_connections(
             connection.connected = false;
         }
     }
-    
+
     Ok(stored_connections)
 }
 
@@ -304,11 +317,10 @@ pub async fn remove_connection(
     connection_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
-    
     state.storage.remove_connection(&connection_id)?;
-    
+
     state.connections.remove(&connection_id);
-    
+
     Ok(())
 }
 
@@ -344,7 +356,7 @@ pub async fn save_query_to_history(
         row_count: row_count as i64,
         error_message,
     };
-    
+
     state.storage.save_query_history(&entry)?;
     Ok(())
 }
@@ -355,24 +367,29 @@ pub async fn get_query_history(
     limit: Option<u32>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<QueryHistoryEntry>, Error> {
-    Ok(state.storage.get_query_history(&connection_id, limit.map(|l| l as i64))?)
+    Ok(state
+        .storage
+        .get_query_history(&connection_id, limit.map(|l| l as i64))?)
 }
 
 #[tauri::command]
-pub async fn initialize_connections(
-    state: tauri::State<'_, AppState>,
-) -> Result<(), Error> {
+pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result<(), Error> {
     let stored_connections = state.storage.get_connections()?;
-    
+
     for stored_connection in stored_connections {
         let connection = DatabaseConnection {
             info: stored_connection,
             client: None,
         };
-        state.connections.insert(connection.info.id.clone(), connection);
+        state
+            .connections
+            .insert(connection.info.id.clone(), connection);
     }
-    
-    log::info!("Initialized {} connections from storage", state.connections.len());
+
+    log::info!(
+        "Initialized {} connections from storage",
+        state.connections.len()
+    );
     Ok(())
 }
 
@@ -414,7 +431,9 @@ pub async fn get_database_schema(
             t.table_schema, t.table_name, c.ordinal_position
     "#;
 
-    let rows = client.query(schema_query, &[]).await
+    let rows = client
+        .query(schema_query, &[])
+        .await
         .context("Failed to query database schema")?;
 
     let mut tables_map: HashMap<String, TableInfo> = std::collections::HashMap::new();
@@ -422,7 +441,7 @@ pub async fn get_database_schema(
 
     for row in rows {
         let schema: String = row.get(0);
-        let table_name: String = row.get(1);  
+        let table_name: String = row.get(1);
         let column_name: String = row.get(2);
         let data_type: String = row.get(3);
         let is_nullable: bool = row.get(4);
@@ -431,12 +450,14 @@ pub async fn get_database_schema(
         schemas_set.insert(schema.clone());
 
         let table_key = format!("{}.{}", schema, table_name);
-        
-        let table_info = tables_map.entry(table_key.clone()).or_insert_with(|| TableInfo {
-            name: table_name.clone(),
-            schema: schema.clone(),
-            columns: Vec::new(),
-        });
+
+        let table_info = tables_map
+            .entry(table_key.clone())
+            .or_insert_with(|| TableInfo {
+                name: table_name.clone(),
+                schema: schema.clone(),
+                columns: Vec::new(),
+            });
 
         table_info.columns.push(ColumnInfo {
             name: column_name,
@@ -450,4 +471,69 @@ pub async fn get_database_schema(
     let schemas: Vec<String> = schemas_set.into_iter().collect();
 
     Ok(DatabaseSchema { tables, schemas })
+}
+
+// Script management commands
+#[tauri::command]
+pub async fn save_script(
+    name: String,
+    content: String,
+    connection_id: Option<String>,
+    description: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<i64, Error> {
+    let script = SavedQuery {
+        id: 0, // New script
+        name,
+        description,
+        query_text: content,
+        connection_id,
+        tags: None,
+        created_at: 0, // Will be set by storage
+        updated_at: 0, // Will be set by storage
+        favorite: false,
+    };
+
+    let script_id = state.storage.save_query(&script)?;
+    Ok(script_id)
+}
+
+#[tauri::command]
+pub async fn update_script(
+    id: i64,
+    name: String,
+    content: String,
+    connection_id: Option<String>,
+    description: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    let script = SavedQuery {
+        id,
+        name,
+        description,
+        query_text: content,
+        connection_id,
+        tags: None,
+        created_at: 0, // Will be ignored for updates
+        updated_at: 0, // Will be set by storage
+        favorite: false,
+    };
+
+    state.storage.save_query(&script)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_scripts(
+    connection_id: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<SavedQuery>, Error> {
+    let scripts = state.storage.get_saved_queries(connection_id.as_deref())?;
+    Ok(scripts)
+}
+
+#[tauri::command]
+pub async fn delete_script(id: i64, state: tauri::State<'_, AppState>) -> Result<(), Error> {
+    state.storage.delete_saved_query(id)?;
+    Ok(())
 }

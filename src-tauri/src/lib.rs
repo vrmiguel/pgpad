@@ -63,7 +63,11 @@ pub fn run() {
             postgres::commands::initialize_connections,
             postgres::commands::save_query_to_history,
             postgres::commands::get_query_history,
-            postgres::commands::get_database_schema
+            postgres::commands::get_database_schema,
+            postgres::commands::save_script,
+            postgres::commands::update_script,
+            postgres::commands::get_scripts,
+            postgres::commands::delete_script
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

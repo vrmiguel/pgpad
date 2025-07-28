@@ -1,66 +1,66 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export const preventDefault = <T extends Event>(fn: (e: T) => void): ((e: T) => void) => {
-    return (e: T) => {
-        e.preventDefault();
-        fn(e);
-    };
+	return (e: T) => {
+		e.preventDefault();
+		fn(e);
+	};
 };
 
 export enum FILES {
-    GREET_FILE = 'greet.txt',
-    NAME_FILE = 'name.txt'
+	GREET_FILE = 'greet.txt',
+	NAME_FILE = 'name.txt'
 }
 
 export class GlobalState {
-    private _state = $state({ name: '', greet: '' });
+	private _state = $state({ name: '', greet: '' });
 
-    get greet() {
-        return this._state.greet;
-    }
+	get greet() {
+		return this._state.greet;
+	}
 
-    set greet(value: string) {
-        this._state.greet = value;
-    }
+	set greet(value: string) {
+		this._state.greet = value;
+	}
 
-    get name() {
-        return this._state.name;
-    }
+	get name() {
+		return this._state.name;
+	}
 
-    set name(value: string) {
-        this._state.name = value;
-    }
+	set name(value: string) {
+		this._state.name = value;
+	}
 
-    get nlen() {
-        return this.name.length;
-    }
+	get nlen() {
+		return this.name.length;
+	}
 
-    get glen() {
-        return this.greet.length;
-    }
+	get glen() {
+		return this.greet.length;
+	}
 
-    async read(path: FILES) {
-        const contentFromFile = await invoke<string>('read', { path });
-        if (path === FILES.NAME_FILE) {
-            this.name = contentFromFile;
-        } else if (path === FILES.GREET_FILE) {
-            this.greet = contentFromFile;
-        }
-    }
+	async read(path: FILES) {
+		const contentFromFile = await invoke<string>('read', { path });
+		if (path === FILES.NAME_FILE) {
+			this.name = contentFromFile;
+		} else if (path === FILES.GREET_FILE) {
+			this.greet = contentFromFile;
+		}
+	}
 
-    async write(path: FILES, contents: string) {
-        await invoke('write', { path, contents });
-        if (path === FILES.NAME_FILE) {
-            this.name = contents;
-        } else if (path === FILES.GREET_FILE) {
-            this.greet = contents;
-        }
-    }
+	async write(path: FILES, contents: string) {
+		await invoke('write', { path, contents });
+		if (path === FILES.NAME_FILE) {
+			this.name = contents;
+		} else if (path === FILES.GREET_FILE) {
+			this.greet = contents;
+		}
+	}
 
-    reset() {
-        this.name = '';
-        this.greet = '';
-    }
+	reset() {
+		this.name = '';
+		this.greet = '';
+	}
 }
 
 export interface ConnectionConfig {
@@ -109,6 +109,18 @@ export interface TableInfo {
 export interface DatabaseSchema {
 	tables: TableInfo[];
 	schemas: string[];
+}
+
+export interface Script {
+	id: number;
+	name: string;
+	description: string | null;
+	query_text: string;
+	connection_id: string | null;
+	tags: string | null;
+	created_at: number;
+	updated_at: number;
+	favorite: boolean;
 }
 
 export class DatabaseCommands {
@@ -168,5 +180,43 @@ export class DatabaseCommands {
 
 	static async getDatabaseSchema(connectionId: string): Promise<DatabaseSchema> {
 		return await invoke('get_database_schema', { connectionId });
+	}
+
+	static async saveScript(
+		name: string,
+		content: string,
+		connectionId?: string,
+		description?: string
+	): Promise<number> {
+		return await invoke('save_script', {
+			name,
+			content,
+			connectionId: connectionId || null,
+			description: description || null
+		});
+	}
+
+	static async updateScript(
+		id: number,
+		name: string,
+		content: string,
+		connectionId?: string,
+		description?: string
+	): Promise<void> {
+		return await invoke('update_script', {
+			id,
+			name,
+			content,
+			connectionId: connectionId || null,
+			description: description || null
+		});
+	}
+
+	static async getScripts(connectionId?: string): Promise<Script[]> {
+		return await invoke('get_scripts', { connectionId: connectionId || null });
+	}
+
+	static async deleteScript(id: number): Promise<void> {
+		return await invoke('delete_script', { id });
 	}
 }
