@@ -6,6 +6,7 @@
 	import ConnectionSidebar from './ConnectionSidebar.svelte';
 	import SqlEditor from './SqlEditor.svelte';
 	import ConnectionForm from './ConnectionForm.svelte';
+	import ScriptTabs from './ScriptTabs.svelte';
 	import { DatabaseCommands, type ConnectionInfo, type ConnectionConfig, type Script } from '$lib/commands.svelte';
 	import { onMount } from 'svelte';
 
@@ -27,9 +28,10 @@
 	let establishingConnections = $state<Set<string>>(new Set());
 	
 	let scripts = $state<Script[]>([]);
-	let currentScript = $state<Script | null>(null);
-	let hasUnsavedChanges = $state(false);
-	let lastSavedContent = $state('');
+	let openScripts = $state<Script[]>([]);
+	let activeScriptId = $state<number | null>(null);
+	let unsavedChanges = $state<Set<number>>(new Set());
+	let scriptContents = $state<Map<number, string>>(new Map());
 	
 	let isSidebarCollapsed = $state(false);
 	let lastResizeTime = $state(0);
@@ -55,6 +57,20 @@
 		}
 	});
 
+	// Track unsaved changes for active script
+	$effect(() => {
+		if (activeScriptId !== null && sqlEditorRef) {
+			const currentContent = sqlEditorRef.getContent?.() || '';
+			const savedContent = scripts.find(s => s.id === activeScriptId)?.query_text || '';
+			
+			if (currentContent !== savedContent) {
+				unsavedChanges.add(activeScriptId);
+			} else {
+				unsavedChanges.delete(activeScriptId);
+			}
+		}
+	});
+
 	function handlePaneResize(sizes: number[]) {
 		const now = Date.now();
 		lastResizeTime = now;
@@ -74,6 +90,68 @@
 		}, 150);
 	}
 
+	function openScript(script: Script) {
+		// Add to open scripts if not already open
+		if (!openScripts.find(s => s.id === script.id)) {
+			openScripts.push(script);
+		}
+		
+		// Set as active and initialize content
+		activeScriptId = script.id;
+		scriptContents.set(script.id, script.query_text);
+		
+		// Update the editor content
+		if (sqlEditorRef) {
+			sqlEditorRef.setContent(script.query_text);
+		}
+	}
+
+	function switchToTab(scriptId: number) {
+		// Save current script content before switching
+		if (activeScriptId !== null && sqlEditorRef) {
+			const currentContent = sqlEditorRef.getContent() || '';
+			scriptContents.set(activeScriptId, currentContent);
+		}
+		
+		// Switch to new script
+		activeScriptId = scriptId;
+		const script = scripts.find(s => s.id === scriptId);
+		if (script) {
+			const content = scriptContents.get(scriptId) || script.query_text;
+			if (sqlEditorRef) {
+				sqlEditorRef.setContent(content);
+			}
+		}
+	}
+
+	function closeTab(scriptId: number) {
+		// Remove from open scripts
+		openScripts = openScripts.filter(s => s.id !== scriptId);
+		
+		// Clean up state
+		scriptContents.delete(scriptId);
+		unsavedChanges.delete(scriptId);
+		
+		// If closing active tab, switch to another or clear active
+		if (activeScriptId === scriptId) {
+			if (openScripts.length > 0) {
+				// Switch to the last remaining tab
+				const lastScript = openScripts[openScripts.length - 1];
+				switchToTab(lastScript.id);
+			} else {
+				// No tabs left
+				activeScriptId = null;
+				if (sqlEditorRef) {
+					sqlEditorRef.setContent('');
+				}
+			}
+		}
+	}
+
+	function selectScript(script: Script) {
+		openScript(script);
+	}
+
 	onMount(async () => {
 		try {
 			await DatabaseCommands.initializeConnections();
@@ -81,14 +159,6 @@
 			await loadScripts();
 		} catch (error) {
 			console.error('Failed to initialize connections:', error);
-		}
-	});
-
-	// Any new unsaved change?
-	$effect(() => {
-		if (currentScript && sqlEditorRef) {
-			const currentContent = sqlEditorRef.getContent?.() || '';
-			hasUnsavedChanges = currentContent !== lastSavedContent;
 		}
 	});
 
@@ -178,28 +248,14 @@
 			};
 			
 			scripts.push(newScript);
-			selectScript(newScript);
+			openScript(newScript);
 		} catch (error) {
 			console.error('Failed to create new script:', error);
 		}
 	}
 
-	function selectScript(script: Script) {
-		if (currentScript && hasUnsavedChanges) {
-			// TODO: handle unsaved changes when switching to another script
-		}
-		
-		currentScript = script;
-		lastSavedContent = script.query_text;
-		hasUnsavedChanges = false;
-		
-		if (sqlEditorRef) {
-			sqlEditorRef.setContent(script.query_text);
-		}
-	}
-
 	async function saveCurrentScript() {
-		if (!currentScript) {
+		if (activeScriptId === null) {
 			// Create a new script if none is selected
 			await createNewScript();
 			return;
@@ -207,20 +263,25 @@
 
 		try {
 			const content = sqlEditorRef?.getContent() || '';
+			const currentScript = scripts.find(s => s.id === activeScriptId);
+			if (!currentScript) return;
+
 			await DatabaseCommands.updateScript(
-				currentScript.id,
+				activeScriptId,
 				currentScript.name,
 				content,
 				currentScript.connection_id,
 				currentScript.description
 			);
 			
+			// Update local state
 			currentScript.query_text = content;
 			currentScript.updated_at = Date.now() / 1000;
-			lastSavedContent = content;
-			hasUnsavedChanges = false;
+			scriptContents.set(activeScriptId, content);
+			unsavedChanges.delete(activeScriptId);
 			
-			const scriptIndex = scripts.findIndex(s => s.id === currentScript.id);
+			// Update scripts list
+			const scriptIndex = scripts.findIndex(s => s.id === activeScriptId);
 			if (scriptIndex !== -1) {
 				scripts[scriptIndex] = { ...currentScript };
 			}
@@ -234,10 +295,10 @@
 			await DatabaseCommands.deleteScript(script.id);
 			scripts = scripts.filter(s => s.id !== script.id);
 			
-			if (currentScript?.id === script.id) {
-				currentScript = null;
-				lastSavedContent = '';
-				hasUnsavedChanges = false;
+			if (activeScriptId === script.id) {
+				activeScriptId = null;
+				scriptContents.delete(script.id);
+				unsavedChanges.delete(script.id);
 			}
 		} catch (error) {
 			console.error('Failed to delete script:', error);
@@ -257,18 +318,24 @@
 				script.description
 			);
 
-			script.name = newName;
-			script.updated_at = Date.now() / 1000;
-
-			// Update current script if it is being renamed
-			if (currentScript?.id === scriptId) {
-				currentScript.name = newName;
-				currentScript.updated_at = script.updated_at;
-			}
-
+			// Update the script in the scripts array
 			const scriptIndex = scripts.findIndex(s => s.id === scriptId);
 			if (scriptIndex !== -1) {
-				scripts[scriptIndex] = { ...script };
+				scripts[scriptIndex] = {
+					...script,
+					name: newName,
+					updated_at: Date.now() / 1000
+				};
+			}
+
+			// Update the script in the openScripts array (this is what the tabs display!)
+			const openScriptIndex = openScripts.findIndex(s => s.id === scriptId);
+			if (openScriptIndex !== -1) {
+				openScripts[openScriptIndex] = {
+					...openScripts[openScriptIndex],
+					name: newName,
+					updated_at: Date.now() / 1000
+				};
 			}
 		} catch (error) {
 			console.error('Failed to rename script:', error);
@@ -438,8 +505,8 @@
 															{#each scripts as script (script.id)}
 																<div class="group relative">
 																	<Button
-																		variant={currentScript?.id === script.id ? "secondary" : "ghost"}
-																		class="w-full justify-start p-3 h-auto shadow-sm hover:shadow-md transition-all duration-200 {currentScript?.id === script.id ? 'shadow-md bg-primary/10 border border-primary/20' : ''}"
+																		variant={activeScriptId === script.id ? "secondary" : "ghost"}
+																		class="w-full justify-start p-3 h-auto shadow-sm hover:shadow-md transition-all duration-200 {activeScriptId === script.id ? 'shadow-md bg-primary/10 border border-primary/20' : ''}"
 																		onclick={() => selectScript(script)}
 																	>
 																		<div class="flex items-start gap-3 w-full">
@@ -450,7 +517,7 @@
 																			<div class="flex-1 text-left min-w-0">
 																				<div class="font-medium text-xs text-foreground truncate mb-1">
 																					{script.name}
-																					{#if currentScript?.id === script.id && hasUnsavedChanges}
+																					{#if activeScriptId === script.id && unsavedChanges.has(script.id)}
 																						<span class="text-orange-500">*</span>
 																					{/if}
 																				</div>
@@ -511,11 +578,11 @@
 								</Button>
 								<Button 
 									variant="outline" 
-									class="gap-2 shadow-sm hover:shadow-md {hasUnsavedChanges ? 'border-orange-300 bg-orange-50' : ''}"
+									class="gap-2 shadow-sm hover:shadow-md {activeScriptId !== null && unsavedChanges.has(activeScriptId) ? 'border-orange-300 bg-orange-50' : ''}"
 									onclick={saveCurrentScript}
 								>
 									<Save class="w-4 h-4" />
-									Save Script {hasUnsavedChanges ? '*' : ''}
+									Save Script {activeScriptId !== null && unsavedChanges.has(activeScriptId) ? '*' : ''}
 								</Button>
 							</div>
 							
@@ -550,12 +617,22 @@
 
 				<!-- Editor and Results - same component instance always -->
 				<div class="flex-1 flex flex-col bg-background/30">
+					<!-- Script Tabs -->
+					<ScriptTabs
+						{openScripts}
+						{activeScriptId}
+						{unsavedChanges}
+						onTabSelect={switchToTab}
+						onTabClose={closeTab}
+						onNewScript={createNewScript}
+						onScriptRename={renameScript}
+					/>
+					
 					<SqlEditor 
 						{selectedConnection} 
 						{connections} 
-						{currentScript}
-						{hasUnsavedChanges}
-						onScriptRename={renameScript}
+						currentScript={activeScriptId !== null ? scripts.find(s => s.id === activeScriptId) : null}
+						hasUnsavedChanges={activeScriptId !== null && unsavedChanges.has(activeScriptId)}
 						bind:this={sqlEditorRef} 
 					/>
 				</div>

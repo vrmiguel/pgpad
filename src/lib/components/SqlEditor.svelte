@@ -1,176 +1,53 @@
 <script lang="ts">
-	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
-	import { Table, FileText, Clock, Search, Circle } from '@lucide/svelte';
-	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryHistoryEntry, type DatabaseSchema, type Script } from '$lib/commands.svelte';
-	import { createMonacoEditor, type CreateMonacoEditorOptions } from '$lib/monaco';
-	import { onMount, onDestroy } from 'svelte';
+	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import QueryResultsTable from './QueryResultsTable.svelte';
+	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryResultUI, type Script, type QueryHistoryEntry } from '$lib/commands.svelte';
+	import { createMonacoEditor, type CreateMonacoEditorOptions } from '$lib/monaco';
+	import { onMount } from 'svelte';
+	import { ChevronDown, ChevronRight, Play, Loader, Table, Clock, Search, History } from '@lucide/svelte';
 
 	interface Props {
 		selectedConnection: string | null;
 		connections: ConnectionInfo[];
-		currentScript?: Script | null;
-		hasUnsavedChanges?: boolean;
-		onScriptRename?: (scriptId: number, newName: string) => void;
+		currentScript: Script | null;
+		hasUnsavedChanges: boolean;
 	}
 
-	let { selectedConnection, connections, currentScript = null, hasUnsavedChanges = false, onScriptRename }: Props = $props();
-	
-	// Script name editing state
-	let isEditingName = $state(false);
-	let editingName = $state('');
-	let nameInput = $state<HTMLInputElement>();
+	let { 
+		selectedConnection = $bindable(), 
+		connections = $bindable(), 
+		currentScript = $bindable(),
+		hasUnsavedChanges = $bindable()
+	}: Props = $props();
 
-	// Reset editing state if the current script changes
-	$effect(() => {
-		isEditingName = false;
-		editingName = '';
-	});
-
-	function startEditingName() {
-		if (!currentScript) return;
-		isEditingName = true;
-		editingName = currentScript.name;
-		// Auto-focus the input
-		setTimeout(() => {
-			if (nameInput) {
-				nameInput.focus();
-				nameInput.select();
-			}
-		}, 0);
-	}
-
-	function finishEditingName() {
-		if (!currentScript || !editingName.trim()) {
-			isEditingName = false;
-			editingName = '';
-			return;
-		}
-		
-		if (editingName.trim() !== currentScript.name) {
-			onScriptRename?.(currentScript.id, editingName.trim());
-		}
-		
-		isEditingName = false;
-		editingName = '';
-	}
-
-	function handleNameKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			event.stopPropagation();
-			finishEditingName();
-		} else if (event.key === 'Escape') {
-			event.preventDefault();
-			event.stopPropagation();
-			isEditingName = false;
-			editingName = '';
-		}
-	}
+	let editorContainer = $state<HTMLElement>();
+	let monacoEditor: ReturnType<typeof createMonacoEditor> | null = null;
 
 	let sqlQuery = $state(`-- Welcome to PgPad!
 -- Keyboard shortcuts:
 --   Ctrl+Enter: Run selected text (or current line if nothing selected)
 --   Ctrl+R: Run entire script
 
-SELECT 
-    table_name,
-    column_name,
-    data_type
-FROM information_schema.columns
-WHERE table_schema = 'public'
-ORDER BY table_name, ordinal_position;`);
+SELECT 1 as test;`);
 
-	let queryResult = $state<QueryResult | null>(null);
+	let queryResultUI = $state<QueryResultUI | null>(null);
 	let isExecuting = $state(false);
-	let queryHistory: QueryHistoryEntry[] = $state([]);
-	let databaseSchema = $state<DatabaseSchema | null>(null);
-
+	let queryHistory = $state<QueryHistoryEntry[]>([]);
 	let table: any = $state();
 	let globalFilter = $state('');
+	let activeTab = $state<'results' | 'history'>('results');
 
-	// Load query history from storage
-	async function loadQueryHistory() {
-		if (!selectedConnection) {
-			queryHistory = [];
-			return;
-		}
-
-		try {
-			const history = await DatabaseCommands.getQueryHistory(selectedConnection, 50);
-			queryHistory = history;
-		} catch (error) {
-			console.error('Failed to load query history:', error);
-			queryHistory = [];
-		}
-	}
-
-	async function loadDatabaseSchema() {
-		if (!selectedConnection) {
-			databaseSchema = null;
-			return;
-		}
-
+	// Derived values (safer than $effect)
+	const isConnected = $derived(() => {
+		if (!selectedConnection) return false;
 		const connection = connections.find(c => c.id === selectedConnection);
-		if (!connection?.connected) {
-			databaseSchema = null;
-			return;
-		}
+		return connection?.connected || false;
+	});
 
-		try {
-			const schema = await DatabaseCommands.getDatabaseSchema(selectedConnection);
-			databaseSchema = schema;
-			console.log('Loaded database schema:', schema);
-			
-			if (monacoEditor) {
-				monacoEditor.updateSchema(schema);
-			}
-		} catch (error) {
-			console.error('Failed to load database schema:', error);
-			databaseSchema = null;
-		}
-	}
-
-	function formatTimestamp(timestamp: number): string {
-		return new Date(timestamp * 1000).toLocaleString();
-	}
-
-	function formatDuration(durationMs: number | null): string {
-		if (durationMs === null) return '0ms';
-		return `${durationMs}ms`;
-	}
-
-	// Monaco stuff **
-	let editorContainer: HTMLElement;
-	let monacoEditor: ReturnType<typeof createMonacoEditor> | null = null;
-    //              **
-
-	export async function handleExecuteQuery() {
-		if (!selectedConnection || !sqlQuery.trim()) return;
-		
-		if (!isConnected()) {
-			console.warn('Cannot execute query: No active database connection');
-			
-			try {
-				await DatabaseCommands.saveQueryToHistory(
-					selectedConnection,
-					sqlQuery.trim(),
-					null,
-					'error',
-					0,
-					'No active database connection. Please connect to a database first.'
-				);
-				await loadQueryHistory();
-			} catch (error) {
-				console.error('Failed to save query to history:', error);
-			}
-			return;
-		}
-
-		await executeQuery(sqlQuery.trim());
-	}
+	const results = $derived(queryResultUI?.data || []);
 
 	export function getContent(): string {
 		return sqlQuery;
@@ -183,65 +60,112 @@ ORDER BY table_name, ordinal_position;`);
 		}
 	}
 
-	async function handleExecuteSelection(selectedText: string) {
-		if (!selectedConnection || !selectedText) return;
+	async function loadQueryHistory() {
+		if (!selectedConnection) return;
+		
+		try {
+			queryHistory = await DatabaseCommands.getQueryHistory(selectedConnection, 50);
+		} catch (error) {
+			console.error('Failed to load query history:', error);
+			queryHistory = [];
+		}
+	}
+
+	export async function handleExecuteQuery() {
+		if (!selectedConnection || !sqlQuery.trim()) return;
 		
 		if (!isConnected()) {
 			console.warn('Cannot execute query: No active database connection');
 			return;
 		}
 
-		await executeQuery(selectedText);
-	}
-
-	async function executeQuery(queryText: string) {
-		if (!selectedConnection) return;
+		const startTime = Date.now();
 		
-		isExecuting = true;
-		const start = Date.now();
-
 		try {
-			const result = await DatabaseCommands.executeQuery(selectedConnection, queryText);
-			queryResult = result;
-
-			try {
-				await DatabaseCommands.saveQueryToHistory(
-					selectedConnection,
-					queryText,
-					result.duration_ms,
-					'success',
-					result.row_count,
-					null
-				);
-				await loadQueryHistory();
-			} catch (error) {
-				console.error('Failed to save query to history:', error);
-			}
-		} catch (error) {
-			console.error('Query execution failed:', error);
+			isExecuting = true;
+			const result: QueryResult = await DatabaseCommands.executeQuery(selectedConnection, sqlQuery.trim());
+			const duration = Date.now() - startTime;
 			
-			try {
-				await DatabaseCommands.saveQueryToHistory(
-					selectedConnection,
-					queryText,
-					Date.now() - start,
-					'error',
-					0,
-					String(error)
-				);
-				await loadQueryHistory();
-			} catch (historyError) {
-				console.error('Failed to save query to history:', historyError);
-			}
+			// Create UI-friendly result
+			queryResultUI = {
+				success: true,
+				data: result.rows.map(row => {
+					const rowObj: Record<string, any> = {};
+					result.columns.forEach((col, i) => {
+						rowObj[col] = row[i];
+					});
+					return rowObj;
+				}),
+				columns: result.columns,
+				duration: result.duration_ms,
+				queryResult: result
+			};
+
+			// Reload query history to get the newly saved query
+			await loadQueryHistory();
+
+			// Switch to results tab when query executes
+			activeTab = 'results';
+		} catch (error) {
+			console.error('Failed to execute query:', error);
+			
+			queryResultUI = {
+				success: false,
+				data: [],
+				columns: [],
+				message: `Error: ${error}`,
+				duration: 0
+			};
+
+			// Reload query history to get the failed query
+			await loadQueryHistory();
+
+			// Switch to results tab to show error
+			activeTab = 'results';
 		} finally {
 			isExecuting = false;
 		}
 	}
 
-	const isConnected = $derived(() => {
-		if (!selectedConnection) return false;
-		const connection = connections.find(c => c.id === selectedConnection);
-		return connection?.connected || false;
+	function loadQueryFromHistory(historyQuery: string) {
+		sqlQuery = historyQuery;
+		if (monacoEditor) {
+			monacoEditor.updateValue(historyQuery);
+		}
+	}
+
+	function formatDuration(ms: number | null): string {
+		if (ms === null || ms === undefined) return '0ms';
+		if (ms < 1000) return `${ms}ms`;
+		return `${(ms / 1000).toFixed(2)}s`;
+	}
+
+	function formatTimestamp(timestamp: number): string {
+		return new Date(timestamp * 1000).toLocaleString();
+	}
+
+	// Load database schema for Monaco completion
+	async function loadDatabaseSchema() {
+		if (!selectedConnection || !monacoEditor) return;
+		
+		try {
+			const connection = connections.find(c => c.id === selectedConnection);
+			if (connection?.connected) {
+				// Get schema information for autocomplete
+				const schema = await DatabaseCommands.getDatabaseSchema(selectedConnection);
+				monacoEditor.updateSchema(schema);
+			}
+		} catch (error) {
+			console.error('Failed to load database schema:', error);
+		}
+	}
+
+	// Effect to reload history when connection changes
+	$effect(() => {
+		if (selectedConnection) {
+			loadQueryHistory();
+			loadDatabaseSchema();
+		}
 	});
 
 	onMount(() => {
@@ -250,51 +174,34 @@ ORDER BY table_name, ordinal_position;`);
 				monacoEditor = createMonacoEditor({
 					container: editorContainer,
 					value: sqlQuery,
-					onChange: (value) => {
-						sqlQuery = value;
+					onChange: (newValue) => {
+						sqlQuery = newValue;
 					},
 					onExecute: handleExecuteQuery,
-					onExecuteSelection: handleExecuteSelection,
+					onExecuteSelection: (selectedText: string) => {
+						// Simple execution of selected text
+						const originalQuery = sqlQuery;
+						sqlQuery = selectedText;
+						handleExecuteQuery().then(() => {
+							sqlQuery = originalQuery;
+						});
+					},
 					disabled: false,
-					theme: 'light', // TODO
-					schema: databaseSchema
+					schema: null
 				});
+
+				loadDatabaseSchema();
 			} else {
-				// Try again if DOM not ready
-				requestAnimationFrame(initializeEditor);
+				setTimeout(initializeEditor, 100);
 			}
 		};
+
+		initializeEditor();
 		
-		requestAnimationFrame(initializeEditor);
-	});
-
-	onDestroy(() => {
-		monacoEditor?.dispose();
-	});
-
-	$effect(() => {
-		if (monacoEditor) {
-			monacoEditor.updateValue(sqlQuery);
+		if (selectedConnection) {
+			loadQueryHistory();
 		}
 	});
-
-	// Load query history on connection changes
-	$effect(() => {
-		loadQueryHistory();
-	});
-
-	// Load database schema on connection changes
-	$effect(() => {
-		loadDatabaseSchema();
-	});
-
-	const results = $derived(queryResult?.rows.map(row => {
-		const rowObj: Record<string, any> = {};
-		queryResult?.columns.forEach((col, i) => {
-			rowObj[col] = row[i];
-		});
-		return rowObj;
-	}) || []);
 </script>
 
 <div class="flex-1 flex flex-col">
@@ -303,37 +210,6 @@ ORDER BY table_name, ordinal_position;`);
 		<ResizablePane defaultSize={60} minSize={30} maxSize={80}>
 			<div class="h-full p-4 pb-2">
 				<Card class="h-full flex flex-col">
-					<div class="flex-shrink-0 px-3 bg-white border-b border-border/50 flex items-center gap-2 min-h-8">
-						<div class="flex items-center gap-2 text-sm">
-							<FileText class="w-4 h-4 text-muted-foreground" />
-							{#if isEditingName}
-								<Input
-									bind:this={nameInput}
-									bind:value={editingName}
-									onkeydown={handleNameKeydown}
-									onblur={finishEditingName}
-									class="w-auto h-6 px-1 text-sm font-medium focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-offset-0 border border-border rounded"
-								/>
-							{:else}
-								<button 
-									type="button"
-									class="font-medium hover:bg-muted/50 px-1 py-0.5 rounded transition-colors text-left"
-									onclick={startEditingName}
-								>
-									{currentScript?.name || 'Untitled'}
-								</button>
-							{/if}
-							{#if hasUnsavedChanges}
-								<Circle class="w-2 h-2 fill-orange-500 text-orange-500" />
-							{/if}
-						</div>
-						<div class="flex-1"></div>
-						{#if currentScript}
-							<div class="text-xs text-muted-foreground">
-								Last saved: {new Date(currentScript.updated_at * 1000).toLocaleString()}
-							</div>
-						{/if}
-					</div>
 					<CardContent class="flex-1 p-0 min-h-0">
 						<div 
 							bind:this={editorContainer}
@@ -346,122 +222,136 @@ ORDER BY table_name, ordinal_position;`);
 
 		<ResizableHandle />
 
-		<!-- Results Section Pane -->
+		<!-- Results & History Section Pane -->
 		<ResizablePane defaultSize={40} minSize={20}>
 			<div class="h-full px-4 pt-2 pb-4">
-				<ResizablePaneGroup direction="horizontal" class="h-full">
-					<!-- Query Results Pane -->
-					<ResizablePane defaultSize={70} minSize={40}>
-						<Card class="h-full flex flex-col overflow-hidden mr-2">
-							<CardHeader class="pb-2 flex-shrink-0">
-								<CardTitle class="flex items-center gap-2 mb-3">
-									<Table class="w-4 h-4" />
-									Results
-									{#if results.length > 0}
-										<span class="text-sm font-normal text-muted-foreground">({results.length} rows)</span>
-									{/if}
-								</CardTitle>
-								
-								{#if results.length > 0 && queryResult?.columns}
-									<!-- Search integrated into header -->
-									<div class="flex items-center justify-between gap-4">
-										<div class="flex items-center gap-2 flex-1 max-w-sm">
-											<Search class="w-4 h-4 text-muted-foreground" />
-											<Input
-												placeholder="Search all columns..."
-												bind:value={globalFilter}
-												class="h-8"
-											/>
-										</div>
-										
-										<div class="flex items-center gap-2 text-sm text-muted-foreground">
-											<span>
-												{table?.getFilteredRowModel().rows.length || 0} of {table?.getCoreRowModel().rows.length || 0} row(s)
-											</span>
-										</div>
-									</div>
+				<Card class="h-full flex flex-col overflow-hidden">
+					<CardHeader class="pb-2 flex-shrink-0">
+						<!-- Tab navigation -->
+						<div class="flex items-center gap-1 mb-3">
+							<button
+								type="button"
+								class="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors {activeTab === 'results' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}"
+								onclick={() => activeTab = 'results'}
+							>
+								<Table class="w-4 h-4" />
+								Results
+								{#if results.length > 0}
+									<span class="text-xs opacity-75">({results.length})</span>
 								{/if}
-							</CardHeader>
-							
-							{#if results.length > 0 && queryResult?.columns}
-								<!-- Table fills remaining space -->
-								<div class="flex-1 flex flex-col min-h-0">
-									<QueryResultsTable
-										data={results}
-										columns={queryResult.columns}
-										bind:table
-										bind:globalFilter
+							</button>
+							<button
+								type="button"
+								class="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors {activeTab === 'history' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}"
+								onclick={() => activeTab = 'history'}
+							>
+								<History class="w-4 h-4" />
+								History
+								{#if queryHistory.length > 0}
+									<span class="text-xs opacity-75">({queryHistory.length})</span>
+								{/if}
+							</button>
+						</div>
+						
+						{#if activeTab === 'results' && results.length > 0 && queryResultUI?.columns}
+							<div class="flex items-center justify-between gap-4">
+								<div class="flex items-center gap-2 flex-1 max-w-sm">
+									<Search class="w-4 h-4 text-muted-foreground" />
+									<Input
+										placeholder="Search all columns..."
+										bind:value={globalFilter}
+										class="h-8"
 									/>
 								</div>
-							{:else}
-								<div class="flex-1 flex items-center justify-center text-muted-foreground">
-									<div class="text-center">
-										<div class="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mx-auto mb-4">
-											<Table class="w-8 h-8 text-muted-foreground/50" />
-										</div>
-										<p class="text-sm font-medium">No results to display</p>
-										<p class="text-xs text-muted-foreground/70 mt-1">Run a query to see results here</p>
+							</div>
+						{/if}
+					</CardHeader>
+					
+					<!-- Results Tab Content -->
+					{#if activeTab === 'results'}
+						{#if results.length > 0 && queryResultUI?.columns}
+							<div class="flex-1 flex flex-col min-h-0">
+								<QueryResultsTable
+									data={results}
+									columns={queryResultUI.columns}
+									bind:table
+									bind:globalFilter
+								/>
+							</div>
+						{:else}
+							<div class="flex-1 flex items-center justify-center text-muted-foreground">
+								<div class="text-center">
+									<div class="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mx-auto mb-4">
+										<Table class="w-8 h-8 text-muted-foreground/50" />
 									</div>
+									<p class="text-sm font-medium">No results to display</p>
+									<p class="text-xs text-muted-foreground/70 mt-1">Run a query to see results here</p>
 								</div>
-							{/if}
-						</Card>
-					</ResizablePane>
-
-					<ResizableHandle />
-
-					<!-- Query History Pane -->
-					<ResizablePane defaultSize={30} minSize={25} maxSize={50}>
-						<Card class="h-full flex flex-col ml-2">
-							<CardHeader class="flex-shrink-0">
-								<CardTitle class="flex items-center gap-2">
-									<Clock class="w-4 h-4" />
-									Query History
-								</CardTitle>
-							</CardHeader>
-							<CardContent class="p-0 flex-1 min-h-0">
-								<div class="overflow-auto h-full">
-									{#if queryHistory.length > 0}
-										<div class="space-y-2 p-3">
-											{#each queryHistory as query}
-												<div class="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer">
-													<div class="font-mono text-xs text-muted-foreground mb-1 truncate">
-														{query.query_text}
+							</div>
+						{/if}
+					{/if}
+					
+					<!-- History Tab Content -->
+					{#if activeTab === 'history'}
+						{#if queryHistory.length > 0}
+							<div class="flex-1 overflow-auto">
+								<div class="space-y-2 p-2">
+									{#each queryHistory as historyItem}
+										<button
+											type="button"
+											class="group w-full border rounded-lg p-3 hover:bg-muted/30 transition-colors cursor-pointer text-left"
+											onclick={() => loadQueryFromHistory(historyItem.query_text)}
+										>
+											<div class="flex items-start justify-between gap-2 mb-2">
+												<div class="flex items-center gap-2 flex-1 min-w-0">
+													<div class="flex items-center gap-1">
+														{#if historyItem.status === 'success'}
+															<div class="w-2 h-2 rounded-full bg-green-500"></div>
+														{:else}
+															<div class="w-2 h-2 rounded-full bg-red-500"></div>
+														{/if}
 													</div>
-													<div class="flex items-center justify-between text-xs text-muted-foreground">
-														<span>{formatTimestamp(query.executed_at)}</span>
-														<div class="flex items-center gap-2">
-															<span class="px-1.5 py-0.5 rounded text-xs {query.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
-																{query.status}
-															</span>
-															<span>{formatDuration(query.duration_ms)}</span>
-														</div>
-													</div>
-													{#if query.status === 'success'}
-														<div class="text-xs text-muted-foreground/70 mt-1">
-															{query.row_count} row{query.row_count !== 1 ? 's' : ''}
-														</div>
-													{:else if query.error_message}
-														<div class="text-xs text-red-500 mt-1 truncate">
-															{query.error_message}
-														</div>
+													<span class="text-xs text-muted-foreground">
+														{formatTimestamp(historyItem.executed_at)}
+													</span>
+													{#if historyItem.status === 'success'}
+														<span class="text-xs text-muted-foreground">
+															{historyItem.row_count} rows
+														</span>
 													{/if}
+													<span class="text-xs text-muted-foreground">
+														{formatDuration(historyItem.duration_ms)}
+													</span>
 												</div>
-											{/each}
-										</div>
-									{:else}
-										<div class="flex items-center justify-center h-full text-muted-foreground">
-											<div class="text-center">
-												<Clock class="w-8 h-8 mx-auto mb-2 opacity-50" />
-												<p class="text-sm">No queries yet</p>
-												<p class="text-xs text-muted-foreground/70 mt-1">Your query history will appear here</p>
+												<span class="opacity-0 group-hover:opacity-100 text-xs text-primary font-medium">
+													Load
+												</span>
 											</div>
-										</div>
-									{/if}
+											<code class="text-xs bg-muted/50 p-2 rounded block overflow-hidden text-left">
+												{historyItem.query_text.length > 200 ? historyItem.query_text.slice(0, 200) + '...' : historyItem.query_text}
+											</code>
+											{#if historyItem.error_message}
+												<p class="text-xs text-red-600 mt-1 p-2 bg-red-50 rounded text-left">
+													{historyItem.error_message}
+												</p>
+											{/if}
+										</button>
+									{/each}
 								</div>
-							</CardContent>
-						</Card>
-					</ResizablePane>
-				</ResizablePaneGroup>
+							</div>
+						{:else}
+							<div class="flex-1 flex items-center justify-center text-muted-foreground">
+								<div class="text-center">
+									<div class="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mx-auto mb-4">
+										<History class="w-8 h-8 text-muted-foreground/50" />
+									</div>
+									<p class="text-sm font-medium">No query history</p>
+									<p class="text-xs text-muted-foreground/70 mt-1">Execute queries to see history here</p>
+								</div>
+							</div>
+						{/if}
+					{/if}
+				</Card>
 			</div>
 		</ResizablePane>
 	</ResizablePaneGroup>

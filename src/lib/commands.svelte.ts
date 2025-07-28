@@ -82,6 +82,16 @@ export interface QueryResult {
 	duration_ms: number;
 }
 
+// UI-facing result type that includes success/error state
+export interface QueryResultUI {
+	success: boolean;
+	data?: any[];
+	columns?: string[];
+	message?: string;
+	duration?: number;
+	queryResult?: QueryResult;
+}
+
 export interface QueryHistoryEntry {
 	id: number;
 	connection_id: string;
