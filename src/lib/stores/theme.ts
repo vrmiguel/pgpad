@@ -7,7 +7,7 @@ const initialTheme = typeof localStorage !== 'undefined'
 
 export const theme = writable<'light' | 'dark'>(initialTheme as 'light' | 'dark');
 
-const monacoThemeCallbacks = new Set<(theme: 'light' | 'dark') => void>();
+const editorThemeCallbacks = new Set<(theme: 'light' | 'dark') => void>();
 
 theme.subscribe((value) => {
     if (typeof localStorage !== 'undefined') {
@@ -22,7 +22,7 @@ theme.subscribe((value) => {
         }
     }
 
-    monacoThemeCallbacks.forEach(callback => callback(value));
+    editorThemeCallbacks.forEach(callback => callback(value));
 });
 
 if (typeof document !== 'undefined' && initialTheme === 'dark') {
@@ -33,10 +33,11 @@ export function toggleTheme() {
     theme.update(current => current === 'light' ? 'dark' : 'light');
 }
 
-export function registerMonacoThemeCallback(callback: (theme: 'light' | 'dark') => void) {
-    monacoThemeCallbacks.add(callback);
+export function registerEditorThemeCallback(callback: (theme: 'light' | 'dark') => void) {
+    editorThemeCallbacks.add(callback);
 
     return () => {
-        monacoThemeCallbacks.delete(callback);
+        editorThemeCallbacks.delete(callback);
     };
-} 
+}
+

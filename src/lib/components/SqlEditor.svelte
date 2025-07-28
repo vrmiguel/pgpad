@@ -5,7 +5,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import QueryResultsTable from './QueryResultsTable.svelte';
 	import { DatabaseCommands, type ConnectionInfo, type QueryResult, type QueryResultUI, type Script, type QueryHistoryEntry } from '$lib/commands.svelte';
-	import { createMonacoEditor, type CreateMonacoEditorOptions } from '$lib/monaco';
+	import { createEditor, type CreateEditorOptions } from '$lib/codemirror';
 	import { onMount } from 'svelte';
 	import { ChevronDown, ChevronRight, Play, Loader, Table, Clock, Search, History } from '@lucide/svelte';
 
@@ -28,7 +28,7 @@
 	}: Props = $props();
 
 	let editorContainer = $state<HTMLElement>();
-	let monacoEditor: ReturnType<typeof createMonacoEditor> | null = null;
+	let sqlEditor: ReturnType<typeof createEditor> | null = null;
 
 	let sqlQuery = $state(`-- Welcome to PgPad!
 -- Keyboard shortcuts:
@@ -60,8 +60,8 @@ SELECT 1 as test;`);
 	export function setContent(content: string) {
 		sqlQuery = content;
 		onContentChange?.(content);
-		if (monacoEditor) {
-			monacoEditor.updateValue(content);
+		if (sqlEditor) {
+			sqlEditor.updateValue(content);
 		}
 	}
 
@@ -76,8 +76,9 @@ SELECT 1 as test;`);
 		}
 	}
 
-	export async function handleExecuteQuery() {
-		if (!selectedConnection || !sqlQuery.trim()) return;
+	export async function handleExecuteQuery(queryToExecute?: string) {
+		const query = queryToExecute || sqlQuery;
+		if (!selectedConnection || !query.trim()) return;
 		
 		if (!isConnected()) {
 			console.warn('Cannot execute query: No active database connection');
@@ -88,12 +89,12 @@ SELECT 1 as test;`);
 		
 		try {
 			isExecuting = true;
-			const result: QueryResult = await DatabaseCommands.executeQuery(selectedConnection, sqlQuery.trim());
+			const result: QueryResult = await DatabaseCommands.executeQuery(selectedConnection, query.trim());
 			const duration = Date.now() - startTime;
 			
 			await DatabaseCommands.saveQueryToHistory(
 				selectedConnection,
-				sqlQuery.trim(),
+				query.trim(),
 				result.duration_ms,
 				'success',
 				result.rows.length
@@ -124,7 +125,7 @@ SELECT 1 as test;`);
 			const duration = Date.now() - startTime;
 			await DatabaseCommands.saveQueryToHistory(
 				selectedConnection,
-				sqlQuery.trim(),
+				query.trim(),
 				duration,
 				'error',
 				0,
@@ -166,16 +167,16 @@ SELECT 1 as test;`);
 		return new Date(timestamp * 1000).toLocaleString();
 	}
 
-	// Load database schema for Monaco completion
+	// Load database schema for editor completion
 	async function loadDatabaseSchema() {
-		if (!selectedConnection || !monacoEditor) return;
+		if (!selectedConnection || !sqlEditor) return;
 		
 		try {
 			const connection = connections.find(c => c.id === selectedConnection);
 			if (connection?.connected) {
 				// Get schema information for autocomplete
 				const schema = await DatabaseCommands.getDatabaseSchema(selectedConnection);
-				monacoEditor.updateSchema(schema);
+				sqlEditor.updateSchema(schema);
 			}
 		} catch (error) {
 			console.error('Failed to load database schema:', error);
@@ -193,7 +194,7 @@ SELECT 1 as test;`);
 	onMount(() => {
 		const initializeEditor = () => {
 			if (editorContainer && editorContainer.offsetParent !== null) {
-				monacoEditor = createMonacoEditor({
+				sqlEditor = createEditor({
 					container: editorContainer,
 					value: sqlQuery,
 					onChange: (newValue) => {
@@ -202,12 +203,7 @@ SELECT 1 as test;`);
 					},
 					onExecute: handleExecuteQuery,
 					onExecuteSelection: (selectedText: string) => {
-						// Simple execution of selected text
-						const originalQuery = sqlQuery;
-						sqlQuery = selectedText;
-						handleExecuteQuery().then(() => {
-							sqlQuery = originalQuery;
-						});
+						handleExecuteQuery(selectedText);
 					},
 					disabled: false,
 					schema: null
@@ -231,12 +227,12 @@ SELECT 1 as test;`);
 	<ResizablePaneGroup direction="vertical" class="flex-1">
 		<!-- SQL Editor Pane -->
 		<ResizablePane defaultSize={60} minSize={30} maxSize={80}>
-			<div class="h-full p-4 pb-2">
-				<Card class="h-full flex flex-col">
+			<div class="h-full p-4 pb-1">
+				<Card class="h-full flex flex-col py-0">
 					<CardContent class="flex-1 p-0 min-h-0">
 						<div 
 							bind:this={editorContainer}
-							class="w-full h-full"
+							class="w-full h-full rounded-xl overflow-hidden"
 						></div>
 					</CardContent>
 				</Card>
@@ -247,7 +243,7 @@ SELECT 1 as test;`);
 
 		<!-- Results & History Section Pane -->
 		<ResizablePane defaultSize={40} minSize={20}>
-			<div class="h-full px-4 pt-2 pb-4">
+			<div class="h-full px-4 pt-1 pb-4">
 				<Card class="h-full flex flex-col overflow-hidden">
 					<CardHeader class="pb-2 flex-shrink-0">
 						<!-- Tab navigation -->
