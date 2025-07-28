@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Database, Plus, Play, Save, ChevronLeft, ChevronRight, FileText } from '@lucide/svelte';
+	import { Database, Plus, Play, Save, ChevronLeft, ChevronRight, FileText, Table } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { Accordion, AccordionItem, AccordionContent } from '$lib/components/ui/accordion';
@@ -7,7 +7,8 @@
 	import SqlEditor from './SqlEditor.svelte';
 	import ConnectionForm from './ConnectionForm.svelte';
 	import ScriptTabs from './ScriptTabs.svelte';
-	import { DatabaseCommands, type ConnectionInfo, type ConnectionConfig, type Script } from '$lib/commands.svelte';
+	import DatabaseSchemaItems from './DatabaseSchemaItems.svelte';
+	import { DatabaseCommands, type ConnectionInfo, type ConnectionConfig, type Script, type DatabaseSchema } from '$lib/commands.svelte';
 	import { onMount } from 'svelte';
 
 	interface Props {
@@ -41,24 +42,51 @@
 	let isSidebarCollapsed = $state(false);
 	let lastResizeTime = $state(0);
 
+	let databaseSchema = $state<DatabaseSchema | null>(null);
+	let loadingSchema = $state(false);
+	let lastLoadedSchemaConnectionId = $state<string | null>(null);
+	let isItemsAccordionOpen = $state(false);
+
 	// Auto-collapse if resized below 8%
 	const COLLAPSE_THRESHOLD = 12;
 	// Auto-expand if resized above 10%
 	const EXPAND_THRESHOLD = 10;
 
 	$effect(() => {
-		if (selectedConnection) {
-			const connection = connections.find(c => c.id === selectedConnection);
+		const connId = selectedConnection;
+		const allConnections = connections;
+		const connecting = establishingConnections;
+		
+		if (connId) {
+			const connection = allConnections.find(c => c.id === connId);
 			if (connection) {
 				currentConnection = {
 					name: connection.name,
 					connected: connection.connected
 				};
-				isConnecting = establishingConnections.has(connection.id);
+				isConnecting = connecting.has(connection.id);
 			}
 		} else {
 			currentConnection = null;
 			isConnecting = false;
+		}
+	});
+
+	$effect(() => {
+		const connId = selectedConnection;
+		const allConnections = connections;
+		
+		if (connId) {
+			const connection = allConnections.find(c => c.id === connId);
+			if (connection?.connected) {
+				loadDatabaseSchemaIfNeeded(connId);
+			} else {
+				databaseSchema = null;
+				lastLoadedSchemaConnectionId = null;
+			}
+		} else {
+			databaseSchema = null;
+			lastLoadedSchemaConnectionId = null;
 		}
 	});
 
@@ -214,7 +242,14 @@
 			
 			// Create a new script on startup if no scripts are open
 			if (openScripts.length === 0) {
-				await createNewScript();
+				// Reuse "Untitled Script" on startup
+				const existingUntitledScript = scripts.find(s => s.name === 'Untitled Script');
+				
+				if (existingUntitledScript) {
+					openScript(existingUntitledScript);
+				} else {
+					await createNewScript();
+				}
 			}
 		} catch (error) {
 			console.error('Failed to initialize connections:', error);
@@ -260,6 +295,10 @@
 			if (success) {
 				// Update the connection status
 				await loadConnections();
+				// Load schema after successful connection
+				if (selectedConnection === connectionId) {
+					await loadDatabaseSchemaForced();
+				}
 			}
 		} catch (error) {
 			console.error('Failed to connect:', error);
@@ -267,6 +306,46 @@
 			establishingConnections = new Set([...establishingConnections].filter(id => id !== connectionId));
 		}
 	}
+
+	async function loadDatabaseSchemaIfNeeded(connectionId: string) {
+		// Don't reload if already loaded for this connection or currently loading
+		if (lastLoadedSchemaConnectionId === connectionId || loadingSchema) {
+			return;
+		}
+
+		try {
+			loadingSchema = true;
+			databaseSchema = await DatabaseCommands.getDatabaseSchema(connectionId);
+			lastLoadedSchemaConnectionId = connectionId;
+		} catch (error) {
+			console.error('Failed to load database schema:', error);
+			databaseSchema = null;
+			lastLoadedSchemaConnectionId = null;
+		} finally {
+			loadingSchema = false;
+		}
+	}
+
+	// Force load schema regardless of connection state (used after successful connection)
+	async function loadDatabaseSchemaForced() {
+		if (!selectedConnection || loadingSchema) return;
+
+		try {
+			loadingSchema = true;
+			// Reset the last loaded ID to force reload
+			lastLoadedSchemaConnectionId = null;
+			databaseSchema = await DatabaseCommands.getDatabaseSchema(selectedConnection);
+			lastLoadedSchemaConnectionId = selectedConnection;
+		} catch (error) {
+			console.error('Failed to load database schema:', error);
+			databaseSchema = null;
+			lastLoadedSchemaConnectionId = null;
+		} finally {
+			loadingSchema = false;
+		}
+	}
+
+
 
 	// Sidebar toggle functionality
 	function toggleSidebar() {
@@ -402,11 +481,41 @@
 			// drop from local state
 			scripts = scripts.filter(s => s.id !== script.id);
 			
-			if (activeScriptId === script.id) {
-				activeScriptId = null;
+			// If the script is currently open in a tab, convert it to a new/unsaved script
+			const openScriptIndex = openScripts.findIndex(s => s.id === script.id);
+			if (openScriptIndex !== -1) {
+				const tempId = nextTempId--;
+				
+				const updatedScript = {
+					...script,
+					id: tempId
+				};
+				
+				openScripts[openScriptIndex] = updatedScript;
+				
+				const currentContent = scriptContents.get(script.id) || script.query_text;
 				scriptContents.delete(script.id);
-				unsavedChanges = new Set([...unsavedChanges].filter(id => id !== script.id));
-				newScripts.delete(script.id);
+				scriptContents.set(tempId, currentContent);
+				
+				if (unsavedChanges.has(script.id)) {
+					unsavedChanges.delete(script.id);
+					unsavedChanges.add(tempId);
+				}
+				
+				newScripts.add(tempId);
+				if (activeScriptId === script.id) {
+					activeScriptId = tempId;
+				}
+				
+				scripts.push(updatedScript);
+			} else {
+				// Script not open in tabs - clean up normally
+				if (activeScriptId === script.id) {
+					activeScriptId = null;
+					scriptContents.delete(script.id);
+					unsavedChanges = new Set([...unsavedChanges].filter(id => id !== script.id));
+					newScripts.delete(script.id);
+				}
 			}
 		} catch (error) {
 			console.error('Failed to delete script:', error);
@@ -658,6 +767,23 @@
 														{/if}
 													</div>
 												</div>
+											{/snippet}
+										</AccordionContent>
+									{/snippet}
+								</AccordionItem>
+
+																<!-- Items Accordion -->
+								<AccordionItem title="Items" icon={Table} bind:open={isItemsAccordionOpen}>
+									{#snippet children()}
+										<AccordionContent>
+											{#snippet children()}
+												{#if isItemsAccordionOpen}
+													<DatabaseSchemaItems 
+														{databaseSchema}
+														{loadingSchema}
+														{selectedConnection}
+													/>
+												{/if}
 											{/snippet}
 										</AccordionContent>
 									{/snippet}

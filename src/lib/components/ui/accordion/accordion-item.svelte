@@ -11,7 +11,7 @@
 		class?: string;
 	}
 
-	let { title, icon, open = false, children, class: className = '' }: Props = $props();
+	let { title, icon, open = $bindable(false), children, class: className = '' }: Props = $props();
 
 	function toggle() {
 		open = !open;
