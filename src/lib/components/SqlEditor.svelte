@@ -14,13 +14,15 @@
 		connections: ConnectionInfo[];
 		currentScript: Script | null;
 		hasUnsavedChanges: boolean;
+		onContentChange?: (content: string) => void;
 	}
 
 	let { 
 		selectedConnection = $bindable(), 
 		connections = $bindable(), 
 		currentScript = $bindable(),
-		hasUnsavedChanges = $bindable()
+		hasUnsavedChanges = $bindable(),
+		onContentChange
 	}: Props = $props();
 
 	let editorContainer = $state<HTMLElement>();
@@ -55,6 +57,7 @@ SELECT 1 as test;`);
 
 	export function setContent(content: string) {
 		sqlQuery = content;
+		onContentChange?.(content);
 		if (monacoEditor) {
 			monacoEditor.updateValue(content);
 		}
@@ -86,7 +89,14 @@ SELECT 1 as test;`);
 			const result: QueryResult = await DatabaseCommands.executeQuery(selectedConnection, sqlQuery.trim());
 			const duration = Date.now() - startTime;
 			
-			// Create UI-friendly result
+			await DatabaseCommands.saveQueryToHistory(
+				selectedConnection,
+				sqlQuery.trim(),
+				result.duration_ms,
+				'success',
+				result.rows.length
+			);
+			
 			queryResultUI = {
 				success: true,
 				data: result.rows.map(row => {
@@ -108,6 +118,16 @@ SELECT 1 as test;`);
 			activeTab = 'results';
 		} catch (error) {
 			console.error('Failed to execute query:', error);
+			
+			const duration = Date.now() - startTime;
+			await DatabaseCommands.saveQueryToHistory(
+				selectedConnection,
+				sqlQuery.trim(),
+				duration,
+				'error',
+				0,
+				String(error)
+			);
 			
 			queryResultUI = {
 				success: false,
@@ -176,6 +196,7 @@ SELECT 1 as test;`);
 					value: sqlQuery,
 					onChange: (newValue) => {
 						sqlQuery = newValue;
+						onContentChange?.(newValue);
 					},
 					onExecute: handleExecuteQuery,
 					onExecuteSelection: (selectedText: string) => {

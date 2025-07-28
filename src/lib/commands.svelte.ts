@@ -169,12 +169,12 @@ export class DatabaseCommands {
 	static async saveQueryToHistory(
 		connectionId: string,
 		query: string,
-		durationMs: number | null,
-		status: string,
-		rowCount: number,
-		errorMessage: string | null
+		durationMs?: number,
+		status: string = 'success',
+		rowCount: number = 0,
+		errorMessage?: string
 	): Promise<void> {
-		return await invoke('save_query_to_history', {
+		await invoke('save_query_to_history', {
 			connectionId,
 			query,
 			durationMs,
@@ -227,6 +227,6 @@ export class DatabaseCommands {
 	}
 
 	static async deleteScript(id: number): Promise<void> {
-		return await invoke('delete_script', { id });
+		await invoke('delete_script', { id });
 	}
 }

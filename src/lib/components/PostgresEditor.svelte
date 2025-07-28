@@ -32,11 +32,12 @@
 	let activeScriptId = $state<number | null>(null);
 	let unsavedChanges = $state<Set<number>>(new Set());
 	let scriptContents = $state<Map<number, string>>(new Map());
-	
+	let currentEditorContent = $state<string>('');
+
 	let isSidebarCollapsed = $state(false);
 	let lastResizeTime = $state(0);
 
-	// Auto-collapse if resized below 12%
+	// Auto-collapse if resized below 8%
 	const COLLAPSE_THRESHOLD = 12;
 	// Auto-expand if resized above 10%
 	const EXPAND_THRESHOLD = 10;
@@ -59,17 +60,37 @@
 
 	// Track unsaved changes for active script
 	$effect(() => {
-		if (activeScriptId !== null && sqlEditorRef) {
-			const currentContent = sqlEditorRef.getContent?.() || '';
+		if (activeScriptId !== null && currentEditorContent !== undefined) {
 			const savedContent = scripts.find(s => s.id === activeScriptId)?.query_text || '';
 			
-			if (currentContent !== savedContent) {
-				unsavedChanges.add(activeScriptId);
+			if (currentEditorContent !== savedContent) {
+				if (!unsavedChanges.has(activeScriptId)) {
+					unsavedChanges = new Set([...unsavedChanges, activeScriptId]);
+				}
 			} else {
-				unsavedChanges.delete(activeScriptId);
+				if (unsavedChanges.has(activeScriptId)) {
+					unsavedChanges = new Set([...unsavedChanges].filter(id => id !== activeScriptId));
+				}
 			}
 		}
 	});
+
+	// Update currentEditorContent when switching scripts
+	$effect(() => {
+		if (activeScriptId !== null) {
+			const content = scriptContents.get(activeScriptId) || scripts.find(s => s.id === activeScriptId)?.query_text || '';
+			currentEditorContent = content;
+		} else {
+			currentEditorContent = '';
+		}
+	});
+
+	function handleEditorContentChange(newContent: string) {
+		currentEditorContent = newContent;
+		if (activeScriptId !== null) {
+			scriptContents.set(activeScriptId, newContent);
+		}
+	}
 
 	function handlePaneResize(sizes: number[]) {
 		const now = Date.now();
@@ -108,9 +129,8 @@
 
 	function switchToTab(scriptId: number) {
 		// Save current script content before switching
-		if (activeScriptId !== null && sqlEditorRef) {
-			const currentContent = sqlEditorRef.getContent() || '';
-			scriptContents.set(activeScriptId, currentContent);
+		if (activeScriptId !== null) {
+			scriptContents.set(activeScriptId, currentEditorContent);
 		}
 		
 		// Switch to new script
@@ -130,7 +150,7 @@
 		
 		// Clean up state
 		scriptContents.delete(scriptId);
-		unsavedChanges.delete(scriptId);
+		unsavedChanges = new Set([...unsavedChanges].filter(id => id !== scriptId));
 		
 		// If closing active tab, switch to another or clear active
 		if (activeScriptId === scriptId) {
@@ -262,7 +282,7 @@
 		}
 
 		try {
-			const content = sqlEditorRef?.getContent() || '';
+			const content = currentEditorContent;
 			const currentScript = scripts.find(s => s.id === activeScriptId);
 			if (!currentScript) return;
 
@@ -278,7 +298,7 @@
 			currentScript.query_text = content;
 			currentScript.updated_at = Date.now() / 1000;
 			scriptContents.set(activeScriptId, content);
-			unsavedChanges.delete(activeScriptId);
+			unsavedChanges = new Set([...unsavedChanges].filter(id => id !== activeScriptId));
 			
 			// Update scripts list
 			const scriptIndex = scripts.findIndex(s => s.id === activeScriptId);
@@ -298,7 +318,7 @@
 			if (activeScriptId === script.id) {
 				activeScriptId = null;
 				scriptContents.delete(script.id);
-				unsavedChanges.delete(script.id);
+				unsavedChanges = new Set([...unsavedChanges].filter(id => id !== script.id));
 			}
 		} catch (error) {
 			console.error('Failed to delete script:', error);
@@ -634,6 +654,7 @@
 						currentScript={activeScriptId !== null ? scripts.find(s => s.id === activeScriptId) : null}
 						hasUnsavedChanges={activeScriptId !== null && unsavedChanges.has(activeScriptId)}
 						bind:this={sqlEditorRef} 
+						onContentChange={handleEditorContentChange}
 					/>
 				</div>
 			</div>	
