@@ -8,6 +8,7 @@
 	import ConnectionForm from './ConnectionForm.svelte';
 	import ScriptTabs from './ScriptTabs.svelte';
 	import DatabaseSchemaItems from './DatabaseSchemaItems.svelte';
+	import TableBrowseModal from './TableBrowseModal.svelte';
 	import { DatabaseCommands, type ConnectionInfo, type ConnectionConfig, type Script, type DatabaseSchema } from '$lib/commands.svelte';
 	import { onMount } from 'svelte';
 
@@ -46,6 +47,10 @@
 	let loadingSchema = $state(false);
 	let lastLoadedSchemaConnectionId = $state<string | null>(null);
 	let isItemsAccordionOpen = $state(false);
+
+	let tableBrowseModalOpen = $state(false);
+	let selectedTableName = $state('');
+	let selectedTableSchema = $state('');
 
 	// Auto-collapse if resized below 8%
 	const COLLAPSE_THRESHOLD = 12;
@@ -345,7 +350,17 @@
 		}
 	}
 
+	function handleTableClick(tableName: string, schema: string) {
+		selectedTableName = tableName;
+		selectedTableSchema = schema;
+		tableBrowseModalOpen = true;
+	}
 
+	function closeTableBrowseModal() {
+		tableBrowseModalOpen = false;
+		selectedTableName = '';
+		selectedTableSchema = '';
+	}
 
 	// Sidebar toggle functionality
 	function toggleSidebar() {
@@ -782,6 +797,7 @@
 														{databaseSchema}
 														{loadingSchema}
 														{selectedConnection}
+														onTableClick={handleTableClick}
 													/>
 												{/if}
 											{/snippet}
@@ -880,6 +896,15 @@
 		</ResizablePane>
 	</ResizablePaneGroup>
 </div>
+
+<!-- Table Browse Modal -->
+<TableBrowseModal
+	isOpen={tableBrowseModalOpen}
+	tableName={selectedTableName}
+	schema={selectedTableSchema}
+	connectionId={selectedConnection || ''}
+	onClose={closeTableBrowseModal}
+/>
 
 <!-- Connection Form Modal -->
 {#if showConnectionForm}

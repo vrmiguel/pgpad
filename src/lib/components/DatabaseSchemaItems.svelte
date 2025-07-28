@@ -6,9 +6,10 @@
 		databaseSchema: DatabaseSchema | null;
 		loadingSchema: boolean;
 		selectedConnection: string | null;
+		onTableClick?: (tableName: string, schema: string) => void;
 	}
 
-	let { databaseSchema, loadingSchema, selectedConnection }: Props = $props();
+	let { databaseSchema, loadingSchema, selectedConnection, onTableClick }: Props = $props();
 </script>
 
 <div class="space-y-3">
@@ -58,6 +59,19 @@
 							{table.schema !== 'public' ? `${table.schema}.${table.name}` : table.name} • {table.columns.length} columns
 						</div>
 					</div>
+					{#if onTableClick}
+						<button
+							class="flex-shrink-0 p-1 hover:bg-primary/10 rounded text-primary/70 hover:text-primary transition-colors"
+							onclick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								onTableClick(table.name, table.schema);
+							}}
+							title="Browse table data"
+						>
+							<Table class="w-3 h-3" />
+						</button>
+					{/if}
 				</summary>
 				<div class="border-t bg-muted/10">
 					<div class="p-2 space-y-1">
