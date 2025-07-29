@@ -82,6 +82,22 @@ export interface QueryResult {
 	duration_ms: number;
 }
 
+export interface QueryStreamData {
+	query_id: string;
+	rows: any[][];
+	is_complete: boolean;
+}
+
+export interface QueryStreamStart {
+	query_id: string;
+	columns: string[];
+}
+
+export interface QueryStreamError {
+	query_id: string;
+	error: string;
+}
+
 // UI-facing result type that includes success/error state
 export interface QueryResultUI {
 	success: boolean;
@@ -150,8 +166,8 @@ export class DatabaseCommands {
 		return await invoke('disconnect_from_database', { connectionId });
 	}
 
-	static async executeQuery(connectionId: string, query: string): Promise<QueryResult> {
-		return await invoke('execute_query', { connectionId, query });
+	static async executeQueryStream(connectionId: string, query: string, queryId?: string): Promise<string> {
+		return await invoke('execute_query_stream', { connectionId, query, queryId });
 	}
 
 	static async getConnections(): Promise<ConnectionInfo[]> {

@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { Search, Table, Loader, X } from '@lucide/svelte';
-	import { Input } from '$lib/components/ui/input';
+	import { Table, X } from '@lucide/svelte';
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import QueryResultsTable from './QueryResultsTable.svelte';
-	import { DatabaseCommands, type QueryResult } from '$lib/commands.svelte';
+	import StreamingQueryResults from './StreamingQueryResults.svelte';
+	import { DatabaseCommands } from '$lib/commands.svelte';
 
 	interface Props {
 		isOpen: boolean;
@@ -16,50 +15,29 @@
 
 	let { isOpen, tableName, schema, connectionId, onClose }: Props = $props();
 
-	let queryResult = $state<QueryResult | null>(null);
-	let loading = $state(false);
+	// Query state
+	let currentQuery = $state<string>('');
 	let error = $state<string | null>(null);
-	let table: any = $state();
-	let globalFilter = $state('');
 
-	// Convert query result to format expected by QueryResultsTable  
-	const results = $derived.by(() => {
-		if (!queryResult) return [];
-		
-		return queryResult.rows.map(row => {
-			const rowObj: Record<string, any> = {};
-			queryResult!.columns.forEach((col, i) => {
-				rowObj[col] = row[i];
-			});
-			return rowObj;
-		});
-	});
-
-	const columns = $derived.by(() => queryResult?.columns || []);
-
-	// Load table data when modal opens
+	// Auto-generate query when modal opens
 	$effect(() => {
 		if (isOpen && tableName && connectionId) {
-			loadTableData();
+			const query =
+				schema === 'public'
+					? `SELECT * FROM ${tableName} LIMIT 1000`
+					: `SELECT * FROM "${schema}"."${tableName}" LIMIT 1000`;
+			currentQuery = query;
+			error = null;
 		}
 	});
 
-	async function loadTableData() {
-		loading = true;
-		error = null;
-		queryResult = null;
+	function handleQueryComplete(rowCount: number, duration: number) {
+		console.log(`Table browse completed: ${rowCount} rows in ${duration}ms`);
+	}
 
-		try {
-			const query = schema === 'public' 
-				? `SELECT * FROM ${tableName} LIMIT 1000`
-				: `SELECT * FROM "${schema}"."${tableName}" LIMIT 1000`;
-			
-			queryResult = await DatabaseCommands.executeQuery(connectionId, query);
-		} catch (err) {
-			error = String(err);
-		} finally {
-			loading = false;
-		}
+	function handleQueryError(errorMessage: string) {
+		error = errorMessage;
+		console.error('Table browse failed:', errorMessage);
 	}
 
 	function handleBackdropClick(e: MouseEvent) {
@@ -78,97 +56,49 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if isOpen}
-	<div 
-		class="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50"
+	<div
+		class="bg-background/80 fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm"
 		role="dialog"
 		aria-modal="true"
 		tabindex="-1"
 		onclick={handleBackdropClick}
 		onkeydown={handleKeydown}
 	>
-		<Card class="w-[90vw] h-[90vh] flex flex-col overflow-hidden shadow-xl">
-			<CardHeader class="pb-2 flex-shrink-0">
+		<Card class="flex h-[90vh] w-[90vw] flex-col overflow-hidden shadow-xl">
+			<CardHeader class="flex-shrink-0 pb-2">
 				<div class="flex items-center justify-between">
 					<CardTitle class="flex items-center gap-2 text-lg">
-						<Table class="w-5 h-5" />
+						<Table class="h-5 w-5" />
 						{schema !== 'public' ? `${schema}.${tableName}` : tableName}
 					</CardTitle>
 					<Button variant="ghost" size="sm" onclick={onClose}>
-						<X class="w-4 h-4" />
+						<X class="h-4 w-4" />
 					</Button>
 				</div>
-				
-				{#if loading}
-					<div class="flex items-center gap-2 text-sm text-muted-foreground">
-						<Loader class="w-4 h-4 animate-spin" />
-						Loading table data...
-					</div>
-				{:else if error}
-					<div class="text-sm text-destructive">
-						Error: {error}
-					</div>
-				{:else if results.length > 0 && columns.length > 0}
-					<div class="flex items-center justify-between gap-4">
-						<div class="flex items-center gap-2 flex-1 max-w-sm">
-							<Search class="w-4 h-4 text-muted-foreground" />
-							<Input
-								placeholder="Search all columns..."
-								bind:value={globalFilter}
-								class="h-8"
-							/>
-						</div>
-						<div class="text-sm text-muted-foreground">
-							{results.length} row{results.length === 1 ? '' : 's'}
-							{#if queryResult}
-								• {queryResult.duration_ms}ms
-							{/if}
-						</div>
-					</div>
-				{/if}
 			</CardHeader>
-			
-			<CardContent class="flex-1 flex flex-col min-h-0">
-				{#if loading}
-					<div class="flex-1 flex items-center justify-center text-muted-foreground">
-						<div class="text-center">
-							<div class="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mx-auto mb-4">
-								<Loader class="w-8 h-8 text-muted-foreground/50 animate-spin" />
-							</div>
-							<p class="text-sm font-medium">Loading table data</p>
-							<p class="text-xs text-muted-foreground/70 mt-1">Executing SELECT * FROM {tableName}</p>
-						</div>
-					</div>
-				{:else if error}
-					<div class="flex-1 flex items-center justify-center text-muted-foreground">
-						<div class="text-center">
-							<div class="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
-								<Table class="w-8 h-8 text-destructive/50" />
-							</div>
-							<p class="text-sm font-medium text-destructive">Failed to load table</p>
-							<p class="text-xs text-muted-foreground/70 mt-1">{error}</p>
-						</div>
-					</div>
-				{:else if results.length > 0 && columns.length > 0}
-					<div class="flex-1 flex flex-col min-h-0">
-						<QueryResultsTable
-							data={results}
-							{columns}
-							bind:table
-							bind:globalFilter
-						/>
-					</div>
+
+			<CardContent class="flex min-h-0 flex-1 flex-col">
+				{#if currentQuery && connectionId}
+					<StreamingQueryResults
+						{connectionId}
+						query={currentQuery}
+						onComplete={handleQueryComplete}
+						onError={handleQueryError}
+					/>
 				{:else}
-					<div class="flex-1 flex items-center justify-center text-muted-foreground">
+					<div class="text-muted-foreground flex flex-1 items-center justify-center">
 						<div class="text-center">
-							<div class="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mx-auto mb-4">
-								<Table class="w-8 h-8 text-muted-foreground/50" />
+							<div
+								class="bg-muted/20 mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
+							>
+								<Table class="text-muted-foreground/50 h-8 w-8" />
 							</div>
-							<p class="text-sm font-medium">Table is empty</p>
-							<p class="text-xs text-muted-foreground/70 mt-1">No data found in {tableName}</p>
+							<p class="text-sm font-medium">Select a table to browse</p>
+							<p class="text-muted-foreground/70 mt-1 text-xs">Table data will appear here</p>
 						</div>
 					</div>
 				{/if}
 			</CardContent>
 		</Card>
 	</div>
-{/if} 
+{/if}

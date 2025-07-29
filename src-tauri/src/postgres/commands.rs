@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Context;
-use tokio_postgres::types::Type;
+use futures_util::{pin_mut, TryStreamExt};
+use tauri::Emitter;
+use tokio_postgres::types::{ToSql, Type};
 use uuid::Uuid;
 
 use crate::{
@@ -10,7 +12,7 @@ use crate::{
         connect::connect,
         types::{
             ColumnInfo, ConnectionConfig, ConnectionInfo, DatabaseConnection, DatabaseSchema,
-            QueryResult, TableInfo,
+            QueryStreamData, QueryStreamError, QueryStreamStart, TableInfo,
         },
     },
     storage::{QueryHistoryEntry, SavedQuery},
@@ -227,11 +229,15 @@ pub async fn disconnect_from_database(
 }
 
 #[tauri::command]
-pub async fn execute_query(
+pub async fn execute_query_stream(
     connection_id: String,
     query: String,
+    query_id: Option<String>,
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<QueryResult, Error> {
+) -> Result<String, Error> {
+    let query_id = query_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+
     let connection_entry = state
         .connections
         .get(&connection_id)
@@ -246,51 +252,161 @@ pub async fn execute_query(
 
     let start = std::time::Instant::now();
 
-    log::info!("Executing query: {}", query);
+    log::info!("Starting streaming query: {}", query);
 
-    match client.query(&query, &[]).await {
-        Ok(rows) => {
-            log::info!("Query executed successfully, got rows: {:?}", rows);
+    fn slice_iter<'a>(
+        s: &'a [&'a (dyn ToSql + Sync)],
+    ) -> impl ExactSizeIterator<Item = &'a dyn ToSql> + 'a {
+        s.iter().map(|s| *s as _)
+    }
 
-            let duration = start.elapsed().as_millis() as u64;
+    match client.query_raw(&query, slice_iter(&[])).await {
+        Ok(stream) => {
+            pin_mut!(stream);
 
-            let columns = if rows.is_empty() {
-                Vec::new()
-            } else {
-                rows[0]
-                    .columns()
-                    .iter()
-                    .map(|col| col.name().to_string())
-                    .collect()
-            };
+            let mut columns_sent = false;
+            let mut batch = Vec::new();
+            let mut batch_size = 50;
+            let max_batch_size = 150;
+            let mut total_rows = 0;
 
-            let mut result_rows = Vec::new();
-            for row in rows.iter() {
-                let mut result_row = Vec::new();
-                for i in 0..row.len() {
-                    let value = match postgres_value_to_json(row, i) {
-                        Ok(value) => value,
-                        Err(e) => {
-                            log::error!("Error deserializing column: {:?}", e);
-                            serde_json::Value::Null
+            loop {
+                match stream.try_next().await {
+                    Ok(Some(row)) => {
+                        // Send column info on first row
+                        if !columns_sent {
+                            let columns: Vec<String> = row
+                                .columns()
+                                .iter()
+                                .map(|col| col.name().to_string())
+                                .collect();
+
+                            if let Err(e) = app.emit(
+                                "query-stream-start",
+                                QueryStreamStart {
+                                    query_id: query_id.clone(),
+                                    columns: columns.clone(),
+                                },
+                            ) {
+                                log::error!("❌ Failed to emit stream start: {}", e);
+                            } else {
+                                log::info!(
+                                    "✅ Successfully emitted stream start with {} columns",
+                                    columns.len()
+                                );
+                            }
+                            columns_sent = true;
                         }
-                    };
-                    log::info!("Deserialized value: {:?}", value);
-                    result_row.push(value);
+
+                        // Serialize row data
+                        let mut result_row = Vec::new();
+                        for i in 0..row.len() {
+                            let value = match postgres_value_to_json(&row, i) {
+                                Ok(value) => value,
+                                Err(e) => {
+                                    log::error!("Error deserializing column: {:?}", e);
+                                    serde_json::Value::Null
+                                }
+                            };
+                            result_row.push(value);
+                        }
+
+                        batch.push(result_row);
+                        total_rows += 1;
+
+                        if batch.len() >= batch_size {
+                            if let Err(e) = app.emit(
+                                "query-stream-data",
+                                QueryStreamData {
+                                    query_id: query_id.clone(),
+                                    rows: batch.clone(),
+                                    is_complete: false,
+                                },
+                            ) {
+                                log::error!("❌ Failed to emit stream data: {}", e);
+                            } else {
+                                log::info!("✅ Successfully emitted batch of {} rows", batch.len());
+                            }
+
+                            batch.clear();
+                            batch_size = (batch_size * 2).min(max_batch_size);
+                        }
+                    }
+                    Ok(None) => {
+                        // End of stream
+                        break;
+                    }
+                    Err(e) => {
+                        log::error!("Error processing row: {}", e);
+                        let error_msg = format!("Query failed: {}", e);
+
+                        if let Err(emit_err) = app.emit(
+                            "query-stream-error",
+                            QueryStreamError {
+                                query_id: query_id.clone(),
+                                error: error_msg.clone(),
+                            },
+                        ) {
+                            log::error!("Failed to emit stream error: {}", emit_err);
+                        }
+
+                        return Err(Error::Any(anyhow::anyhow!(error_msg)));
+                    }
                 }
-                result_rows.push(result_row);
             }
 
-            Ok(QueryResult {
-                columns,
-                row_count: result_rows.len(),
-                rows: result_rows,
-                duration_ms: duration,
-            })
+            // Send any remaining rows in the batch
+            if !batch.is_empty() {
+                if let Err(e) = app.emit(
+                    "query-stream-data",
+                    QueryStreamData {
+                        query_id: query_id.clone(),
+                        rows: batch,
+                        is_complete: false,
+                    },
+                ) {
+                    log::error!("Failed to emit final batch: {}", e);
+                }
+            }
+
+            log::info!("🏁 Emitting stream completion for query_id: {}", query_id);
+            if let Err(e) = app.emit(
+                "query-stream-data",
+                QueryStreamData {
+                    query_id: query_id.clone(),
+                    rows: Vec::new(),
+                    is_complete: true,
+                },
+            ) {
+                log::error!("❌ Failed to emit stream completion: {}", e);
+            } else {
+                log::info!("✅ Successfully emitted stream completion");
+            }
+
+            let duration = start.elapsed().as_millis() as u64;
+            log::info!(
+                "Streaming query completed: {} rows in {}ms",
+                total_rows,
+                duration
+            );
+
+            Ok(query_id)
         }
         Err(e) => {
             log::error!("Query execution failed: {:?}", e);
-            Err(Error::Any(anyhow::anyhow!("Query failed: {}", e)))
+            let error_msg = format!("Query failed: {}", e);
+
+            if let Err(emit_err) = app.emit(
+                "query-stream-error",
+                QueryStreamError {
+                    query_id: query_id.clone(),
+                    error: error_msg.clone(),
+                },
+            ) {
+                log::error!("Failed to emit stream error: {}", emit_err);
+            }
+
+            Err(Error::Any(anyhow::anyhow!(error_msg)))
         }
     }
 }

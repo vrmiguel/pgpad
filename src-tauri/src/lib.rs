@@ -57,7 +57,7 @@ pub fn run() {
             postgres::commands::add_connection,
             postgres::commands::connect_to_database,
             postgres::commands::disconnect_from_database,
-            postgres::commands::execute_query,
+            postgres::commands::execute_query_stream,
             postgres::commands::get_connections,
             postgres::commands::remove_connection,
             postgres::commands::initialize_connections,

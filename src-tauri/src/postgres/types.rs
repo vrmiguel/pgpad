@@ -21,14 +21,6 @@ pub struct DatabaseConnection {
     pub client: Option<Client>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct QueryResult {
-    pub columns: Vec<String>,
-    pub rows: Vec<Vec<serde_json::Value>>,
-    pub row_count: usize,
-    pub duration_ms: u64,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnInfo {
     pub name: String,
@@ -48,4 +40,23 @@ pub struct TableInfo {
 pub struct DatabaseSchema {
     pub tables: Vec<TableInfo>,
     pub schemas: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryStreamData {
+    pub query_id: String,
+    pub rows: Vec<Vec<serde_json::Value>>,
+    pub is_complete: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryStreamStart {
+    pub query_id: String,
+    pub columns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryStreamError {
+    pub query_id: String,
+    pub error: String,
 }
