@@ -2,9 +2,9 @@
 	import { createSvelteTable, FlexRender, renderComponent } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { 
-		getCoreRowModel, 
-		getSortedRowModel, 
+	import {
+		getCoreRowModel,
+		getSortedRowModel,
 		getFilteredRowModel,
 		getPaginationRowModel,
 		type ColumnDef,
@@ -12,7 +12,14 @@
 		type ColumnFiltersState,
 		type PaginationState
 	} from '@tanstack/table-core';
-	import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Search } from '@lucide/svelte';
+	import {
+		ChevronUp,
+		ChevronDown,
+		ChevronsUpDown,
+		ChevronLeft,
+		ChevronRight,
+		Search
+	} from '@lucide/svelte';
 
 	interface Props {
 		data: Record<string, any>[];
@@ -102,33 +109,36 @@
 	table = tableInstance;
 </script>
 
-<div class="flex flex-col h-full">
-	<!-- Table content - constrain height to force scrolling -->
-	<div class="flex-1 min-h-0">
+<div class="grid h-full grid-rows-[1fr_auto]">
+	<!-- Table content - takes remaining space -->
+	<div class="overflow-hidden">
 		<div class="h-full overflow-auto">
 			<table class="w-full text-sm">
-				<thead class="bg-muted/80 backdrop-blur-sm sticky top-0 z-10 border-b border-border">
+				<thead class="bg-muted/80 border-border sticky top-0 z-10 border-b backdrop-blur-sm">
 					{#each tableInstance.getHeaderGroups() as headerGroup}
 						<tr>
 							{#each headerGroup.headers as header}
-								<th class="h-11 px-4 text-left align-middle font-semibold text-foreground bg-muted/90 backdrop-blur-sm">
+								<th
+									class="text-foreground bg-muted/90 h-11 px-4 text-left align-middle font-semibold backdrop-blur-sm"
+								>
 									{#if !header.isPlaceholder}
 										<Button
 											variant="ghost"
 											size="sm"
-											class="h-8 p-0 font-semibold hover:bg-accent/50 -ml-2"
-											onclick={() => header.column.toggleSorting(header.column.getIsSorted() === 'asc')}
+											class="hover:bg-accent/50 -ml-2 h-8 p-0 font-semibold"
+											onclick={() =>
+												header.column.toggleSorting(header.column.getIsSorted() === 'asc')}
 										>
 											<FlexRender
 												content={header.column.columnDef.header}
 												context={header.getContext()}
 											/>
 											{#if header.column.getIsSorted() === 'asc'}
-												<ChevronUp class="ml-1 h-3 w-3 text-muted-foreground" />
+												<ChevronUp class="text-muted-foreground ml-1 h-3 w-3" />
 											{:else if header.column.getIsSorted() === 'desc'}
-												<ChevronDown class="ml-1 h-3 w-3 text-muted-foreground" />
+												<ChevronDown class="text-muted-foreground ml-1 h-3 w-3" />
 											{:else}
-												<ChevronsUpDown class="ml-1 h-3 w-3 text-muted-foreground/60" />
+												<ChevronsUpDown class="text-muted-foreground/60 ml-1 h-3 w-3" />
 											{/if}
 										</Button>
 									{/if}
@@ -139,22 +149,29 @@
 				</thead>
 				<tbody>
 					{#each tableInstance.getPaginationRowModel().rows as row (row.id)}
-						<tr class="border-b border-border/50 hover:bg-muted/30 transition-colors">
+						<tr class="border-border/50 hover:bg-muted/30 border-b transition-colors">
 							{#each row.getVisibleCells() as cell (cell.column.id)}
 								{@const value = cell.getValue()}
 								<td class="px-4 py-3 align-middle">
 									{#if value === null || value === undefined}
-										<span class="text-muted-foreground italic text-xs bg-muted/30 px-1.5 py-0.5 rounded">NULL</span>
+										<span
+											class="text-muted-foreground bg-muted/30 rounded px-1.5 py-0.5 text-xs italic"
+											>NULL</span
+										>
 									{:else if typeof value === 'boolean'}
-										<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {value ? 'bg-success-light/30 text-success-foreground border border-success/20' : 'bg-muted/40 text-muted-foreground border border-border'}">
+										<span
+											class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium {value
+												? 'bg-success-light/30 text-success-foreground border-success/20 border'
+												: 'bg-muted/40 text-muted-foreground border-border border'}"
+										>
 											{value ? 'true' : 'false'}
 										</span>
 									{:else if typeof value === 'number'}
-										<span class="font-mono text-foreground">{value.toLocaleString()}</span>
+										<span class="text-foreground font-mono">{value.toLocaleString()}</span>
 									{:else}
 										{@const stringValue = String(value)}
 										{#if stringValue.length > 100}
-											<span class="truncate max-w-xs block text-foreground" title={stringValue}>
+											<span class="text-foreground block max-w-xs truncate" title={stringValue}>
 												{stringValue}
 											</span>
 										{:else}
@@ -186,64 +203,109 @@
 
 	<!-- Pagination at bottom -->
 	{#if tableInstance.getPageCount() > 1}
-		<div class="flex items-center justify-between pt-3 px-4 flex-shrink-0 border-t border-border/30">
-			<div class="flex items-center gap-3">
-				<p class="text-sm text-muted-foreground">
-					Page {tableInstance.getState().pagination.pageIndex + 1} of {tableInstance.getPageCount()}
-				</p>
-				<div class="flex items-center gap-2">
-					<select
-						bind:value={pagination.pageSize}
-						class="h-8 w-16 rounded-md border border-border bg-background text-sm focus:ring-2 focus:ring-ring focus:ring-offset-1"
-					>
-						{#each [25, 50, 100, 200] as pageSize}
-							<option value={pageSize}>{pageSize}</option>
-						{/each}
-					</select>
-					<span class="text-sm text-muted-foreground">rows</span>
-				</div>
+		<div class="border-border/30 bg-muted/20 flex flex-shrink-0 items-center border-t px-3 py-2">
+			<!-- Compact left section -->
+			<div class="text-muted-foreground flex items-center gap-2 text-xs">
+				<span
+					>Page {tableInstance.getState().pagination.pageIndex + 1} of {tableInstance.getPageCount()}</span
+				>
+				<span>•</span>
+				<select
+					bind:value={pagination.pageSize}
+					class="border-border bg-background focus:ring-ring h-6 w-12 rounded border text-xs focus:ring-1"
+				>
+					{#each [25, 50, 100, 200] as pageSize}
+						<option value={pageSize}>{pageSize}</option>
+					{/each}
+				</select>
+				<span>rows</span>
 			</div>
 
+			<!-- Spacer -->
+			<div class="flex-1"></div>
+
+			<!-- Compact navigation -->
 			<div class="flex items-center gap-1">
 				<Button
-					variant="outline"
+					variant="ghost"
 					size="sm"
 					onclick={() => tableInstance.previousPage()}
 					disabled={!tableInstance.getCanPreviousPage()}
-					class="h-8 w-8 p-0"
+					class="h-6 w-6 p-0"
 				>
-					<ChevronLeft class="h-4 w-4" />
+					<ChevronLeft class="h-3 w-3" />
 				</Button>
-				
-				<!-- Page numbers -->
-				{#each Array.from({ length: Math.min(5, tableInstance.getPageCount()) }, (_, i) => {
-					const currentPage = tableInstance.getState().pagination.pageIndex;
-					const totalPages = tableInstance.getPageCount();
-					let startPage = Math.max(0, currentPage - 2);
-					let endPage = Math.min(totalPages - 1, startPage + 4);
-					startPage = Math.max(0, endPage - 4);
-					return startPage + i;
-				}) as pageIndex}
-					<Button
-						variant={pageIndex === tableInstance.getState().pagination.pageIndex ? "default" : "outline"}
-						size="sm"
-						onclick={() => tableInstance.setPageIndex(pageIndex)}
-						class="h-8 w-8 p-0"
-					>
-						{pageIndex + 1}
+
+				<!-- Simplified pagination - show only current and adjacent pages -->
+				{#if true}
+					{@const currentPage = tableInstance.getState().pagination.pageIndex}
+					{@const totalPages = tableInstance.getPageCount()}
+
+					{#if currentPage > 1}
+						<Button
+							variant="ghost"
+							size="sm"
+							onclick={() => tableInstance.setPageIndex(0)}
+							class="h-6 px-2 text-xs"
+						>
+							1
+						</Button>
+						{#if currentPage > 2}
+							<span class="text-muted-foreground text-xs">...</span>
+						{/if}
+					{/if}
+
+					{#if currentPage > 0}
+						<Button
+							variant="ghost"
+							size="sm"
+							onclick={() => tableInstance.previousPage()}
+							class="h-6 px-2 text-xs"
+						>
+							{currentPage}
+						</Button>
+					{/if}
+
+					<Button variant="default" size="sm" class="h-6 px-2 text-xs">
+						{currentPage + 1}
 					</Button>
-				{/each}
+
+					{#if currentPage < totalPages - 1}
+						<Button
+							variant="ghost"
+							size="sm"
+							onclick={() => tableInstance.nextPage()}
+							class="h-6 px-2 text-xs"
+						>
+							{currentPage + 2}
+						</Button>
+					{/if}
+
+					{#if currentPage < totalPages - 2}
+						{#if currentPage < totalPages - 3}
+							<span class="text-muted-foreground text-xs">...</span>
+						{/if}
+						<Button
+							variant="ghost"
+							size="sm"
+							onclick={() => tableInstance.setPageIndex(totalPages - 1)}
+							class="h-6 px-2 text-xs"
+						>
+							{totalPages}
+						</Button>
+					{/if}
+				{/if}
 
 				<Button
-					variant="outline"
+					variant="ghost"
 					size="sm"
 					onclick={() => tableInstance.nextPage()}
 					disabled={!tableInstance.getCanNextPage()}
-					class="h-8 w-8 p-0"
+					class="h-6 w-6 p-0"
 				>
-					<ChevronRight class="h-4 w-4" />
+					<ChevronRight class="h-3 w-3" />
 				</Button>
 			</div>
 		</div>
 	{/if}
-</div> 
+</div>

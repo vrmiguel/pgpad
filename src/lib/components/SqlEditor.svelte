@@ -200,8 +200,8 @@ SELECT 1 as test;`);
 	<ResizablePaneGroup direction="vertical" class="flex-1">
 		<!-- SQL Editor Pane -->
 		<ResizablePane defaultSize={60} minSize={30} maxSize={80}>
-			<div class="h-full p-1 pb-0">
-				<Card class="flex h-full flex-col py-0 gap-0">
+			<div class="h-full p-1 pb-0.5">
+				<Card class="flex h-full flex-col gap-0 py-0">
 					<CardContent class="min-h-0 flex-1 p-0">
 						<div bind:this={editorContainer} class="h-full w-full overflow-hidden rounded-md"></div>
 					</CardContent>
@@ -213,8 +213,8 @@ SELECT 1 as test;`);
 
 		<!-- Results & History Section Pane -->
 		<ResizablePane defaultSize={40} minSize={20}>
-			<div class="h-full px-1 pt-0 pb-1">
-				<Card class="flex h-full flex-col overflow-hidden py-2 gap-1">
+			<div class="h-full px-1 pt-0.5 pb-1">
+				<Card class="flex h-full min-h-0 flex-col gap-1 overflow-hidden py-2">
 					<CardHeader class="flex-shrink-0 pb-1">
 						<!-- Tab navigation -->
 						<div class="mb-1 flex items-center gap-1">
@@ -247,7 +247,7 @@ SELECT 1 as test;`);
 					</CardHeader>
 
 					{#if activeTab === 'results'}
-						<CardContent class="flex min-h-0 flex-1 flex-col p-0">
+						<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
 							{#if currentQuery && selectedConnection}
 								<StreamingQueryResults
 									connectionId={selectedConnection}

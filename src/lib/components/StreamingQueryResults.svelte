@@ -205,7 +205,7 @@
 	</div>
 {:else if shouldShowTable}
 	<!-- Results available - using derived state -->
-	<div class="flex min-h-0 flex-1 flex-col">
+	<div class="flex h-full min-h-0 flex-1 flex-col">
 		<QueryResultsTable data={queryRows} columns={queryColumns} bind:table bind:globalFilter />
 		{#if isStreaming}
 			<div
