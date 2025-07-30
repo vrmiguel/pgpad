@@ -14,6 +14,7 @@ use crate::{
             ColumnInfo, ConnectionConfig, ConnectionInfo, DatabaseConnection, DatabaseSchema,
             QueryStreamData, QueryStreamError, QueryStreamStart, TableInfo,
         },
+        Certificates,
     },
     storage::{QueryHistoryEntry, SavedQuery},
     AppState,
@@ -175,6 +176,7 @@ pub async fn add_connection(
 pub async fn connect_to_database(
     connection_id: String,
     state: tauri::State<'_, AppState>,
+    certificates: tauri::State<'_, Certificates>,
 ) -> Result<bool, Error> {
     if !state.connections.contains_key(&connection_id) {
         let stored_connections = state.storage.get_connections()?;
@@ -194,7 +196,7 @@ pub async fn connect_to_database(
 
     let connection = connection_entry.value_mut();
 
-    match connect(&connection.info.connection_string).await {
+    match connect(&connection.info.connection_string, &certificates).await {
         Ok(client) => {
             connection.client = Some(client);
             connection.info.connected = true;
@@ -324,8 +326,6 @@ pub async fn execute_query_stream(
                                 },
                             ) {
                                 log::error!("❌ Failed to emit stream data: {}", e);
-                            } else {
-                                log::info!("✅ Successfully emitted batch of {} rows", batch.len());
                             }
 
                             batch.clear();
@@ -441,9 +441,12 @@ pub async fn remove_connection(
 }
 
 #[tauri::command]
-pub async fn test_connection(config: ConnectionConfig) -> Result<bool, Error> {
+pub async fn test_connection(
+    config: ConnectionConfig,
+    certificates: tauri::State<'_, Certificates>,
+) -> Result<bool, Error> {
     log::info!("Testing connection: {}", config.connection_string);
-    match connect(&config.connection_string).await {
+    match connect(&config.connection_string, &certificates).await {
         Ok(_) => Ok(true),
         Err(e) => {
             log::error!("Connection test failed: {}", e);

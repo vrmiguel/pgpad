@@ -39,9 +39,11 @@ pub fn run() {
             std::process::exit(1);
         }
     };
+    let certificates = postgres::Certificates::new();
 
     tauri::Builder::default()
         .manage(app_state)
+        .manage(certificates)
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
