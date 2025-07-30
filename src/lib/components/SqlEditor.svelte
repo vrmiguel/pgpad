@@ -200,10 +200,10 @@ SELECT 1 as test;`);
 	<ResizablePaneGroup direction="vertical" class="flex-1">
 		<!-- SQL Editor Pane -->
 		<ResizablePane defaultSize={60} minSize={30} maxSize={80}>
-			<div class="h-full p-4 pb-1">
-				<Card class="flex h-full flex-col py-0">
+			<div class="h-full p-1 pb-0">
+				<Card class="flex h-full flex-col py-0 gap-0">
 					<CardContent class="min-h-0 flex-1 p-0">
-						<div bind:this={editorContainer} class="h-full w-full overflow-hidden rounded-xl"></div>
+						<div bind:this={editorContainer} class="h-full w-full overflow-hidden rounded-md"></div>
 					</CardContent>
 				</Card>
 			</div>
@@ -213,31 +213,31 @@ SELECT 1 as test;`);
 
 		<!-- Results & History Section Pane -->
 		<ResizablePane defaultSize={40} minSize={20}>
-			<div class="h-full px-4 pt-1 pb-4">
-				<Card class="flex h-full flex-col overflow-hidden">
-					<CardHeader class="flex-shrink-0 pb-2">
+			<div class="h-full px-1 pt-0 pb-1">
+				<Card class="flex h-full flex-col overflow-hidden py-2 gap-1">
+					<CardHeader class="flex-shrink-0 pb-1">
 						<!-- Tab navigation -->
-						<div class="mb-3 flex items-center gap-1">
+						<div class="mb-1 flex items-center gap-1">
 							<button
 								type="button"
-								class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors {activeTab ===
+								class="flex items-center gap-2 rounded px-2 py-1 text-xs transition-colors {activeTab ===
 								'results'
 									? 'bg-primary text-primary-foreground'
 									: 'hover:bg-muted'}"
 								onclick={() => (activeTab = 'results')}
 							>
-								<Table class="h-4 w-4" />
+								<Table class="h-3 w-3" />
 								Results
 							</button>
 							<button
 								type="button"
-								class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors {activeTab ===
+								class="flex items-center gap-2 rounded px-2 py-1 text-xs transition-colors {activeTab ===
 								'history'
 									? 'bg-primary text-primary-foreground'
 									: 'hover:bg-muted'}"
 								onclick={() => (activeTab = 'history')}
 							>
-								<History class="h-4 w-4" />
+								<History class="h-3 w-3" />
 								History
 								{#if queryHistory.length > 0}
 									<span class="text-xs opacity-75">({queryHistory.length})</span>
@@ -246,8 +246,8 @@ SELECT 1 as test;`);
 						</div>
 					</CardHeader>
 
-					<CardContent class="flex min-h-0 flex-1 flex-col p-0">
-						{#if activeTab === 'results'}
+					{#if activeTab === 'results'}
+						<CardContent class="flex min-h-0 flex-1 flex-col p-0">
 							{#if currentQuery && selectedConnection}
 								<StreamingQueryResults
 									connectionId={selectedConnection}
@@ -270,11 +270,8 @@ SELECT 1 as test;`);
 									</div>
 								</div>
 							{/if}
-						{/if}
-					</CardContent>
-
-					<!-- History Tab Content -->
-					{#if activeTab === 'history'}
+						</CardContent>
+					{:else if activeTab === 'history'}
 						<CardContent class="flex min-h-0 flex-1 flex-col p-0">
 							{#if queryHistory.length > 0}
 								<div class="flex-1 overflow-auto">
