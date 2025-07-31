@@ -10,7 +10,8 @@
 		type ColumnDef,
 		type SortingState,
 		type ColumnFiltersState,
-		type PaginationState
+		type PaginationState,
+		type ColumnSizingState
 	} from '@tanstack/table-core';
 	import {
 		ChevronUp,
@@ -33,39 +34,47 @@
 	// Table state
 	let sorting = $state<SortingState>([]);
 	let columnFilters = $state<ColumnFiltersState>([]);
+	let columnSizing = $state<ColumnSizingState>({});
 	let pagination = $state<PaginationState>({
 		pageIndex: 0,
 		pageSize: 50
 	});
 
-	// Create column definitions dynamically
+	let isResizing = $state(false);
+	let resizePreviewX = $state(0);
+	let resizingColumnId = $state<string | null>(null);
+	let tableContainer: HTMLDivElement;
+
+	// Create column definitions dynamically with resizing enabled
 	const columnDefs = $derived<ColumnDef<Record<string, any>, any>[]>(
 		columns.map((column) => ({
 			accessorKey: column,
 			header: ({ column: col }) => {
-				// Return a simple string, we'll handle sorting in the template
 				return column;
 			},
 			cell: ({ getValue }) => {
 				const value = getValue();
-				// Handle different data types with simple string returns
+
 				if (value === null || value === undefined) {
-					return 'NULL';
+					return { value: 'null', type: 'null' };
 				}
 				if (typeof value === 'boolean') {
-					return value ? 'true' : 'false';
+					return { value: value ? 'true' : 'false', type: 'boolean' };
 				}
 				if (typeof value === 'number') {
-					return value.toLocaleString();
+					return { value: value.toLocaleString(), type: 'number' };
 				}
+
 				// String or other types
-				const stringValue = String(value);
-				return stringValue.length > 100 ? stringValue.substring(0, 100) + '...' : stringValue;
-			}
+				return { value: String(value), type: 'string' };
+			},
+			size: 150,
+			minSize: 50,
+			maxSize: 800,
+			enableResizing: true
 		}))
 	);
 
-	// Create the table
 	const tableInstance = createSvelteTable({
 		get data() {
 			return data;
@@ -85,6 +94,9 @@
 			},
 			get pagination() {
 				return pagination;
+			},
+			get columnSizing() {
+				return columnSizing;
 			}
 		},
 		onSortingChange: (updater) => {
@@ -99,48 +111,119 @@
 		onPaginationChange: (updater) => {
 			pagination = typeof updater === 'function' ? updater(pagination) : updater;
 		},
+		onColumnSizingChange: (updater) => {
+			columnSizing = typeof updater === 'function' ? updater(columnSizing) : updater;
+		},
 		getCoreRowModel: getCoreRowModel(),
 		getSortedRowModel: getSortedRowModel(),
 		getFilteredRowModel: getFilteredRowModel(),
-		getPaginationRowModel: getPaginationRowModel()
+		getPaginationRowModel: getPaginationRowModel(),
+		enableColumnResizing: true,
+		columnResizeMode: 'onEnd' // Keep smooth behavior
 	});
 
 	// Expose table to parent
 	table = tableInstance;
+
+	function createResizeHandler(header: any) {
+		return (downEvent: MouseEvent | TouchEvent) => {
+			if (!tableContainer) return;
+
+			const startX = 'clientX' in downEvent ? downEvent.clientX : downEvent.touches[0].clientX;
+			const columnId = header.column.id;
+			const containerRect = tableContainer.getBoundingClientRect();
+
+			isResizing = true;
+			resizingColumnId = columnId;
+			resizePreviewX = startX - containerRect.left + tableContainer.scrollLeft;
+
+			const handleMouseMove = (moveEvent: MouseEvent | TouchEvent) => {
+				const currentX = 'clientX' in moveEvent ? moveEvent.clientX : moveEvent.touches[0].clientX;
+				resizePreviewX = currentX - containerRect.left + tableContainer.scrollLeft;
+			};
+
+			const handleMouseUp = () => {
+				isResizing = false;
+				resizingColumnId = null;
+
+				document.removeEventListener('mousemove', handleMouseMove);
+				document.removeEventListener('mouseup', handleMouseUp);
+				document.removeEventListener('touchmove', handleMouseMove);
+				document.removeEventListener('touchend', handleMouseUp);
+			};
+
+			document.addEventListener('mousemove', handleMouseMove);
+			document.addEventListener('mouseup', handleMouseUp);
+			document.addEventListener('touchmove', handleMouseMove);
+			document.addEventListener('touchend', handleMouseUp);
+
+			const originalHandler = header.getResizeHandler();
+			if (originalHandler) {
+				originalHandler(downEvent);
+			}
+		};
+	}
 </script>
 
-<div class="grid h-full grid-rows-[1fr_auto]">
+<div class="relative grid h-full grid-rows-[1fr_auto]">
+	<!-- Resize preview line -->
+	{#if isResizing}
+		<div
+			class="pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 bg-blue-500 opacity-75"
+			style="left: {resizePreviewX}px"
+		></div>
+	{/if}
+
 	<!-- Table content - takes remaining space -->
-	<div class="overflow-hidden">
+	<div class="overflow-hidden" bind:this={tableContainer}>
 		<div class="h-full overflow-auto">
-			<table class="w-full text-sm">
-				<thead class="bg-muted/80 border-border sticky top-0 z-10 border-b backdrop-blur-sm">
+			<table
+				class="w-full border-collapse text-xs"
+				style="width: {tableInstance.getCenterTotalSize()}px"
+			>
+				<thead class="bg-muted/90 border-border sticky top-0 z-10 border-b">
 					{#each tableInstance.getHeaderGroups() as headerGroup}
 						<tr>
 							{#each headerGroup.headers as header}
 								<th
-									class="text-foreground bg-muted/90 h-11 px-4 text-left align-middle font-semibold backdrop-blur-sm"
+									class="text-foreground bg-muted/95 border-border/40 relative border-r px-2 py-1 text-left align-middle text-xs font-medium"
+									style="width: {header.getSize()}px"
 								>
 									{#if !header.isPlaceholder}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="hover:bg-accent/50 -ml-2 h-8 p-0 font-semibold"
-											onclick={() =>
-												header.column.toggleSorting(header.column.getIsSorted() === 'asc')}
-										>
-											<FlexRender
-												content={header.column.columnDef.header}
-												context={header.getContext()}
-											/>
-											{#if header.column.getIsSorted() === 'asc'}
-												<ChevronUp class="text-muted-foreground ml-1 h-3 w-3" />
-											{:else if header.column.getIsSorted() === 'desc'}
-												<ChevronDown class="text-muted-foreground ml-1 h-3 w-3" />
-											{:else}
-												<ChevronsUpDown class="text-muted-foreground/60 ml-1 h-3 w-3" />
+										<div class="flex items-center justify-between">
+											<Button
+												variant="ghost"
+												size="sm"
+												class="hover:bg-accent/30 -ml-1 h-6 flex-1 justify-start p-1 text-xs font-medium"
+												onclick={() =>
+													header.column.toggleSorting(header.column.getIsSorted() === 'asc')}
+											>
+												<FlexRender
+													content={header.column.columnDef.header}
+													context={header.getContext()}
+												/>
+												{#if header.column.getIsSorted() === 'asc'}
+													<ChevronUp class="text-muted-foreground ml-1 h-3 w-3" />
+												{:else if header.column.getIsSorted() === 'desc'}
+													<ChevronDown class="text-muted-foreground ml-1 h-3 w-3" />
+												{:else}
+													<ChevronsUpDown class="text-muted-foreground/40 ml-1 h-3 w-3" />
+												{/if}
+											</Button>
+											<!-- Column Resize Handle with improved visual feedback -->
+											{#if header.column.getCanResize()}
+												<div
+													class="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent transition-colors select-none hover:bg-blue-400 active:bg-blue-500 {resizingColumnId ===
+													header.column.id
+														? 'bg-blue-500'
+														: ''}"
+													onmousedown={createResizeHandler(header)}
+													ontouchstart={createResizeHandler(header)}
+													role="separator"
+													aria-label="Resize column"
+												></div>
 											{/if}
-										</Button>
+										</div>
 									{/if}
 								</th>
 							{/each}
@@ -149,47 +232,46 @@
 				</thead>
 				<tbody>
 					{#each tableInstance.getPaginationRowModel().rows as row (row.id)}
-						<tr class="border-border/50 hover:bg-muted/30 border-b transition-colors">
+						<tr class="border-border/30 hover:bg-muted/20 border-b transition-colors">
 							{#each row.getVisibleCells() as cell (cell.column.id)}
-								{@const value = cell.getValue()}
-								<td class="px-4 py-3 align-middle">
-									{#if value === null || value === undefined}
-										<span
-											class="text-muted-foreground bg-muted/30 rounded px-1.5 py-0.5 text-xs italic"
-											>NULL</span
-										>
-									{:else if typeof value === 'boolean'}
-										<span
-											class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium {value
-												? 'bg-success-light/30 text-success-foreground border-success/20 border'
-												: 'bg-muted/40 text-muted-foreground border-border border'}"
-										>
-											{value ? 'true' : 'false'}
-										</span>
-									{:else if typeof value === 'number'}
-										<span class="text-foreground font-mono">{value.toLocaleString()}</span>
+								{@const cellData = cell.getValue()}
+								{@const columnWidth = cell.column.getSize()}
+								{@const originalValue = cell.row.original[cell.column.id]}
+								<td
+									class="border-border/20 border-r px-2 py-1 align-top text-xs"
+									style="width: {columnWidth}px"
+									title={originalValue !== null && originalValue !== undefined
+										? String(originalValue)
+										: undefined}
+								>
+									{#if cellData && typeof cellData === 'object' && 'type' in cellData && cellData.type === 'null'}
+										<span class="text-muted-foreground text-xs italic">NULL</span>
+									{:else if cellData && typeof cellData === 'object' && 'type' in cellData && 'value' in cellData && cellData.type === 'boolean'}
+										<span class="text-foreground">{cellData.value}</span>
+									{:else if cellData && typeof cellData === 'object' && 'type' in cellData && 'value' in cellData && cellData.type === 'number'}
+										<span class="text-foreground font-mono">{cellData.value}</span>
 									{:else}
-										{@const stringValue = String(value)}
-										{#if stringValue.length > 100}
-											<span class="text-foreground block max-w-xs truncate" title={stringValue}>
-												{stringValue}
-											</span>
-										{:else}
-											<span class="text-foreground">{stringValue}</span>
-										{/if}
+										<div class="text-foreground truncate" style="max-width: {columnWidth - 16}px">
+											{cellData && typeof cellData === 'object' && 'value' in cellData
+												? cellData.value
+												: String(cellData || '')}
+										</div>
 									{/if}
 								</td>
 							{/each}
 						</tr>
 					{:else}
 						<tr>
-							<td colspan={columns.length} class="h-32 text-center text-muted-foreground">
+							<td
+								colspan={columns.length}
+								class="h-24 text-center text-muted-foreground border-r border-border/20"
+							>
 								<div class="flex flex-col items-center gap-2">
-									<div class="w-12 h-12 rounded-full bg-muted/20 flex items-center justify-center">
-										<Search class="w-5 h-5 text-muted-foreground/50" />
+									<div class="w-8 h-8 rounded bg-muted/20 flex items-center justify-center">
+										<Search class="w-4 h-4 text-muted-foreground/50" />
 									</div>
 									<div>
-										<p class="text-sm font-medium">No results found</p>
+										<p class="text-xs font-medium">No results found</p>
 										<p class="text-xs text-muted-foreground/70">Try adjusting your search terms</p>
 									</div>
 								</div>
