@@ -22,7 +22,7 @@ log = "0.4"
 tauri = { version = "2.6.2", features = [] }
 tauri-plugin-log = "2"
 thiserror = "2.0.12"
-tokio-postgres = "0.7"
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1"] }
 tokio = { version = "1.0", features = ["full"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 dashmap = "6.0"
@@ -36,3 +36,5 @@ rusqlite = { version = "0.37.0", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3.31"
 rustls-pemfile = "2.2.0"
+bytes = "1.10.1"
+hex = "0.4.3"

@@ -95,10 +95,12 @@ name = "app"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "chrono",
  "dashmap",
  "dirs",
  "futures-util",
+ "hex",
  "log",
  "rusqlite",
  "rustls",
@@ -2819,8 +2821,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613283563cd90e1dfc3518d548caee47e0e725455ed619881f5cf21f36de4b48"
 dependencies = [
  "bytes",
+ "chrono",
  "fallible-iterator 0.2.0",
  "postgres-protocol",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

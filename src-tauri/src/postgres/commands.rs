@@ -3,13 +3,14 @@ use std::collections::{HashMap, HashSet};
 use anyhow::Context;
 use futures_util::{pin_mut, TryStreamExt};
 use tauri::Emitter;
-use tokio_postgres::types::{ToSql, Type};
+use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 use crate::{
     error::Error,
     postgres::{
         connect::connect,
+        row_writer::RowWriter,
         types::{
             ColumnInfo, ConnectionConfig, ConnectionInfo, DatabaseConnection, DatabaseSchema,
             QueryStreamData, QueryStreamError, QueryStreamStart, TableInfo,
@@ -19,134 +20,6 @@ use crate::{
     storage::{QueryHistoryEntry, SavedQuery},
     AppState,
 };
-
-/// Taken from https://github.com/sfackler/rust-postgres/issues/879#issuecomment-1084149480
-#[derive(Debug)]
-struct NullChecker(bool);
-
-impl tokio_postgres::types::FromSql<'_> for NullChecker {
-    fn from_sql(
-        _ty: &tokio_postgres::types::Type,
-        _raw: &[u8],
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
-        Ok(Self(false))
-    }
-
-    fn from_sql_null(
-        _ty: &tokio_postgres::types::Type,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
-        Ok(Self(true))
-    }
-
-    fn accepts(_ty: &tokio_postgres::types::Type) -> bool {
-        true
-    }
-}
-
-/// Move to a separate file
-fn postgres_value_to_json(
-    row: &tokio_postgres::Row,
-    column_index: usize,
-) -> Result<serde_json::Value, anyhow::Error> {
-    let column = &row.columns()[column_index];
-    let pg_type = column.type_();
-
-    // Check for NULL
-    if row.try_get::<_, NullChecker>(column_index)?.0 {
-        return Ok(serde_json::Value::Null);
-    }
-
-    match *pg_type {
-        Type::BOOL => {
-            let value: bool = row.try_get(column_index)?;
-            Ok(serde_json::Value::Bool(value))
-        }
-
-        Type::INT2 => {
-            let value: i16 = row.try_get(column_index)?;
-            Ok(serde_json::Value::Number(value.into()))
-        }
-        Type::INT4 => {
-            let value: i32 = row.try_get(column_index)?;
-            Ok(serde_json::Value::Number(value.into()))
-        }
-        Type::INT8 => {
-            let value: i64 = row.try_get(column_index)?;
-            Ok(serde_json::Value::Number(value.into()))
-        }
-
-        Type::FLOAT4 => {
-            let value: f32 = row.try_get(column_index)?;
-            if let Some(num) = serde_json::Number::from_f64(value as f64) {
-                Ok(serde_json::Value::Number(num))
-            } else {
-                Ok(serde_json::Value::String(value.to_string()))
-            }
-        }
-        Type::FLOAT8 => {
-            let value: f64 = row.try_get(column_index)?;
-            if let Some(num) = serde_json::Number::from_f64(value) {
-                Ok(serde_json::Value::Number(num))
-            } else {
-                Ok(serde_json::Value::String(value.to_string()))
-            }
-        }
-
-        Type::NUMERIC => {
-            let value: String = row.try_get(column_index)?;
-            if let Ok(parsed) = value.parse::<i64>() {
-                Ok(serde_json::Value::Number(parsed.into()))
-            } else if let Ok(parsed) = value.parse::<f64>() {
-                if let Some(num) = serde_json::Number::from_f64(parsed) {
-                    Ok(serde_json::Value::Number(num))
-                } else {
-                    Ok(serde_json::Value::String(value))
-                }
-            } else {
-                Ok(serde_json::Value::String(value))
-            }
-        }
-
-        Type::JSON | Type::JSONB => {
-            let value: &str = row.try_get(column_index)?;
-            match serde_json::from_str(&value) {
-                Ok(json_value) => Ok(json_value),
-                Err(_) => Ok(serde_json::Value::String(value.to_string())),
-            }
-        }
-
-        Type::TEXT_ARRAY => {
-            let value: Vec<String> = row.try_get(column_index)?;
-            Ok(serde_json::Value::Array(
-                value.into_iter().map(serde_json::Value::String).collect(),
-            ))
-        }
-        Type::INT4_ARRAY => {
-            let value: Vec<i32> = row.try_get(column_index)?;
-            Ok(serde_json::Value::Array(
-                value
-                    .into_iter()
-                    .map(|v| serde_json::Value::Number(v.into()))
-                    .collect(),
-            ))
-        }
-        Type::INT8_ARRAY => {
-            let value: Vec<i64> = row.try_get(column_index)?;
-            Ok(serde_json::Value::Array(
-                value
-                    .into_iter()
-                    .map(|v| serde_json::Value::Number(v.into()))
-                    .collect(),
-            ))
-        }
-
-        // Text and string types (default case)
-        _ => {
-            let value: String = row.try_get(column_index)?;
-            Ok(serde_json::Value::String(value))
-        }
-    }
-}
 
 #[tauri::command]
 pub async fn add_connection(
@@ -267,10 +140,11 @@ pub async fn execute_query_stream(
             pin_mut!(stream);
 
             let mut columns_sent = false;
-            let mut batch = Vec::new();
             let mut batch_size = 50;
             let max_batch_size = 150;
             let mut total_rows = 0;
+
+            let mut writer = RowWriter::new();
 
             loop {
                 match stream.try_next().await {
@@ -300,35 +174,23 @@ pub async fn execute_query_stream(
                             columns_sent = true;
                         }
 
-                        // Serialize row data
-                        let mut result_row = Vec::new();
-                        for i in 0..row.len() {
-                            let value = match postgres_value_to_json(&row, i) {
-                                Ok(value) => value,
-                                Err(e) => {
-                                    log::error!("Error deserializing column: {:?}", e);
-                                    serde_json::Value::Null
-                                }
-                            };
-                            result_row.push(value);
-                        }
+                        writer.add_row(&row)?;
 
-                        batch.push(result_row);
                         total_rows += 1;
 
-                        if batch.len() >= batch_size {
+                        if writer.len() >= batch_size {
                             if let Err(e) = app.emit(
                                 "query-stream-data",
                                 QueryStreamData {
                                     query_id: query_id.clone(),
-                                    rows: batch.clone(),
+                                    rows: writer.finish(),
                                     is_complete: false,
                                 },
                             ) {
                                 log::error!("❌ Failed to emit stream data: {}", e);
                             }
 
-                            batch.clear();
+                            writer.clear();
                             batch_size = (batch_size * 2).min(max_batch_size);
                         }
                     }
@@ -355,13 +217,12 @@ pub async fn execute_query_stream(
                 }
             }
 
-            // Send any remaining rows in the batch
-            if !batch.is_empty() {
+            if !writer.is_empty() {
                 if let Err(e) = app.emit(
                     "query-stream-data",
                     QueryStreamData {
                         query_id: query_id.clone(),
-                        rows: batch,
+                        rows: writer.finish(),
                         is_complete: false,
                     },
                 ) {
@@ -374,7 +235,7 @@ pub async fn execute_query_stream(
                 "query-stream-data",
                 QueryStreamData {
                     query_id: query_id.clone(),
-                    rows: Vec::new(),
+                    rows: "".to_string(),
                     is_complete: true,
                 },
             ) {

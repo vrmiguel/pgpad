@@ -45,7 +45,8 @@ pub struct DatabaseSchema {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryStreamData {
     pub query_id: String,
-    pub rows: Vec<Vec<serde_json::Value>>,
+    // Serialized JSON through [`RowBatch`]
+    pub rows: String,
     pub is_complete: bool,
 }
 
