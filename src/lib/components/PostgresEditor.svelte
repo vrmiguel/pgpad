@@ -61,11 +61,14 @@
 	let databaseSchema = $state<DatabaseSchema | null>(null);
 	let loadingSchema = $state(false);
 	let lastLoadedSchemaConnectionId = $state<string | null>(null);
-	let isItemsAccordionOpen = $state(false);
 
 	let tableBrowseModalOpen = $state(false);
 	let selectedTableName = $state('');
 	let selectedTableSchema = $state('');
+
+	let isItemsAccordionOpen = $state(false);
+	let isConnectionsAccordionOpen = $state(true);
+	let isScriptsAccordionOpen = $state(false);
 
 	// Auto-collapse if resized below 8%
 	const COLLAPSE_THRESHOLD = 12;
@@ -638,25 +641,48 @@
 						</div>
 					</div>
 
-					<div class="flex-1 space-y-3 p-3">
-						{#each connections as connection}
-							<button
-								class="flex h-10 w-full items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md {selectedConnection ===
-								connection.id
-									? 'bg-primary/20 border-primary/30 border shadow-md'
-									: 'hover:bg-sidebar-accent/60'}"
-								onclick={() => selectConnection(connection.id)}
-								title={connection.name}
-							>
-								<div
-									class="h-3 w-3 rounded-full shadow-sm {connection.connected
-										? 'bg-success shadow-success/30'
-										: establishingConnections.has(connection.id)
-											? 'bg-primary shadow-primary/30 animate-pulse'
-											: 'bg-muted-foreground/40'}"
-								></div>
-							</button>
-						{/each}
+					<div class="flex-1 flex flex-col items-center justify-start space-y-4 p-4">
+						<!-- Connections Icon -->
+						<button
+							class="hover:bg-sidebar-accent/80 flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md"
+							onclick={() => {
+								isSidebarCollapsed = false;
+								isConnectionsAccordionOpen = true;
+								isScriptsAccordionOpen = false;
+								isItemsAccordionOpen = false;
+							}}
+							title="Connections"
+						>
+							<Database class="text-sidebar-foreground/70 h-5 w-5" />
+						</button>
+
+						<!-- Scripts Icon -->
+						<button
+							class="hover:bg-sidebar-accent/80 flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md"
+							onclick={() => {
+								isSidebarCollapsed = false;
+								isConnectionsAccordionOpen = false;
+								isScriptsAccordionOpen = true;
+								isItemsAccordionOpen = false;
+							}}
+							title="Scripts"
+						>
+							<FileText class="text-sidebar-foreground/70 h-5 w-5" />
+						</button>
+
+						<!-- Items Icon -->
+						<button
+							class="hover:bg-sidebar-accent/80 flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md"
+							onclick={() => {
+								isSidebarCollapsed = false;
+								isConnectionsAccordionOpen = false;
+								isScriptsAccordionOpen = false;
+								isItemsAccordionOpen = true;
+							}}
+							title="Database Items"
+						>
+							<Table class="text-sidebar-foreground/70 h-5 w-5" />
+						</button>
 					</div>
 				{:else}
 					<!-- Expanded Sidebar Content -->
@@ -681,7 +707,7 @@
 						<Accordion>
 							{#snippet children()}
 								<!-- Connections Accordion -->
-								<AccordionItem title="Connections" icon={Database} open={true}>
+								<AccordionItem title="Connections" icon={Database} bind:open={isConnectionsAccordionOpen}>
 									{#snippet children()}
 										<AccordionContent>
 											{#snippet children()}
@@ -764,7 +790,7 @@
 								</AccordionItem>
 
 								<!-- Scripts Accordion -->
-								<AccordionItem title="Scripts" icon={FileText} open={false}>
+								<AccordionItem title="Scripts" icon={FileText} bind:open={isScriptsAccordionOpen}>
 									{#snippet children()}
 										<AccordionContent>
 											{#snippet children()}
