@@ -71,7 +71,8 @@
 			const streamDataUnlisten = await listen<QueryStreamData>('query-stream-data', (event) => {
 				console.log('🎯 Received query-stream-data:', event.payload);
 				const { query_id, rows: rawRows, is_complete } = event.payload;
-				const rows = JSON.parse(rawRows);
+
+				const rows = rawRows.trim() === '' ? [] : JSON.parse(rawRows);
 				console.log('🔍 Comparing query IDs:', { received: query_id, expected: streamingQueryId });
 
 				if (query_id === streamingQueryId) {

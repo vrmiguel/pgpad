@@ -55,6 +55,7 @@
 		"clsx": "^2.1.1",
 		"codemirror": "^6.0.2",
 		"tailwind-merge": "^3.3.0",
-		"tailwindcss": "^4.1.7"
+		"tailwindcss": "^4.1.7",
+		"vanilla-jsoneditor": "^3.8.0"
 	}
 }

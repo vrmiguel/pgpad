@@ -2,6 +2,7 @@
 	import { createSvelteTable, FlexRender, renderComponent } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import JsonViewer from './JsonViewer.svelte';
 	import {
 		getCoreRowModel,
 		getSortedRowModel,
@@ -45,28 +46,40 @@
 	let resizingColumnId = $state<string | null>(null);
 	let tableContainer: HTMLDivElement;
 
+	function tryParseJson(value: any): { isJson: boolean; parsed?: any } {
+		if (value === null || value === undefined) {
+			return { isJson: false };
+		}
+
+		if (typeof value === 'object') {
+			return { isJson: true, parsed: value };
+		}
+
+		if (typeof value === 'string') {
+			try {
+				const trimmed = value.trim();
+				// Check if it looks like JSON (starts with { or [)
+				if (
+					(trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+					(trimmed.startsWith('[') && trimmed.endsWith(']'))
+				) {
+					const parsed = JSON.parse(trimmed);
+					return { isJson: true, parsed };
+				}
+			} catch {
+				// Not valid JSON, treat as string
+			}
+		}
+
+		return { isJson: false };
+	}
+
 	// Create column definitions dynamically with resizing enabled
 	const columnDefs = $derived<ColumnDef<Record<string, any>, any>[]>(
 		columns.map((column) => ({
 			accessorKey: column,
 			header: ({ column: col }) => {
 				return column;
-			},
-			cell: ({ getValue }) => {
-				const value = getValue();
-
-				if (value === null || value === undefined) {
-					return { value: 'null', type: 'null' };
-				}
-				if (typeof value === 'boolean') {
-					return { value: value ? 'true' : 'false', type: 'boolean' };
-				}
-				if (typeof value === 'number') {
-					return { value: value.toLocaleString(), type: 'number' };
-				}
-
-				// String or other types
-				return { value: String(value), type: 'string' };
 			},
 			size: 150,
 			minSize: 50,
@@ -234,9 +247,10 @@
 					{#each tableInstance.getPaginationRowModel().rows as row (row.id)}
 						<tr class="border-border/30 hover:bg-muted/20 border-b transition-colors">
 							{#each row.getVisibleCells() as cell (cell.column.id)}
-								{@const cellData = cell.getValue()}
+								{@const rawValue = cell.getValue()}
 								{@const columnWidth = cell.column.getSize()}
 								{@const originalValue = cell.row.original[cell.column.id]}
+								{@const jsonResult = tryParseJson(rawValue)}
 								<td
 									class="border-border/20 border-r px-2 py-1 align-top text-xs"
 									style="width: {columnWidth}px"
@@ -244,17 +258,17 @@
 										? String(originalValue)
 										: undefined}
 								>
-									{#if cellData && typeof cellData === 'object' && 'type' in cellData && cellData.type === 'null'}
+									{#if rawValue === null || rawValue === undefined}
 										<span class="text-muted-foreground text-xs italic">NULL</span>
-									{:else if cellData && typeof cellData === 'object' && 'type' in cellData && 'value' in cellData && cellData.type === 'boolean'}
-										<span class="text-foreground">{cellData.value}</span>
-									{:else if cellData && typeof cellData === 'object' && 'type' in cellData && 'value' in cellData && cellData.type === 'number'}
-										<span class="text-foreground font-mono">{cellData.value}</span>
+									{:else if typeof rawValue === 'boolean'}
+										<span class="text-foreground">{rawValue ? 'true' : 'false'}</span>
+									{:else if typeof rawValue === 'number'}
+										<span class="text-foreground font-mono">{rawValue.toLocaleString()}</span>
+									{:else if jsonResult.isJson}
+										<JsonViewer json={jsonResult.parsed} depth={2} />
 									{:else}
 										<div class="text-foreground truncate" style="max-width: {columnWidth - 16}px">
-											{cellData && typeof cellData === 'object' && 'value' in cellData
-												? cellData.value
-												: String(cellData || '')}
+											{String(rawValue || '')}
 										</div>
 									{/if}
 								</td>
