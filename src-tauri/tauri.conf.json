@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "pgpad",
-  "version": "2.0.0",
+  "version": "0.0.1",
   "identifier": "com.pgpad.dev",
   "build": {
     "frontendDist": "../dist",

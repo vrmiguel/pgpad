@@ -45,7 +45,7 @@
 			}
 		}
 		streamUnlisten = [];
-		console.log('✅ Cleanup completed');
+		console.log('Cleanup completed');
 	}
 
 	async function setupStreamingListeners() {
@@ -53,40 +53,36 @@
 
 		try {
 			const streamStartUnlisten = await listen<QueryStreamStart>('query-stream-start', (event) => {
-				console.log('🎯 Received query-stream-start:', event.payload);
+				console.log('Got query-stream-start:', event.payload);
 				const { query_id, columns } = event.payload;
-				console.log('🔍 Comparing query IDs:', { received: query_id, expected: streamingQueryId });
 
 				if (query_id === streamingQueryId) {
-					console.log('✅ Query ID matches! Setting up columns:', columns, `(${columns.length})`);
 					queryColumns = columns;
 					queryRows = [];
 					queryRowCount = 0;
 					queryError = null;
 				} else {
-					console.log('❌ Query ID mismatch, ignoring event');
+					console.log('Query ID mismatch, ignoring event');
 				}
 			});
 
 			const streamDataUnlisten = await listen<QueryStreamData>('query-stream-data', (event) => {
-				console.log('🎯 Received query-stream-data:', event.payload);
+				console.log('Got query-stream-data:', event.payload);
 				const { query_id, rows: rawRows, is_complete } = event.payload;
 
 				const rows = rawRows.trim() === '' ? [] : JSON.parse(rawRows);
-				console.log('🔍 Comparing query IDs:', { received: query_id, expected: streamingQueryId });
 
 				if (query_id === streamingQueryId) {
 					if (is_complete) {
-						console.log('✅ Stream completed!');
+						console.log('Stream completed!');
 						const duration = Date.now() - streamingStartTime;
-						console.log('⏱️ Query duration:', duration + 'ms');
+						console.log('Query duration:', duration + 'ms');
 
 						isStreaming = false;
-						console.log('🔄 Set isStreaming to false');
 
 						onComplete?.(queryRowCount, duration);
 					} else {
-						console.log('📦 Adding rows to stream:', rows.length);
+						console.log(`Adding ${rows.length} rows to stream`);
 						const newRows = rows.map((row: any[]) => {
 							const rowObj: Record<string, any> = {};
 							queryColumns.forEach((col, i) => {
@@ -97,28 +93,35 @@
 
 						queryRows = queryRows.concat(newRows);
 						queryRowCount += rows.length;
-						console.log('📊 Total rows now:', queryRowCount);
+						console.log(`Total rows now: ${queryRowCount}`);
 					}
 				} else {
-					console.log('❌ Query ID mismatch, ignoring event');
+					console.log('Query ID mismatch, ignoring event');
 				}
 			});
 
 			const streamErrorUnlisten = await listen<QueryStreamError>('query-stream-error', (event) => {
-				console.log('🎯 Received query-stream-error:', event.payload);
 				const { query_id, error } = event.payload;
-				console.log('🔍 Comparing query IDs:', { received: query_id, expected: streamingQueryId });
 
 				if (query_id === streamingQueryId) {
-					console.log('❌ Stream error received:', error);
+					console.log('Stream error received:', error);
 					isStreaming = false;
-					queryError = error;
+					let errorMessage = error;
+					try {
+						const parsedError = typeof error === 'string' ? JSON.parse(error) : error;
+						if (parsedError && typeof parsedError === 'object' && parsedError.message) {
+							errorMessage = parsedError.message;
+						}
+					} catch (e) {
+						errorMessage = String(error);
+					}
+					queryError = errorMessage;
 					queryRows = [];
 					queryColumns = [];
-					onError?.(error);
+					onError?.(errorMessage);
 					cleanupStreamingListeners();
 				} else {
-					console.log('❌ Query ID mismatch, ignoring error event');
+					console.log('Query ID mismatch, ignoring error event');
 				}
 			});
 
@@ -129,7 +132,7 @@
 	}
 
 	export async function executeQuery() {
-		console.log('🚀 Starting executeQuery with:', { connectionId, query });
+		console.log('Starting executeQuery with:', { connectionId, query });
 
 		cleanupStreamingListeners();
 
@@ -137,28 +140,34 @@
 		streamingStartTime = Date.now();
 		queryError = null;
 
-		console.log('🧹 Clearing queryRows from', queryRows.length, 'to 0');
 		queryRows = [];
-		console.log('🧹 Clearing queryColumns from', queryColumns.length, 'to 0');
 		queryColumns = [];
 		queryRowCount = 0;
 
 		streamingQueryId = queryId || crypto.randomUUID();
-		console.log('🆔 Generated query ID:', streamingQueryId);
 
 		await setupStreamingListeners();
 
 		try {
-			console.log('📤 Calling backend executeQueryStream...');
+			console.log('StartingexecuteQueryStream');
 			await DatabaseCommands.executeQueryStream(connectionId, query, streamingQueryId);
-			console.log('✅ Backend call completed');
+			console.log('executeQueryStream finished');
 		} catch (error) {
 			console.error('❌ Backend error:', error);
 			isStreaming = false;
-			queryError = String(error);
+			let errorMessage = String(error);
+			try {
+				const parsedError = typeof error === 'string' ? JSON.parse(error) : error;
+				if (parsedError && typeof parsedError === 'object' && parsedError.message) {
+					errorMessage = parsedError.message;
+				}
+			} catch (e) {
+				errorMessage = String(error);
+			}
+			queryError = errorMessage;
 			queryRows = [];
 			queryColumns = [];
-			onError?.(String(error));
+			onError?.(errorMessage);
 			cleanupStreamingListeners();
 		}
 	}
@@ -177,7 +186,7 @@
 
 			executeQuery();
 		} else {
-			console.log('⏭️ No execution needed - props unchanged or missing');
+			console.log('No execution needed - props unchanged or missing');
 		}
 	});
 
@@ -186,7 +195,7 @@
 	});
 </script>
 
-{console.log('🎨 Rendering state:', {
+{console.log('Rendering state:', {
 	queryError: !!queryError,
 	isStreaming,
 	rowsLength: queryRows.length,

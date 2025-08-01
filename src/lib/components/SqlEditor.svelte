@@ -96,9 +96,6 @@ SELECT 1 as test;`);
 	}
 
 	function handleQueryError(error: string) {
-		// Don't set isExecuting = false here either
-		// Let the StreamingQueryResults component handle error display
-
 		if (selectedConnection) {
 			DatabaseCommands.saveQueryToHistory(selectedConnection, currentQuery, 0, 'error', 0, error);
 			loadQueryHistory();
@@ -125,7 +122,6 @@ SELECT 1 as test;`);
 
 	function loadQueryFromHistory(historyQuery: string) {
 		if (onLoadFromHistory) {
-			// Create new tab with history content
 			onLoadFromHistory(historyQuery);
 		}
 	}
