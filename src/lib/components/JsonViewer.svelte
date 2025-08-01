@@ -1,7 +1,4 @@
 <script lang="ts">
-	import { createJSONEditor } from 'vanilla-jsoneditor';
-	import { onMount, onDestroy } from 'svelte';
-
 	interface Props {
 		json: any;
 		depth?: number;
@@ -9,141 +6,262 @@
 
 	let { json, depth = 2 }: Props = $props();
 
-	let container: HTMLDivElement;
-	let editor: any = null;
-	let expandedStrings = $state(new WeakMap<HTMLElement, boolean>());
-	let clickHandlerSetup = false;
-	let clickHandler: ((e: Event) => void) | null = null;
+	// Holds paths that the user has expanded or collapsed
+	// If a path is in the set as is, it is expanded
+	// If a path is in the set as __collapsed, it is collapsed
+	//
+	// I tried using a Map<string, boolean> but for some reason it didn't work
+	let userOverrides = $state<Set<string>>(new Set());
+	let expandedStrings = $state<Set<string>>(new Set());
 
-	onMount(() => {
-		if (container && json !== undefined) {
-			try {
-				editor = createJSONEditor({
-					target: container,
-					props: {
-						content: { json },
-						readOnly: true,
-						mainMenuBar: false,
-						navigationBar: false,
-						statusBar: false,
-						mode: 'tree',
-						onChange: () => {
-							// Read only
-						}
-					}
-				});
-
-				if (container) {
-					const mainElement = container.querySelector('.jse-main');
-					if (mainElement) {
-						(mainElement as HTMLElement).style.height = 'auto';
-						(mainElement as HTMLElement).style.minHeight = 'auto';
-						(mainElement as HTMLElement).style.maxHeight = 'none';
-					}
-				}
-
-				// Auto-expand to specified depth
-				if (editor && depth > 0) {
-					setTimeout(() => {
-						try {
-							// Expand to the specified depth
-							editor.expand([], (path: any[]) => path.length < depth);
-						} catch (e) {
-							// Ignore expansion errors
-							console.debug('Could not expand JSON to depth:', e);
-						}
-					}, 100);
-				}
-
-				if (!clickHandlerSetup) {
-					setupEventDelegation();
-					clickHandlerSetup = true;
-				}
-			} catch (error) {
-				console.error('Error initializing JSON editor:', error);
-			}
-		}
-	});
-
-	function setupEventDelegation() {
-		if (!container) return;
-
-		clickHandler = (e: Event) => {
-			const target = e.target as HTMLElement;
-
-			// Check if clicked element is a string value
-			if (
-				target &&
-				target.classList.contains('jse-value') &&
-				target.classList.contains('jse-string')
-			) {
-				e.stopPropagation();
-
-				// Toggle expanded state using WeakMap (no memory leaks!)
-				const isExpanded = expandedStrings.get(target) || false;
-
-				if (isExpanded) {
-					expandedStrings.delete(target);
-					target.classList.remove('expanded');
-				} else {
-					expandedStrings.set(target, true);
-					target.classList.add('expanded');
-				}
-			}
-		};
-
-		container.addEventListener('click', clickHandler);
+	function getValueType(value: any): string {
+		if (value === null) return 'null';
+		if (typeof value === 'boolean') return 'boolean';
+		if (typeof value === 'number') return 'number';
+		if (typeof value === 'string') return 'string';
+		if (Array.isArray(value)) return 'array';
+		if (typeof value === 'object') return 'object';
+		return 'unknown';
 	}
 
-	onDestroy(() => {
-		if (container && clickHandler) {
-			container.removeEventListener('click', clickHandler);
-			clickHandler = null;
-		}
+	function isExpanded(path: string): boolean {
+		return userOverrides.has(path);
+	}
 
-		if (editor) {
-			try {
-				editor.destroy();
-			} catch (e) {
-				console.debug('Error destroying JSON editor:', e);
+	function toggleExpanded(path: string): void {
+		const newExpanded = new Set(userOverrides);
+
+		const currentPath = path;
+		const pathParts = currentPath.split('.').filter(Boolean);
+		const depth = pathParts.length;
+		const isUserCollapsed = newExpanded.has(path + '__collapsed');
+		const isCurrentlyExpanded =
+			!isUserCollapsed && (newExpanded.has(path) || shouldAutoExpand(depth));
+
+		if (isCurrentlyExpanded) {
+			// Currently expanded -> collapse it
+			// For auto-expanded items, we add them to expanded Set as "collapsed" marker
+			if (shouldAutoExpand(depth) && !newExpanded.has(path)) {
+				// This is an auto-expanded item, mark it as user-collapsed
+				newExpanded.add(path + '__collapsed');
+			} else {
+				// This was user-expanded, remove it
+				newExpanded.delete(path);
 			}
-			editor = null;
-		}
-
-		expandedStrings = new WeakMap();
-		clickHandlerSetup = false;
-	});
-
-	// React to prop changes
-	$effect(() => {
-		if (editor && json !== undefined) {
-			try {
-				editor.set({ json });
-			} catch (e) {
-				console.error('Error updating JSON viewer:', e);
+		} else {
+			// Currently collapsed -> expand it
+			if (newExpanded.has(path + '__collapsed')) {
+				// Remove the collapsed marker
+				newExpanded.delete(path + '__collapsed');
+			} else {
+				// Add to expanded
+				newExpanded.add(path);
 			}
 		}
-	});
+
+		userOverrides = newExpanded;
+	}
+
+	function toggleStringExpanded(path: string): void {
+		const newExpandedStrings = new Set(expandedStrings);
+		if (newExpandedStrings.has(path)) {
+			newExpandedStrings.delete(path);
+		} else {
+			newExpandedStrings.add(path);
+		}
+		expandedStrings = newExpandedStrings;
+	}
+
+	function shouldAutoExpand(currentDepth: number): boolean {
+		return currentDepth < depth;
+	}
+
+	function renderValue(
+		value: any,
+		key: string | number | null = null,
+		path = '',
+		currentDepth = 0
+	): any {
+		const valueType = getValueType(value);
+		const currentPath = path ? `${path}.${key}` : String(key || '');
+
+		const isUserCollapsed = userOverrides.has(currentPath + '__collapsed');
+		const shouldExpand =
+			!isUserCollapsed && (isExpanded(currentPath) || shouldAutoExpand(currentDepth));
+
+		if (valueType === 'object' && value) {
+			const keys = Object.keys(value);
+			const isEmpty = keys.length === 0;
+
+			return {
+				type: 'object',
+				key,
+				value,
+				path: currentPath,
+				isEmpty,
+				shouldExpand,
+				keys: shouldExpand ? keys : [],
+				currentDepth
+			};
+		}
+
+		if (valueType === 'array') {
+			const isEmpty = value.length === 0;
+
+			return {
+				type: 'array',
+				key,
+				value,
+				path: currentPath,
+				isEmpty,
+				shouldExpand,
+				items: shouldExpand ? value : [],
+				currentDepth
+			};
+		}
+
+		return {
+			type: valueType,
+			key,
+			value,
+			path: currentPath,
+			currentDepth
+		};
+	}
+
+	let renderedJson = $derived(renderValue(json));
 </script>
 
-<div bind:this={container} class="json-viewer-container"></div>
+<div class="json-viewer-container">
+	<div class="json-content">
+		{@render jsonElement(renderedJson)}
+	</div>
+</div>
+
+{#snippet jsonElement(item: any)}
+	<div class="json-item" style="margin-left: {item.currentDepth * 12}px">
+		{#if item.type === 'object'}
+			<div class="json-line">
+				{#if item.key !== null}
+					<span class="json-key">"{item.key}"</span>
+					<span class="json-colon">: </span>
+				{/if}
+				<button
+					class="json-bracket clickable"
+					onclick={() => toggleExpanded(item.path)}
+					aria-label={item.shouldExpand ? 'Collapse object' : 'Expand object'}
+					type="button"
+				>
+					&#123;
+				</button>
+				{#if item.isEmpty}
+					<span class="json-bracket">&#125;</span>
+				{:else if !item.shouldExpand}
+					<span class="json-ellipsis">...</span>
+					<span class="json-bracket">&#125;</span>
+				{/if}
+			</div>
+			{#if item.shouldExpand && !item.isEmpty}
+				{#each item.keys as key, index}
+					<div style="margin-left: {(item.currentDepth + 1) * 12}px">
+						<span class="json-property">
+							{@render jsonElement(
+								renderValue(item.value[key], key, item.path, item.currentDepth + 1)
+							)}
+							{#if index < item.keys.length - 1}<span class="json-comma">,</span>{/if}
+						</span>
+					</div>
+				{/each}
+				<div class="json-line" style="margin-left: {item.currentDepth * 12}px">
+					<span class="json-bracket">&#125;</span>
+				</div>
+			{/if}
+		{:else if item.type === 'array'}
+			<div class="json-line">
+				{#if item.key !== null}
+					<span class="json-key">"{item.key}"</span>
+					<span class="json-colon">: </span>
+				{/if}
+				<button
+					class="json-bracket clickable"
+					onclick={() => toggleExpanded(item.path)}
+					aria-label={item.shouldExpand ? 'Collapse array' : 'Expand array'}
+					type="button"
+				>
+					&#91;
+				</button>
+				{#if item.isEmpty}
+					<span class="json-bracket">&#93;</span>
+				{:else if !item.shouldExpand}
+					<span class="json-ellipsis">...</span>
+					<span class="json-bracket">&#93;</span>
+				{/if}
+			</div>
+			{#if item.shouldExpand && !item.isEmpty}
+				{#each item.items as arrayItem, index}
+					<div style="margin-left: {(item.currentDepth + 1) * 12}px">
+						<span class="json-property">
+							{@render jsonElement(renderValue(arrayItem, index, item.path, item.currentDepth + 1))}
+							{#if index < item.items.length - 1}<span class="json-comma">,</span>{/if}
+						</span>
+					</div>
+				{/each}
+				<div class="json-line" style="margin-left: {item.currentDepth * 12}px">
+					<span class="json-bracket">&#93;</span>
+				</div>
+			{/if}
+		{:else}
+			<!-- Inline value (stays on same line as key) -->
+			<span class="json-inline-property">
+				{#if item.key !== null && typeof item.key === 'string'}
+					<span class="json-key">"{item.key}"</span>
+					<span class="json-colon">: </span>
+				{/if}
+				<span class="json-value json-{item.type}">
+					{#if item.type === 'string'}
+						{@const stringPath = `${item.path}_string`}
+						{@const isStringExpanded = expandedStrings.has(stringPath)}
+						{@const shouldTruncate = item.value.length > 30}
+						{#if shouldTruncate && !isStringExpanded}
+							<button
+								class="json-string-value clickable"
+								onclick={() => toggleStringExpanded(stringPath)}
+								title="Click to expand full string"
+								type="button"
+							>
+								"{item.value.slice(0, 30)}…"
+							</button>
+						{:else}
+							<span
+								class="json-string-value"
+								class:expanded={isStringExpanded}
+								onclick={() => (shouldTruncate ? toggleStringExpanded(stringPath) : null)}
+								role={shouldTruncate ? 'button' : undefined}
+								tabindex={shouldTruncate ? 0 : undefined}
+							>
+								"{item.value}"
+							</span>
+						{/if}
+					{:else}
+						{JSON.stringify(item.value)}
+					{/if}
+				</span>
+			</span>
+		{/if}
+	</div>
+{/snippet}
 
 <style>
-	/* Compact JSON viewer for table cells */
-
 	.json-viewer-container {
 		font-family:
 			ui-monospace, SFMono-Regular, 'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New',
 			monospace;
-		font-size: 11px !important;
-		line-height: 1.2;
-		/* Natural size with reasonable limits for huge JSON */
-		min-height: auto;
+		font-size: 11px;
+		line-height: 1.4;
 		max-height: 150px;
 		max-width: 100%;
-		/* Smart overflow: only show scrollbar when needed */
-		overflow: auto;
-		/* Remove border to integrate seamlessly with table */
+		overflow-y: auto;
+		overflow-x: hidden; /* no horizontal scrolling */
 		border: none;
 		border-radius: 0;
 		background: transparent;
@@ -151,155 +269,159 @@
 		margin: 0;
 	}
 
-	/* Override vanilla-jsoneditor to match table styling */
-	:global(.json-viewer-container .jse-main) {
-		background: transparent !important;
-		border: none !important;
-		padding: 0 !important;
-		margin: 0 !important;
-		font-size: 11px !important;
+	.json-content {
+		padding: 4px;
+		color: hsl(var(--foreground));
+		min-width: 0; /* allow content to shrink */
 	}
 
-	:global(.json-viewer-container .jse-contents) {
-		background: transparent !important;
-		color: hsl(var(--foreground)) !important;
-		font-size: 11px !important;
-		padding: 0 !important;
-		margin: 0 !important;
+	.json-item {
+		margin: 0;
+		min-width: 0; /* allow content to shrink */
 	}
 
-	/* Match tables' font size */
-	:global(.json-viewer-container *) {
-		font-size: 11px !important;
-		line-height: 1.2 !important;
+	.json-line {
+		display: flex;
+		align-items: center;
+		margin: 1px 0;
+		line-height: 1.4;
+		min-width: 0; /* allow content to shrink */
 	}
 
-	/* Key styling */
-	:global(.json-viewer-container .jse-key) {
-		color: hsl(var(--foreground)) !important;
+	.json-property {
+		display: inline-flex;
+		align-items: center;
+		min-width: 0; /* allow content to shrink */
+	}
+
+	.json-inline-property {
+		display: inline-flex;
+		align-items: center;
+		min-width: 0; /* Allow content to shrink */
+	}
+
+	.json-key {
+		color: hsl(var(--foreground));
 		font-weight: 500;
+		margin-right: 2px;
+		flex-shrink: 0; /* don't shrink the key */
 	}
 
-	/* Value styling - fix the string breaking issue */
-	:global(.json-viewer-container .jse-value) {
-		word-break: normal !important;
-		white-space: nowrap !important;
-		overflow: hidden !important;
-		text-overflow: ellipsis !important;
-		max-width: 200px !important;
-		display: inline-block !important;
-		vertical-align: top !important;
+	.json-colon {
+		color: hsl(var(--foreground));
+		margin-right: 4px;
+		flex-shrink: 0; /* don't shrink the colon */
 	}
 
-	:global(.json-viewer-container .jse-value.jse-string) {
-		color: hsl(142 76% 36%) !important;
-		/* Prevent weird line breaks in long strings */
-		white-space: nowrap !important;
-		overflow: hidden !important;
-		text-overflow: ellipsis !important;
-		max-width: 180px !important;
-		cursor: pointer !important;
-		transition: all 0.2s ease !important;
-		text-decoration: underline !important;
-		text-decoration-color: transparent !important;
-		text-underline-offset: 2px !important;
+	.json-bracket {
+		color: hsl(var(--muted-foreground));
+		font-weight: 500;
+		background: transparent;
+		border: none;
+		padding: 0;
+		margin: 0;
+		font-family: inherit;
+		font-size: inherit;
+		flex-shrink: 0; /* don't shrink brackets */
 	}
 
-	:global(.json-viewer-container .jse-value.jse-string:hover) {
-		background: hsl(var(--accent)) !important;
-		border-radius: 2px !important;
-		text-decoration-color: hsl(142 76% 36%) !important;
+	.json-bracket.clickable {
+		cursor: pointer;
+		transition: color 0.2s ease;
+		border-radius: 2px;
+		padding: 1px 2px;
 	}
 
-	:global(.json-viewer-container .jse-value.jse-string.expanded) {
-		white-space: normal !important;
-		max-width: 300px !important;
-		overflow: visible !important;
-		position: relative !important;
-		z-index: 10 !important;
-		background: hsl(var(--background)) !important;
-		padding: 2px 4px !important;
-		border: 1px solid hsl(var(--border)) !important;
-		border-radius: 3px !important;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+	.json-bracket.clickable:hover {
+		color: hsl(var(--foreground));
+		background: hsl(var(--accent));
 	}
 
-	:global(.json-viewer-container .jse-value.jse-number) {
-		color: hsl(32 95% 44%) !important;
+	.json-bracket.clickable:focus {
+		outline: 1px solid hsl(var(--ring));
+		outline-offset: 1px;
 	}
 
-	:global(.json-viewer-container .jse-value.jse-boolean) {
-		color: hsl(221 83% 53%) !important;
+	.json-comma {
+		color: hsl(var(--muted-foreground));
+		margin-left: 0;
+		flex-shrink: 0; /* don't shrink commas */
 	}
 
-	:global(.json-viewer-container .jse-value.jse-null) {
-		color: hsl(var(--muted-foreground)) !important;
+	.json-ellipsis {
+		color: hsl(var(--muted-foreground));
+		font-style: italic;
+		margin: 0 2px;
+		user-select: none;
+	}
+
+	/* Value type styling */
+	.json-value {
+		word-break: break-word;
+		min-width: 0; /* allow values to shrink */
+		flex: 1; /* allow values to take remaining space */
+	}
+
+	.json-string {
+		color: hsl(142 76% 36%);
+	}
+
+	.json-number {
+		color: hsl(32 95% 44%);
+	}
+
+	.json-boolean {
+		color: hsl(221 83% 53%);
+	}
+
+	.json-null {
+		color: hsl(var(--muted-foreground));
 		font-style: italic;
 	}
 
-	/* Compact expand/collapse buttons */
-	:global(.json-viewer-container .jse-button) {
-		padding: 1px 3px !important;
-		margin: 0 2px 0 0 !important;
-		background: transparent !important;
-		border: none !important;
-		color: hsl(var(--muted-foreground)) !important;
-		min-width: auto !important;
-		height: auto !important;
-		font-size: 10px !important;
+	.json-string-value {
+		background: transparent;
+		border: none;
+		padding: 0;
+		margin: 0;
+		font-family: inherit;
+		font-size: inherit;
+		/* TODO(vini): rethink colors */
+		color: hsl(142 76% 36%);
+		cursor: inherit;
+		min-width: 0; /* allow strings to shrink */
+		max-width: 100%; /* don't exceed container */
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		display: inline-block;
 	}
 
-	:global(.json-viewer-container .jse-button:hover) {
-		background: hsl(var(--accent)) !important;
-		color: hsl(var(--foreground)) !important;
+	.json-string-value.clickable {
+		cursor: pointer;
+		text-decoration: underline;
+		text-decoration-color: transparent;
+		transition: all 0.2s ease;
 	}
 
-	:global(.json-viewer-container .jse-property) {
-		margin: 0 !important;
-		padding: 1px 0 !important;
+	.json-string-value.clickable:hover {
+		text-decoration-color: hsl(142 76% 36%);
+		background: hsl(var(--accent));
+		border-radius: 2px;
+		padding: 1px 2px;
+		margin: -1px -2px;
 	}
 
-	:global(.json-viewer-container .jse-tree-mode) {
-		border: none !important;
-		padding: 0 !important;
-		margin: 0 !important;
-	}
-
-	:global(.json-viewer-container .jse-object),
-	:global(.json-viewer-container .jse-array) {
-		margin: 0 !important;
-		padding: 0 0 0 12px !important; /* Small indent for nesting */
-	}
-
-	:global(.json-viewer-container .jse-menu) {
-		display: none !important;
-	}
-
-	:global(.json-viewer-container .jse-navigation-bar) {
-		display: none !important;
-	}
-
-	:global(.json-viewer-container .jse-status-bar) {
-		display: none !important;
-	}
-
-	/* Ensure no unwanted borders appear */
-	:global(.json-viewer-container .jse-main *) {
-		border: none !important;
-		outline: none !important;
-	}
-
-	/* Fix unnecessary scrolling in the editor itself */
-	:global(.json-viewer-container .jse-main) {
-		height: auto !important;
-		min-height: auto !important;
-		max-height: none !important;
-	}
-
-	:global(.json-viewer-container .jse-contents) {
-		height: auto !important;
-		min-height: auto !important;
-		max-height: none !important;
-		overflow: visible !important;
+	.json-string-value.expanded {
+		background: hsl(var(--accent));
+		border-radius: 3px;
+		padding: 2px 4px;
+		margin: -2px -4px;
+		position: relative;
+		z-index: 10;
+		cursor: pointer;
+		white-space: normal; /* allow wrapping when expanded */
+		max-width: none; /* remove width limit when expanded */
+		overflow: visible; /* show full content when expanded */
 	}
 </style>
