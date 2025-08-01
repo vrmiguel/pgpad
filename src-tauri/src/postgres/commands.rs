@@ -416,41 +416,50 @@ pub async fn get_database_schema(
         .await
         .context("Failed to query database schema")?;
 
-    let mut tables_map: HashMap<String, TableInfo> = std::collections::HashMap::new();
-    let mut schemas_set: HashSet<String> = std::collections::HashSet::new();
+    // Key is (schema, table_name)
+    let mut tables_map = HashMap::new();
+    let mut schemas_set = HashSet::new();
+    let mut unique_columns_set = HashSet::new();
 
-    for row in rows {
-        let schema: String = row.get(0);
-        let table_name: String = row.get(1);
-        let column_name: String = row.get(2);
-        let data_type: String = row.get(3);
+    for row in &rows {
+        let schema: &str = row.get(0);
+        let table_name: &str = row.get(1);
+        let column_name: &str = row.get(2);
+        let data_type: &str = row.get(3);
         let is_nullable: bool = row.get(4);
-        let default_value: Option<String> = row.get(5);
+        let default_value: Option<&str> = row.get(5);
 
-        schemas_set.insert(schema.clone());
+        schemas_set.insert(schema);
+        unique_columns_set.insert(column_name);
 
-        let table_key = format!("{}.{}", schema, table_name);
+        let table_key = (schema, table_name);
 
-        let table_info = tables_map
-            .entry(table_key.clone())
-            .or_insert_with(|| TableInfo {
-                name: table_name.clone(),
-                schema: schema.clone(),
-                columns: Vec::new(),
-            });
+        let table_info = tables_map.entry(table_key).or_insert_with(|| TableInfo {
+            name: table_name.to_owned(),
+            schema: schema.to_owned(),
+            columns: Vec::new(),
+        });
 
         table_info.columns.push(ColumnInfo {
-            name: column_name,
-            data_type,
+            name: column_name.to_owned(),
+            data_type: data_type.to_owned(),
             is_nullable,
-            default_value,
+            default_value: default_value.map(|s| s.to_owned()),
         });
     }
 
-    let tables: Vec<TableInfo> = tables_map.into_values().collect();
-    let schemas: Vec<String> = schemas_set.into_iter().collect();
+    let tables = tables_map.into_values().collect();
+    let schemas = schemas_set.into_iter().map(ToOwned::to_owned).collect();
+    let unique_columns = unique_columns_set
+        .into_iter()
+        .map(ToOwned::to_owned)
+        .collect();
 
-    Ok(DatabaseSchema { tables, schemas })
+    Ok(DatabaseSchema {
+        tables,
+        schemas,
+        unique_columns,
+    })
 }
 
 // Script management commands

@@ -5,7 +5,7 @@ import { autocompletion, acceptCompletion, moveCompletionSelection, closeComplet
 import { keymap } from '@codemirror/view';
 import { indentWithTab, history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 
-import type { DatabaseSchema, TableInfo, ColumnInfo } from './commands.svelte';
+import type { DatabaseSchema } from './commands.svelte';
 import { theme as themeStore, registerEditorThemeCallback } from './stores/theme';
 import { get } from 'svelte/store';
 import { bracketMatching, indentOnInput, foldGutter, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
@@ -138,19 +138,25 @@ function generateSchemaCompletions(schema: DatabaseSchema | null): any[] {
             info: `Table: ${tableName} (${table.columns.length} columns)`,
             detail: 'table'
         });
+    }
 
+    for (const columnName of schema.unique_columns) {
+        completions.push({
+            label: columnName,
+            type: 'property',
+            info: `Column: ${columnName}`,
+            detail: 'column'
+        });
+    }
+
+    // Add qualified column completions (table.column)
+    for (const table of schema.tables) {
+        const tableName = table.schema === 'public' ? table.name : `${table.schema}.${table.name}`;
         for (const column of table.columns) {
-            completions.push({
-                label: column.name,
-                type: 'property',
-                info: `Column: ${column.name} (${column.data_type}) from ${tableName}${column.is_nullable ? ', nullable' : ', not null'}`,
-                detail: 'column'
-            });
-
             completions.push({
                 label: `${tableName}.${column.name}`,
                 type: 'property',
-                info: `Column: ${column.name} (${column.data_type})${column.is_nullable ? ', nullable' : ', not null'}`,
+                info: `Column: ${column.name} (${column.data_type}) from ${tableName}${column.is_nullable ? ', nullable' : ', not null'}`,
                 detail: `${tableName} column`
             });
         }
@@ -170,6 +176,47 @@ function generateSchemaCompletions(schema: DatabaseSchema | null): any[] {
     return completions;
 }
 
+// An attempt at cloning Rust's eq_ignore_ascii_case
+//
+// Might seem silly but this seems 5x more performant than toLowerCase(),
+// as tested in https://gist.github.com/vrmiguel/a322ac665da53a40e98e5188d142244e
+function startsWith(str: string, prefix: string, startIndex: number = 0): boolean {
+    if (prefix.length > str.length - startIndex) return false;
+
+    for (let i = 0; i < prefix.length; i++) {
+        const a = str.charCodeAt(startIndex + i);
+        const b = prefix.charCodeAt(i);
+
+        if (a === b) continue;
+
+        if (a > 127 || b > 127) {
+            // Fallback to slower but correct Unicode comparison
+            return str.slice(startIndex, startIndex + prefix.length).toLowerCase().startsWith(prefix.toLowerCase());
+        }
+
+        const aUpper = (a >= 97 && a <= 122) ? a - 32 : a;  // a-z -> A-Z
+        const bUpper = (b >= 97 && b <= 122) ? b - 32 : b;  // a-z -> A-Z
+
+        if (aUpper !== bUpper) return false;
+    }
+    return true;
+}
+
+function includes(str: string, substring: string): boolean {
+    const strLen = str.length;
+    const subLen = substring.length;
+
+    if (subLen === 0) return true;
+    if (subLen > strLen) return false;
+
+    for (let i = 0; i <= strLen - subLen; i++) {
+        if (startsWith(str, substring, i)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 const sqlKeywords = [
     'SELECT', 'FROM', 'WHERE', 'INSERT INTO', 'UPDATE', 'DELETE FROM',
     'CREATE TABLE', 'DROP TABLE', 'ORDER BY', 'GROUP BY', 'HAVING',
@@ -179,39 +226,112 @@ const sqlKeywords = [
     'AS', 'LIMIT', 'OFFSET', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END'
 ];
 
+
+function needsQuoting(identifier: string): boolean {
+    if (/[A-Z]/.test(identifier)) return true;
+    if (/[^a-z0-9_]/.test(identifier)) return true;
+    if (/^[0-9]/.test(identifier)) return true;
+
+    return false;
+}
+
+function formatIdentifierForCompletion(identifier: string): string {
+    // Handle qualified identifiers (table.column)
+    if (identifier.includes('.')) {
+        // For qualified identifiers, always format each part independently
+        // The opening quote (if any) gets "consumed" and replaced with proper quoting
+        const parts = identifier.split('.');
+        const formattedParts = parts.map(part => {
+            if (needsQuoting(part)) {
+                return `"${part}"`;
+            }
+            return part;
+        });
+
+        return formattedParts.join('.');
+    }
+
+    // Handle simple identifiers
+    if (needsQuoting(identifier)) {
+        // Always use both quotes for identifiers that need quoting
+        return `"${identifier}"`;
+    }
+
+    return identifier;
+}
+
 function createSqlAutocompletion(schema: DatabaseSchema | null) {
+    const cachedCompletions = generateSchemaCompletions(schema);
+    console.log(`Cached ${cachedCompletions.length} schema completions`);
+
     return autocompletion({
         override: [
             (context: CompletionContext): CompletionResult | null => {
-                const word = context.matchBefore(/\w*/);
+                const word = context.matchBefore(/[\w.]*/);
                 if (!word) return null;
 
                 if (word.from === word.to && !context.explicit) return null;
 
+                console.log(`Completion triggered for "${word.text}"`);
+
+                // Check if there's an opening quote before the matched word
+                const charBeforeWord = word.from > 0 ? context.state.doc.sliceString(word.from - 1, word.from) : '';
+                const hasOpeningQuote = charBeforeWord === '"' || charBeforeWord === "'";
+
+                // Check if there's a closing quote after the cursor (from auto-closing brackets)
+                const charAfterCursor = word.to < context.state.doc.length ? context.state.doc.sliceString(word.to, word.to + 1) : '';
+                const hasAutoClosingQuote = hasOpeningQuote && (charAfterCursor === '"' || charAfterCursor === "'");
+
+                const searchText = word.text;
+
                 const options = [];
 
                 for (const keyword of sqlKeywords) {
-                    if (keyword.toLowerCase().startsWith(word.text.toLowerCase())) {
+                    if (startsWith(keyword, searchText)) {
                         options.push({
                             label: keyword,
                             type: 'keyword',
                             info: `SQL keyword: ${keyword}`,
-                            boost: keyword === word.text.toUpperCase() ? 1 : 0
+                            boost: 0.7
                         });
                     }
                 }
 
-                // Add schema completions
-                const schemaCompletions = generateSchemaCompletions(schema);
-                for (const completion of schemaCompletions) {
-                    if (completion.label.toLowerCase().includes(word.text.toLowerCase())) {
-                        options.push(completion);
+                for (const completion of cachedCompletions) {
+                    let boost = 0;
+                    let matches = false;
+
+                    if (startsWith(completion.label, searchText)) {
+                        matches = true;
+                        boost = 1.0;
+                    } else if (completion.label.includes('.') && includes(completion.label, '.' + searchText)) {
+                        matches = true;
+                        boost = 0.8;
+                    } else if (searchText.length >= 2 && includes(completion.label, searchText)) {
+                        matches = true;
+                        boost = 0.3;
+                    }
+
+                    if (matches) {
+                        const formattedCompletion = {
+                            ...completion,
+                            label: formatIdentifierForCompletion(completion.label),
+                            boost
+                        };
+                        options.push(formattedCompletion);
                     }
                 }
 
+                const limitedOptions = options
+                    .sort((a, b) => (b.boost || 0) - (a.boost || 0))
+                    .slice(0, 50);
+
                 return {
-                    from: word.from,
-                    options
+                    from: hasOpeningQuote ? word.from - 1 : word.from,
+                    to: hasAutoClosingQuote ? word.to + 1 : word.to,
+                    options: limitedOptions,
+                    // Be more restrictive for short searches
+                    validFor: searchText.length >= 2 ? /^[\w.]*$/ : /^[\w.]{0,3}$/
                 };
             }
         ]

@@ -136,6 +136,7 @@ export interface TableInfo {
 export interface DatabaseSchema {
 	tables: TableInfo[];
 	schemas: string[];
+	unique_columns: string[];
 }
 
 export interface Script {

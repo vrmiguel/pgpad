@@ -40,6 +40,8 @@ pub struct TableInfo {
 pub struct DatabaseSchema {
     pub tables: Vec<TableInfo>,
     pub schemas: Vec<String>,
+    // Deduplicated list of column names across all tables, for autocomplete purposes
+    pub unique_columns: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
