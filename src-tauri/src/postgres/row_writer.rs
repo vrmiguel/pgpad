@@ -433,14 +433,12 @@ fn convert_pg_binary_to_json(
         }
         Type::TIMESTAMPTZ => {
             let microseconds = buf.get_i64();
-            let pg_epoch = chrono::DateTime::<Utc>::from_utc(
-                chrono::NaiveDate::from_ymd_opt(2000, 1, 1)
-                    .unwrap()
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap(),
-                Utc,
-            );
-            let timestamp = pg_epoch + chrono::Duration::microseconds(microseconds);
+            let pg_epoch = chrono::NaiveDate::from_ymd_opt(2000, 1, 1)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap();
+            let timestamp = chrono::DateTime::<Utc>::from_naive_utc_and_offset(pg_epoch, Utc)
+                + chrono::Duration::microseconds(microseconds);
             Ok(serde_json::Value::String(timestamp.to_rfc3339()))
         }
 
