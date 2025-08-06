@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn parses_statements() {
-        let results = parse_statements("SELECT * FROM users");
+        let results = parse_statements("SELECT * FROM users").unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].returns_values);
         assert_eq!(results[0].statement.trim(), "SELECT * FROM users");
@@ -68,7 +68,7 @@ mod tests {
             DROP TABLE test_users;
         "#;
 
-        let results = parse_statements(multi_query);
+        let results = parse_statements(multi_query).unwrap();
 
         assert_eq!(results.len(), 5);
 
@@ -107,14 +107,14 @@ mod tests {
             EXPLAIN (ANALYZE, BUFFERS) SELECT COUNT(*) FROM users;
         "#;
 
-        let results = parse_statements(explain_query);
+        let results = parse_statements(explain_query).unwrap();
         assert_eq!(results.len(), 3);
         for result in &results {
             assert!(result.returns_values, "explain statements return values");
             assert!(result.statement.contains("EXPLAIN"));
         }
 
-        let results = parse_statements("SHOW search_path;");
+        let results = parse_statements("SHOW search_path;").unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].returns_values, "SHOW statements return values");
         assert!(results[0].statement.contains("SHOW"));
@@ -128,7 +128,7 @@ mod tests {
             DELETE FROM products WHERE price > 30 RETURNING id;
         "#;
 
-        let results = parse_statements(mixed_crud);
+        let results = parse_statements(mixed_crud).unwrap();
         assert_eq!(results.len(), 6);
         assert!(
             !results[0].returns_values,
@@ -163,7 +163,7 @@ mod tests {
             CREATE VIEW active_users AS SELECT * FROM users WHERE active = true;
         "#;
 
-        let results = parse_statements(ddl_transaction_query);
+        let results = parse_statements(ddl_transaction_query).unwrap();
         assert_eq!(results.len(), 5);
         assert!(
             !results[0].returns_values,
@@ -192,7 +192,7 @@ mod tests {
             DEALLOCATE user_query;
         "#;
 
-        let results = parse_statements(prepared_query);
+        let results = parse_statements(prepared_query).unwrap();
         assert_eq!(results.len(), 3);
 
         assert!(
@@ -210,7 +210,7 @@ mod tests {
             COPY users (id, name) TO STDOUT WITH CSV;
         "#;
 
-        let results = parse_statements(copy_query);
+        let results = parse_statements(copy_query).unwrap();
         assert_eq!(results.len(), 2);
 
         for result in &results {
@@ -233,7 +233,7 @@ mod tests {
             JOIN recent_orders ro ON u.id = ro.user_id;
         "#;
 
-        let results = parse_statements(complicated_select);
+        let results = parse_statements(complicated_select).unwrap();
         assert_eq!(results.len(), 2);
 
         for result in &results {
@@ -250,7 +250,7 @@ mod tests {
             
         "#;
 
-        let results = parse_statements(with_whitespace);
+        let results = parse_statements(with_whitespace).unwrap();
         assert_eq!(results.len(), 2);
         assert!(results[0].returns_values, "SELECT should return values");
         assert!(

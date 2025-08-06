@@ -3,13 +3,14 @@ mod postgres;
 mod storage;
 
 use dashmap::DashMap;
+use uuid::Uuid;
 
 use crate::{postgres::types::DatabaseConnection, storage::Storage};
 pub use error::{Error, Result};
 
 #[derive(Debug)]
 pub struct AppState {
-    pub connections: DashMap<String, DatabaseConnection>,
+    pub connections: DashMap<Uuid, DatabaseConnection>,
     pub storage: Storage,
 }
 

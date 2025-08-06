@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Client;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionConfig {
@@ -9,7 +10,7 @@ pub struct ConnectionConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionInfo {
-    pub id: String,
+    pub id: Uuid,
     pub name: String,
     pub connection_string: String,
     pub connected: bool,
@@ -46,7 +47,7 @@ pub struct DatabaseSchema {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryStreamData {
-    pub query_id: String,
+    pub query_id: Uuid,
     // Serialized JSON through [`RowBatch`]
     pub rows: String,
     pub is_complete: bool,
@@ -54,12 +55,12 @@ pub struct QueryStreamData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryStreamStart {
-    pub query_id: String,
+    pub query_id: Uuid,
     pub columns: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryStreamError {
-    pub query_id: String,
+    pub query_id: Uuid,
     pub error: String,
 }

@@ -277,7 +277,7 @@
 				}
 			}
 		} catch (error) {
-			console.error('Failed to initialize connections:', error);
+			console.error(`Failed to initialize connections: ${JSON.stringify(error)}`);
 		}
 	});
 

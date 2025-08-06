@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use anyhow::Context;
-use rusqlite::Connection;
+use rusqlite::{types::Type, Connection};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{postgres::types::ConnectionInfo, Result};
 
@@ -96,7 +97,7 @@ pub struct SavedQuery {
     pub name: String,
     pub description: Option<String>,
     pub query_text: String,
-    pub connection_id: Option<String>,
+    pub connection_id: Option<Uuid>,
     pub tags: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -146,7 +147,7 @@ impl Storage {
              VALUES (?1, ?2, ?3, ?4, ?5, 
                 (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM connections))",
             (
-                &connection.id,
+                &connection.id.to_string(),
                 &connection.name,
                 &connection.connection_string,
                 now,
@@ -165,7 +166,10 @@ impl Storage {
         
         let rows = stmt.query_map([], |row| {
             Ok(ConnectionInfo {
-                id: row.get(0)?,
+                id: {
+                    let id: String = row.get(0)?;
+                    Uuid::parse_str(&id).map_err(|err| rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(err)))?
+                },
                 name: row.get(1)?,
                 connection_string: row.get(2)?,
                 connected: false,
@@ -174,27 +178,27 @@ impl Storage {
 
         let mut connections = Vec::new();
         for row in rows {
-            connections.push(row.context("Failed to process connection row")?);
+            connections.push(row.map_err(|e| anyhow::anyhow!("Failed to process connection row: {}", e))?);
         }
         
         Ok(connections)
     }
 
-    pub fn remove_connection(&self, connection_id: &str) -> Result<()> {
+    pub fn remove_connection(&self, connection_id: &Uuid) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "DELETE FROM connections WHERE id = ?1",
-            [connection_id],
+            [connection_id.to_string()],
         ).context("Failed to remove connection")?;
         Ok(())
     }
 
-    pub fn update_last_connected(&self, connection_id: &str) -> Result<()> {
+    pub fn update_last_connected(&self, connection_id: &Uuid) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE connections SET last_connected_at = ?1 WHERE id = ?2",
-            (now, connection_id),
+            (now, connection_id.to_string()),
         ).context("Failed to update last connected time")?;
         Ok(())
     }
@@ -285,7 +289,7 @@ impl Storage {
                     &query.name,
                     &query.description,
                     &query.query_text,
-                    &query.connection_id,
+                    &query.connection_id.map(|id| id.to_string()),
                     &query.tags,
                     now,
                     now,
@@ -303,7 +307,7 @@ impl Storage {
                     &query.name,
                     &query.description,
                     &query.query_text,
-                    &query.connection_id,
+                    &query.connection_id.map(|id| id.to_string()),
                     &query.tags,
                     now,
                     query.favorite,
@@ -314,7 +318,7 @@ impl Storage {
         }
     }
 
-    pub fn get_saved_queries(&self, connection_id: Option<&str>) -> Result<Vec<SavedQuery>> {
+    pub fn get_saved_queries(&self, connection_id: Option<&Uuid>) -> Result<Vec<SavedQuery>> {
         let conn = self.conn.lock().unwrap();
         
         let mut queries = Vec::new();
@@ -327,13 +331,19 @@ impl Storage {
                  ORDER BY favorite DESC, created_at DESC"
             ).context("Failed to prepare saved queries statement")?;
             
-            let rows = stmt.query_map([conn_id], |row| {
+            let rows = stmt.query_map([conn_id.to_string()], |row| {
                 Ok(SavedQuery {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     description: row.get(2)?,
                     query_text: row.get(3)?,
-                    connection_id: row.get(4)?,
+                    connection_id: {
+                        let id: Option<String> = row.get(4)?;
+                        match id {
+                            Some(id) => Some(Uuid::parse_str(&id).map_err(|err| rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(err)))?),
+                            None => None,
+                        }
+                    },
                     tags: row.get(5)?,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
@@ -357,7 +367,13 @@ impl Storage {
                     name: row.get(1)?,
                     description: row.get(2)?,
                     query_text: row.get(3)?,
-                    connection_id: row.get(4)?,
+                    connection_id: {
+                        let id: Option<String> = row.get(4)?;
+                        match id {
+                            Some(id) => Some(Uuid::parse_str(&id).map_err(|err| rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(err)))?),
+                            None => None,
+                        }
+                    },
                     tags: row.get(5)?,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,

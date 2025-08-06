@@ -26,7 +26,7 @@ pub async fn add_connection(
     config: ConnectionConfig,
     state: tauri::State<'_, AppState>,
 ) -> Result<ConnectionInfo, Error> {
-    let id = Uuid::new_v4().to_string();
+    let id = Uuid::new_v4();
     let info = ConnectionInfo {
         id: id.clone(),
         name: config.name.clone(),
@@ -47,7 +47,7 @@ pub async fn add_connection(
 
 #[tauri::command]
 pub async fn connect_to_database(
-    connection_id: String,
+    connection_id: Uuid,
     state: tauri::State<'_, AppState>,
     certificates: tauri::State<'_, Certificates>,
 ) -> Result<bool, Error> {
@@ -90,7 +90,7 @@ pub async fn connect_to_database(
 
 #[tauri::command]
 pub async fn disconnect_from_database(
-    connection_id: String,
+    connection_id: Uuid,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
     let mut connection_entry = state
@@ -105,13 +105,13 @@ pub async fn disconnect_from_database(
 
 #[tauri::command]
 pub async fn execute_query_stream(
-    connection_id: String,
+    connection_id: Uuid,
     query: String,
-    query_id: Option<String>,
+    query_id: Option<Uuid>,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    let query_id = query_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    let query_id = query_id.unwrap_or_else(|| Uuid::new_v4());
 
     let connection_entry = state
         .connections
@@ -160,7 +160,7 @@ pub async fn execute_query_stream(
                             if let Err(e) = app.emit(
                                 "query-stream-start",
                                 QueryStreamStart {
-                                    query_id: query_id.clone(),
+                                    query_id: query_id,
                                     columns: columns.clone(),
                                 },
                             ) {
@@ -251,7 +251,7 @@ pub async fn execute_query_stream(
                 duration
             );
 
-            Ok(query_id)
+            Ok(query_id.to_string())
         }
         Err(e) => {
             log::error!("Query execution failed: {:?}", e);
@@ -291,7 +291,7 @@ pub async fn get_connections(
 
 #[tauri::command]
 pub async fn remove_connection(
-    connection_id: String,
+    connection_id: Uuid,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
     state.storage.remove_connection(&connection_id)?;
@@ -375,7 +375,7 @@ pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result
 
 #[tauri::command]
 pub async fn get_database_schema(
-    connection_id: String,
+    connection_id: Uuid,
     state: tauri::State<'_, AppState>,
 ) -> Result<DatabaseSchema, Error> {
     let connection_entry = state
@@ -467,7 +467,7 @@ pub async fn get_database_schema(
 pub async fn save_script(
     name: String,
     content: String,
-    connection_id: Option<String>,
+    connection_id: Option<Uuid>,
     description: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<i64, Error> {
@@ -492,7 +492,7 @@ pub async fn update_script(
     id: i64,
     name: String,
     content: String,
-    connection_id: Option<String>,
+    connection_id: Option<Uuid>,
     description: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
@@ -514,10 +514,10 @@ pub async fn update_script(
 
 #[tauri::command]
 pub async fn get_scripts(
-    connection_id: Option<String>,
+    connection_id: Option<Uuid>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<SavedQuery>, Error> {
-    let scripts = state.storage.get_saved_queries(connection_id.as_deref())?;
+    let scripts = state.storage.get_saved_queries(connection_id.as_ref())?;
     Ok(scripts)
 }
 
