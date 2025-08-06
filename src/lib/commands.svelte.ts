@@ -7,62 +7,6 @@ export const preventDefault = <T extends Event>(fn: (e: T) => void): ((e: T) => 
 	};
 };
 
-export enum FILES {
-	GREET_FILE = 'greet.txt',
-	NAME_FILE = 'name.txt'
-}
-
-export class GlobalState {
-	private _state = $state({ name: '', greet: '' });
-
-	get greet() {
-		return this._state.greet;
-	}
-
-	set greet(value: string) {
-		this._state.greet = value;
-	}
-
-	get name() {
-		return this._state.name;
-	}
-
-	set name(value: string) {
-		this._state.name = value;
-	}
-
-	get nlen() {
-		return this.name.length;
-	}
-
-	get glen() {
-		return this.greet.length;
-	}
-
-	async read(path: FILES) {
-		const contentFromFile = await invoke<string>('read', { path });
-		if (path === FILES.NAME_FILE) {
-			this.name = contentFromFile;
-		} else if (path === FILES.GREET_FILE) {
-			this.greet = contentFromFile;
-		}
-	}
-
-	async write(path: FILES, contents: string) {
-		await invoke('write', { path, contents });
-		if (path === FILES.NAME_FILE) {
-			this.name = contents;
-		} else if (path === FILES.GREET_FILE) {
-			this.greet = contents;
-		}
-	}
-
-	reset() {
-		this.name = '';
-		this.greet = '';
-	}
-}
-
 export interface ConnectionConfig {
 	name: string;
 	connection_string: string;
@@ -161,7 +105,7 @@ export interface Script {
 	favorite: boolean;
 }
 
-export class DatabaseCommands {
+export class Commands {
 	static async testConnection(config: ConnectionConfig): Promise<boolean> {
 		return await invoke('test_connection', { config });
 	}
@@ -267,5 +211,17 @@ export class DatabaseCommands {
 
 	static async deleteScript(id: number): Promise<void> {
 		await invoke('delete_script', { id });
+	}
+
+	static async minimizeWindow(): Promise<void> {
+		await invoke('minimize_window');
+	}
+
+	static async maximizeWindow(): Promise<void> {
+		await invoke('maximize_window');
+	}
+
+	static async closeWindow(): Promise<void> {
+		await invoke('close_window');
 	}
 }

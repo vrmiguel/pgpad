@@ -5,7 +5,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import StreamingQueryResults from './StreamingQueryResults.svelte';
 	import {
-		DatabaseCommands,
+		Commands,
 		type ConnectionInfo,
 		type Script,
 		type QueryHistoryEntry
@@ -70,7 +70,7 @@ SELECT 1 as test;`);
 		if (!selectedConnection) return;
 
 		try {
-			queryHistory = await DatabaseCommands.getQueryHistory(selectedConnection, 50);
+			queryHistory = await Commands.getQueryHistory(selectedConnection, 50);
 		} catch (error) {
 			console.error('Failed to load query history:', error);
 			queryHistory = [];
@@ -83,7 +83,7 @@ SELECT 1 as test;`);
 
 		// Save successful query to history
 		if (selectedConnection) {
-			DatabaseCommands.saveQueryToHistory(
+			Commands.saveQueryToHistory(
 				selectedConnection,
 				currentQuery,
 				duration,
@@ -97,7 +97,7 @@ SELECT 1 as test;`);
 
 	function handleQueryError(error: string) {
 		if (selectedConnection) {
-			DatabaseCommands.saveQueryToHistory(selectedConnection, currentQuery, 0, 'error', 0, error);
+			Commands.saveQueryToHistory(selectedConnection, currentQuery, 0, 'error', 0, error);
 			loadQueryHistory();
 		}
 	}
@@ -144,7 +144,7 @@ SELECT 1 as test;`);
 			const connection = connections.find((c) => c.id === selectedConnection);
 			if (connection?.connected) {
 				// Get schema information for autocomplete
-				const schema = await DatabaseCommands.getDatabaseSchema(selectedConnection);
+				const schema = await Commands.getDatabaseSchema(selectedConnection);
 				sqlEditor.updateSchema(schema);
 			}
 		} catch (error) {

@@ -1,6 +1,7 @@
 mod error;
 mod postgres;
 mod storage;
+mod window;
 
 use dashmap::DashMap;
 use uuid::Uuid;
@@ -70,7 +71,10 @@ pub fn run() {
             postgres::commands::save_script,
             postgres::commands::update_script,
             postgres::commands::get_scripts,
-            postgres::commands::delete_script
+            postgres::commands::delete_script,
+            window::commands::minimize_window,
+            window::commands::maximize_window,
+            window::commands::close_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

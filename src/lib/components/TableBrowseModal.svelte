@@ -3,7 +3,7 @@
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import StreamingQueryResults from './StreamingQueryResults.svelte';
-	import { DatabaseCommands } from '$lib/commands.svelte';
+	import { Commands } from '$lib/commands.svelte';
 
 	interface Props {
 		isOpen: boolean;

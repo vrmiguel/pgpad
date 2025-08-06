@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { DatabaseCommands, type QueryStreamEvent } from '$lib/commands.svelte';
+	import { Commands, type QueryStreamEvent } from '$lib/commands.svelte';
 	import { onDestroy } from 'svelte';
 	import QueryResultsTable from './QueryResultsTable.svelte';
 	import { Loader } from '@lucide/svelte';
@@ -101,7 +101,7 @@
 
 		try {
 			console.log('Starting executeQueryStream');
-			await DatabaseCommands.executeQueryStream(connectionId, query, handleQueryStreamEvent);
+			await Commands.executeQueryStream(connectionId, query, handleQueryStreamEvent);
 			console.log('executeQueryStream finished');
 		} catch (error) {
 			console.error('❌ Backend error:', error);

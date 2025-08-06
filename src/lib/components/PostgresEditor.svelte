@@ -19,7 +19,7 @@
 	import DatabaseSchemaItems from './DatabaseSchemaItems.svelte';
 	import TableBrowseModal from './TableBrowseModal.svelte';
 	import {
-		DatabaseCommands,
+		Commands,
 		type ConnectionInfo,
 		type ConnectionConfig,
 		type Script,
@@ -261,7 +261,7 @@
 
 	onMount(async () => {
 		try {
-			await DatabaseCommands.initializeConnections();
+			await Commands.initializeConnections();
 			await loadConnections();
 			await loadScripts();
 
@@ -291,7 +291,7 @@
 
 	async function loadConnections() {
 		try {
-			connections = await DatabaseCommands.getConnections();
+			connections = await Commands.getConnections();
 		} catch (error) {
 			console.error('Failed to load connections:', error);
 		}
@@ -299,7 +299,7 @@
 
 	async function addConnection(config: ConnectionConfig) {
 		try {
-			const newConnection = await DatabaseCommands.addConnection(config);
+			const newConnection = await Commands.addConnection(config);
 			connections.push(newConnection);
 			showConnectionForm = false;
 		} catch (error) {
@@ -315,7 +315,7 @@
 		establishingConnections = new Set([...establishingConnections, connectionId]);
 
 		try {
-			const success = await DatabaseCommands.connectToDatabase(connectionId);
+			const success = await Commands.connectToDatabase(connectionId);
 			if (success) {
 				// Update the connection status
 				await loadConnections();
@@ -341,7 +341,7 @@
 
 		try {
 			loadingSchema = true;
-			databaseSchema = await DatabaseCommands.getDatabaseSchema(connectionId);
+			databaseSchema = await Commands.getDatabaseSchema(connectionId);
 			lastLoadedSchemaConnectionId = connectionId;
 		} catch (error) {
 			console.error('Failed to load database schema:', error);
@@ -360,7 +360,7 @@
 			loadingSchema = true;
 			// Reset the last loaded ID to force reload
 			lastLoadedSchemaConnectionId = null;
-			databaseSchema = await DatabaseCommands.getDatabaseSchema(selectedConnection);
+			databaseSchema = await Commands.getDatabaseSchema(selectedConnection);
 			lastLoadedSchemaConnectionId = selectedConnection;
 		} catch (error) {
 			console.error('Failed to load database schema:', error);
@@ -390,7 +390,7 @@
 
 	async function loadScripts() {
 		try {
-			scripts = await DatabaseCommands.getScripts();
+			scripts = await Commands.getScripts();
 		} catch (error) {
 			console.error('Failed to load scripts:', error);
 		}
@@ -445,7 +445,7 @@
 			const isNewScript = newScripts.has(activeScriptId);
 
 			if (isNewScript) {
-				const scriptId = await DatabaseCommands.saveScript(
+				const scriptId = await Commands.saveScript(
 					currentScript.name,
 					content,
 					currentScript.connection_id || undefined,
@@ -480,7 +480,7 @@
 				// Update active script ID
 				activeScriptId = scriptId;
 			} else {
-				await DatabaseCommands.updateScript(
+				await Commands.updateScript(
 					activeScriptId,
 					currentScript.name,
 					content,
@@ -511,7 +511,7 @@
 
 			if (!isNewScript) {
 				// delete from SQLite only if it was there before
-				await DatabaseCommands.deleteScript(script.id);
+				await Commands.deleteScript(script.id);
 			}
 
 			// drop from local state
@@ -567,7 +567,7 @@
 
 			if (!isNewScript) {
 				// Only update in SQLite if it was previously saved
-				await DatabaseCommands.updateScript(
+				await Commands.updateScript(
 					scriptId,
 					newName,
 					script.query_text,
@@ -641,7 +641,7 @@
 						</div>
 					</div>
 
-					<div class="flex-1 flex flex-col items-center justify-start space-y-4 p-4">
+					<div class="flex flex-1 flex-col items-center justify-start space-y-4 p-4">
 						<!-- Connections Icon -->
 						<button
 							class="hover:bg-sidebar-accent/80 flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md"
@@ -707,7 +707,11 @@
 						<Accordion>
 							{#snippet children()}
 								<!-- Connections Accordion -->
-								<AccordionItem title="Connections" icon={Database} bind:open={isConnectionsAccordionOpen}>
+								<AccordionItem
+									title="Connections"
+									icon={Database}
+									bind:open={isConnectionsAccordionOpen}
+								>
 									{#snippet children()}
 										<AccordionContent>
 											{#snippet children()}

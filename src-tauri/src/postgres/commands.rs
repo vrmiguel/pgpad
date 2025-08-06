@@ -106,8 +106,7 @@ pub async fn disconnect_from_database(
 #[tauri::command]
 pub async fn execute_query_stream(
     connection_id: Uuid,
-    query: String,
-    app: tauri::AppHandle,
+    query: &str,
     state: tauri::State<'_, AppState>,
     channel: Channel<QueryStreamEvent<'_>>,
 ) -> Result<(), Error> {
@@ -133,7 +132,7 @@ pub async fn execute_query_stream(
         s.iter().map(|s| *s as _)
     }
 
-    match client.query_raw(&query, slice_iter(&[])).await {
+    match client.query_raw(query, slice_iter(&[])).await {
         Ok(stream) => {
             pin_mut!(stream);
 
