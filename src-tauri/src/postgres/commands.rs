@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::Context;
 use futures_util::{pin_mut, TryStreamExt};
-use tauri::{Emitter, EventTarget};
+use tauri::ipc::Channel;
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
@@ -13,7 +13,7 @@ use crate::{
         row_writer::RowWriter,
         types::{
             ColumnInfo, ConnectionConfig, ConnectionInfo, DatabaseConnection, DatabaseSchema,
-            QueryStreamData, QueryStreamError, QueryStreamStart, TableInfo,
+            QueryStreamEvent, TableInfo,
         },
         Certificates,
     },
@@ -107,12 +107,10 @@ pub async fn disconnect_from_database(
 pub async fn execute_query_stream(
     connection_id: Uuid,
     query: String,
-    query_id: Option<Uuid>,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<String, Error> {
-    let query_id = query_id.unwrap_or_else(|| Uuid::new_v4());
-
+    channel: Channel<QueryStreamEvent<'_>>,
+) -> Result<(), Error> {
     let connection_entry = state
         .connections
         .get(&connection_id)
@@ -151,27 +149,13 @@ pub async fn execute_query_stream(
                     Ok(Some(row)) => {
                         // Send column info on first row
                         if !columns_sent {
-                            let columns: Vec<String> = row
-                                .columns()
-                                .iter()
-                                .map(|col| col.name().to_string())
-                                .collect();
+                            let columns: Vec<&str> =
+                                row.columns().iter().map(|col| col.name()).collect();
 
-                            if let Err(e) = app.emit_to(
-                                EventTarget::App,
-                                "query-stream-start",
-                                QueryStreamStart {
-                                    query_id: query_id,
-                                    columns: columns.clone(),
-                                },
-                            ) {
-                                log::error!("❌ Failed to emit stream start: {}", e);
-                            } else {
-                                log::info!(
-                                    "✅ Successfully emitted stream start with {} columns",
-                                    columns.len()
-                                );
-                            }
+                            channel
+                                .send(QueryStreamEvent::Start { columns })
+                                .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
+
                             columns_sent = true;
                         }
 
@@ -180,17 +164,11 @@ pub async fn execute_query_stream(
                         total_rows += 1;
 
                         if writer.len() >= batch_size {
-                            if let Err(e) = app.emit_to(
-                                EventTarget::App,
-                                "query-stream-data",
-                                QueryStreamData {
-                                    query_id: query_id.clone(),
+                            channel
+                                .send(QueryStreamEvent::Batch {
                                     rows: writer.finish(),
-                                    is_complete: false,
-                                },
-                            ) {
-                                log::error!("❌ Failed to emit stream data: {}", e);
-                            }
+                                })
+                                .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
 
                             writer.clear();
                             batch_size = (batch_size * 2).min(max_batch_size);
@@ -204,16 +182,11 @@ pub async fn execute_query_stream(
                         log::error!("Error processing row: {}", e);
                         let error_msg = format!("Query failed: {}", e);
 
-                        if let Err(emit_err) = app.emit_to(
-                            EventTarget::App,
-                            "query-stream-error",
-                            QueryStreamError {
-                                query_id: query_id.clone(),
+                        channel
+                            .send(QueryStreamEvent::Error {
                                 error: error_msg.clone(),
-                            },
-                        ) {
-                            log::error!("Failed to emit stream error: {}", emit_err);
-                        }
+                            })
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
 
                         return Err(Error::Any(anyhow::anyhow!(error_msg)));
                     }
@@ -221,33 +194,17 @@ pub async fn execute_query_stream(
             }
 
             if !writer.is_empty() {
-                if let Err(e) = app.emit_to(
-                    EventTarget::App,
-                    "query-stream-data",
-                    QueryStreamData {
-                        query_id: query_id.clone(),
+                channel
+                    .send(QueryStreamEvent::Batch {
                         rows: writer.finish(),
-                        is_complete: false,
-                    },
-                ) {
-                    log::error!("Failed to emit final batch: {}", e);
-                }
+                    })
+                    .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
             }
 
-            log::info!("🏁 Emitting stream completion for query_id: {}", query_id);
-            if let Err(e) = app.emit_to(
-                EventTarget::App,
-                "query-stream-data",
-                QueryStreamData {
-                    query_id: query_id.clone(),
-                    rows: "".to_string(),
-                    is_complete: true,
-                },
-            ) {
-                log::error!("❌ Failed to emit stream completion: {}", e);
-            } else {
-                log::info!("✅ Successfully emitted stream completion");
-            }
+            log::info!("Emitting stream completion");
+            channel
+                .send(QueryStreamEvent::Finish {})
+                .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
 
             let duration = start.elapsed().as_millis() as u64;
             log::info!(
@@ -256,22 +213,17 @@ pub async fn execute_query_stream(
                 duration
             );
 
-            Ok(query_id.to_string())
+            Ok(())
         }
         Err(e) => {
             log::error!("Query execution failed: {:?}", e);
             let error_msg = format!("Query failed: {}", e);
 
-            if let Err(emit_err) = app.emit_to(
-                EventTarget::App,
-                "query-stream-error",
-                QueryStreamError {
-                    query_id: query_id.clone(),
+            channel
+                .send(QueryStreamEvent::Error {
                     error: error_msg.clone(),
-                },
-            ) {
-                log::error!("Failed to emit stream error: {}", emit_err);
-            }
+                })
+                .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
 
             Err(Error::Any(anyhow::anyhow!(error_msg)))
         }

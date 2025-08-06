@@ -1,11 +1,5 @@
 <script lang="ts">
-	import {
-		DatabaseCommands,
-		type QueryStreamData,
-		type QueryStreamStart,
-		type QueryStreamError
-	} from '$lib/commands.svelte';
-	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+	import { DatabaseCommands, type QueryStreamEvent } from '$lib/commands.svelte';
 	import { onDestroy } from 'svelte';
 	import QueryResultsTable from './QueryResultsTable.svelte';
 	import { Loader } from '@lucide/svelte';
@@ -13,20 +7,17 @@
 	interface Props {
 		connectionId: string;
 		query: string;
-		queryId?: string;
 		onComplete?: (rowCount: number, duration: number) => void;
 		onError?: (error: string) => void;
 	}
 
-	let { connectionId, query, queryId, onComplete, onError }: Props = $props();
+	let { connectionId, query, onComplete, onError }: Props = $props();
 
 	let isStreaming = $state(false);
-	let streamingQueryId = $state<string | null>(null);
 	let queryColumns = $state<string[]>([]);
 	let queryRows = $state<any[]>([]);
 	let queryRowCount = $state(0);
 	let streamingStartTime = $state<number>(0);
-	let streamUnlisten = $state<UnlistenFn[]>([]);
 	let queryError = $state<string | null>(null);
 
 	let table: any = $state();
@@ -36,105 +27,69 @@
 	const isLoading = $derived(isStreaming && queryRows.length === 0);
 	const shouldShowTable = $derived(hasResults && !queryError);
 
-	function cleanupStreamingListeners() {
-		for (const unlisten of streamUnlisten) {
-			try {
-				unlisten();
-			} catch (error) {
-				console.error('Error cleaning up listener:', error);
-			}
-		}
-		streamUnlisten = [];
-		console.log('Cleanup completed');
-	}
+	function handleQueryStreamEvent(event: QueryStreamEvent) {
+		console.log('Got query stream event:', event);
 
-	async function setupStreamingListeners() {
-		cleanupStreamingListeners();
+		switch (event.event) {
+			case 'start':
+				console.log('Query stream started with columns:', event.data.columns);
+				queryColumns = event.data.columns;
+				queryRows = [];
+				queryRowCount = 0;
+				queryError = null;
+				break;
 
-		try {
-			const streamStartUnlisten = await listen<QueryStreamStart>('query-stream-start', (event) => {
-				console.log('Got query-stream-start:', event.payload);
-				const { query_id, columns } = event.payload;
+			case 'batch':
+				console.log('Got batch data');
+				const rawRows = event.data.rows.trim();
+				const rows = rawRows === '' ? [] : JSON.parse(rawRows);
 
-				if (query_id === streamingQueryId) {
-					queryColumns = columns;
-					queryRows = [];
-					queryRowCount = 0;
-					queryError = null;
-				} else {
-					console.log('Query ID mismatch, ignoring event');
-				}
-			});
+				console.log(`Adding ${rows.length} rows to stream`);
+				const newRows = rows.map((row: any[]) => {
+					const rowObj: Record<string, any> = {};
+					queryColumns.forEach((col, i) => {
+						rowObj[col] = row[i];
+					});
+					return rowObj;
+				});
 
-			const streamDataUnlisten = await listen<QueryStreamData>('query-stream-data', (event) => {
-				console.log('Got query-stream-data:', event.payload);
-				const { query_id, rows: rawRows, is_complete } = event.payload;
+				queryRows = queryRows.concat(newRows);
+				queryRowCount += rows.length;
+				console.log(`Total rows now: ${queryRowCount}`);
+				break;
 
-				const rows = rawRows.trim() === '' ? [] : JSON.parse(rawRows);
+			case 'finish':
+				console.log('Stream completed!');
+				const duration = Date.now() - streamingStartTime;
+				console.log('Query duration:', duration + 'ms');
 
-				if (query_id === streamingQueryId) {
-					if (is_complete) {
-						console.log('Stream completed!');
-						const duration = Date.now() - streamingStartTime;
-						console.log('Query duration:', duration + 'ms');
+				isStreaming = false;
+				onComplete?.(queryRowCount, duration);
+				break;
 
-						isStreaming = false;
-
-						onComplete?.(queryRowCount, duration);
-					} else {
-						console.log(`Adding ${rows.length} rows to stream`);
-						const newRows = rows.map((row: any[]) => {
-							const rowObj: Record<string, any> = {};
-							queryColumns.forEach((col, i) => {
-								rowObj[col] = row[i];
-							});
-							return rowObj;
-						});
-
-						queryRows = queryRows.concat(newRows);
-						queryRowCount += rows.length;
-						console.log(`Total rows now: ${queryRowCount}`);
+			case 'error':
+				console.log('Stream error received:', event.data.error);
+				isStreaming = false;
+				let errorMessage = event.data.error;
+				try {
+					const parsedError =
+						typeof errorMessage === 'string' ? JSON.parse(errorMessage) : errorMessage;
+					if (parsedError && typeof parsedError === 'object' && parsedError.message) {
+						errorMessage = parsedError.message;
 					}
-				} else {
-					console.log('Query ID mismatch, ignoring event');
+				} catch (e) {
+					errorMessage = String(errorMessage);
 				}
-			});
-
-			const streamErrorUnlisten = await listen<QueryStreamError>('query-stream-error', (event) => {
-				const { query_id, error } = event.payload;
-
-				if (query_id === streamingQueryId) {
-					console.log('Stream error received:', error);
-					isStreaming = false;
-					let errorMessage = error;
-					try {
-						const parsedError = typeof error === 'string' ? JSON.parse(error) : error;
-						if (parsedError && typeof parsedError === 'object' && parsedError.message) {
-							errorMessage = parsedError.message;
-						}
-					} catch (e) {
-						errorMessage = String(error);
-					}
-					queryError = errorMessage;
-					queryRows = [];
-					queryColumns = [];
-					onError?.(errorMessage);
-					cleanupStreamingListeners();
-				} else {
-					console.log('Query ID mismatch, ignoring error event');
-				}
-			});
-
-			streamUnlisten = [streamStartUnlisten, streamDataUnlisten, streamErrorUnlisten];
-		} catch (error) {
-			console.error('❌ Failed to setup streaming listeners:', error);
+				queryError = errorMessage;
+				queryRows = [];
+				queryColumns = [];
+				onError?.(errorMessage);
+				break;
 		}
 	}
 
 	export async function executeQuery() {
 		console.log('Starting executeQuery with:', { connectionId, query });
-
-		cleanupStreamingListeners();
 
 		isStreaming = true;
 		streamingStartTime = Date.now();
@@ -144,13 +99,9 @@
 		queryColumns = [];
 		queryRowCount = 0;
 
-		streamingQueryId = queryId || crypto.randomUUID();
-
-		await setupStreamingListeners();
-
 		try {
-			console.log('StartingexecuteQueryStream');
-			await DatabaseCommands.executeQueryStream(connectionId, query, streamingQueryId);
+			console.log('Starting executeQueryStream');
+			await DatabaseCommands.executeQueryStream(connectionId, query, handleQueryStreamEvent);
 			console.log('executeQueryStream finished');
 		} catch (error) {
 			console.error('❌ Backend error:', error);
@@ -168,7 +119,6 @@
 			queryRows = [];
 			queryColumns = [];
 			onError?.(errorMessage);
-			cleanupStreamingListeners();
 		}
 	}
 
@@ -188,10 +138,6 @@
 		} else {
 			console.log('No execution needed - props unchanged or missing');
 		}
-	});
-
-	onDestroy(() => {
-		cleanupStreamingListeners();
 	});
 </script>
 
@@ -215,7 +161,7 @@
 		</div>
 	</div>
 {:else if shouldShowTable}
-	<!-- Results available - using derived state -->
+	<!-- Results available -->
 	<div class="flex h-full min-h-0 flex-1 flex-col">
 		<QueryResultsTable data={queryRows} columns={queryColumns} bind:table bind:globalFilter />
 		{#if isStreaming}
@@ -235,7 +181,6 @@
 				<Loader class="h-8 w-8 animate-spin" />
 			</div>
 			<div class="text-lg font-semibold">Starting query stream...</div>
-			<div class="mt-1 text-sm">Query ID: {streamingQueryId}</div>
 		</div>
 	</div>
 {:else if isStreaming}
@@ -246,7 +191,6 @@
 				<Loader class="h-8 w-8 animate-spin" />
 			</div>
 			<div class="text-lg font-semibold">Streaming {queryRowCount} rows...</div>
-			<div class="mt-1 text-sm">Query ID: {streamingQueryId}</div>
 		</div>
 	</div>
 {:else}

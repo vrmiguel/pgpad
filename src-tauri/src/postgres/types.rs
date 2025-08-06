@@ -45,22 +45,26 @@ pub struct DatabaseSchema {
     pub unique_columns: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueryStreamData {
-    pub query_id: Uuid,
-    // Serialized JSON through [`RowBatch`]
-    pub rows: String,
-    pub is_complete: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueryStreamStart {
-    pub query_id: Uuid,
-    pub columns: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueryStreamError {
-    pub query_id: Uuid,
-    pub error: String,
+#[derive(Clone, Serialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "event",
+    content = "data"
+)]
+pub enum QueryStreamEvent<'a> {
+    /// Sent after the query is accepted and started,
+    /// with the columns that the query will return
+    Start {
+        columns: Vec<&'a str>,
+    },
+    Batch {
+        // serialized JSON through [`RowBatch`]
+        rows: String,
+    },
+    /// all rows were sent
+    Finish {},
+    Error {
+        error: String,
+    },
 }
