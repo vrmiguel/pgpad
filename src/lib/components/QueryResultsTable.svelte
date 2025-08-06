@@ -32,7 +32,6 @@
 
 	let { data, columns, table = $bindable(), globalFilter = $bindable('') }: Props = $props();
 
-	// Table state
 	let sorting = $state<SortingState>([]);
 	let columnFilters = $state<ColumnFiltersState>([]);
 	let columnSizing = $state<ColumnSizingState>({});
@@ -74,7 +73,6 @@
 		return { isJson: false };
 	}
 
-	// Create column definitions dynamically with resizing enabled
 	const columnDefs = $derived<ColumnDef<Record<string, any>, any>[]>(
 		columns.map((column) => ({
 			accessorKey: column,

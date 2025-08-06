@@ -13,13 +13,13 @@
 	}
 
 	let { currentConnection, isConnecting = false }: Props = $props();
-	
-	// OS detection
+
 	let isMacOS = $state(false);
 
 	onMount(() => {
-		// Simple and reliable OS detection using user agent
-		isMacOS = navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac');
+		// TODO(vini): convert this to backend command
+		isMacOS =
+			navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac');
 	});
 
 	// Window controls
