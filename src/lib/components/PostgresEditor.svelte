@@ -12,7 +12,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { Accordion, AccordionItem, AccordionContent } from '$lib/components/ui/accordion';
-	import ConnectionSidebar from './ConnectionSidebar.svelte';
 	import SqlEditor from './SqlEditor.svelte';
 	import ConnectionForm from './ConnectionForm.svelte';
 	import ScriptTabs from './ScriptTabs.svelte';

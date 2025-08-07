@@ -1,142 +1,155 @@
 import {
 	type RowData,
-	type TableOptions,
-	type TableOptionsResolved,
-	type TableState,
-	createTable
+	type ColumnDef,
+	type SortingState,
+	type ColumnFiltersState,
+	type PaginationState,
+	type ColumnSizingState,
+	type ColumnSizingInfoState,
+	type ColumnPinningState,
+	type RowSelectionState,
+	type VisibilityState,
+	createTable,
+	getCoreRowModel,
+	getSortedRowModel,
+	getFilteredRowModel,
+	getPaginationRowModel
 } from '@tanstack/table-core';
-import { SvelteSet } from 'svelte/reactivity';
 
-/**
- * Creates a reactive TanStack table object for Svelte.
- * @param options Table options to create the table with.
- * @returns A reactive table object.
- * @example
- * ```svelte
- * <script>
- *   const table = createSvelteTable({ ... })
- * </script>
- *
- * <table>
- *   <thead>
- *     {#each table.getHeaderGroups() as headerGroup}
- *       <tr>
- *         {#each headerGroup.headers as header}
- *           <th colspan={header.colSpan}>
- *         	   <FlexRender content={header.column.columnDef.header} context={header.getContext()} />
- *         	 </th>
- *         {/each}
- *       </tr>
- *     {/each}
- *   </thead>
- * 	 <!-- ... -->
- * </table>
- * ```
- */
-export function createSvelteTable<TData extends RowData>(options: TableOptions<TData>) {
-	const resolvedOptions: TableOptionsResolved<TData> = mergeObjects(
-		{
-			state: {},
-			onStateChange() {},
-			renderFallbackValue: null,
-			mergeOptions: (
-				defaultOptions: TableOptions<TData>,
-				options: Partial<TableOptions<TData>>
-			) => {
-				return mergeObjects(defaultOptions, options);
-			}
-		},
-		options
-	);
-
-	const table = createTable(resolvedOptions);
-	let state = $state<Partial<TableState>>(table.initialState);
-
-	function updateOptions() {
-		table.setOptions((prev) => {
-			return mergeObjects(prev, options, {
-				state: mergeObjects(state, options.state || {}),
-
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				onStateChange: (updater: any) => {
-					if (updater instanceof Function) state = updater(state);
-					else state = mergeObjects(state, updater);
-
-					options.onStateChange?.(updater);
-				}
-			});
-		});
-	}
-
-	updateOptions();
-
-	$effect.pre(() => {
-		updateOptions();
-	});
-
-	return table;
+export interface TableState {
+	sorting: SortingState;
+	columnFilters: ColumnFiltersState;
+	globalFilter: string;
+	pagination: PaginationState;
+	columnSizing: ColumnSizingState;
+	columnSizingInfo: ColumnSizingInfoState;
+	columnPinning: ColumnPinningState;
+	rowSelection: RowSelectionState;
+	columnVisibility: VisibilityState;
 }
 
-type MaybeThunk<T extends object> = T | (() => T | null | undefined);
-type Intersection<T extends readonly unknown[]> = (T extends [infer H, ...infer R]
-	? H & Intersection<R>
-	: unknown) & {};
+export interface DataTableOptions<TData extends RowData> {
+	data: TData[];
+	columns: ColumnDef<TData>[];
+	initialState?: Partial<TableState>;
+	enableSorting?: boolean;
+	enableFiltering?: boolean;
+	enablePagination?: boolean;
+	enableColumnResizing?: boolean;
+	onStateChange?: (state: TableState) => void;
+}
 
-/**
- * Lazily merges several objects (or thunks) while preserving
- * getter semantics from every source.
- *
- * Proxy-based to avoid known WebKit recursion issue.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function mergeObjects<Sources extends readonly MaybeThunk<any>[]>(
-	...sources: Sources
-): Intersection<{ [K in keyof Sources]: Sources[K] }> {
-	const resolve = <T extends object>(src: MaybeThunk<T>): T | undefined =>
-		typeof src === 'function' ? (src() ?? undefined) : src;
+export function createSvelteTable<TData extends RowData>(options: DataTableOptions<TData>) {
+	console.log(`Running createSvelteTable, got ${options.data.length} rows`);
 
-	const findSourceWithKey = (key: PropertyKey) => {
-		for (let i = sources.length - 1; i >= 0; i--) {
-			const obj = resolve(sources[i]);
-			if (obj && key in obj) return obj;
-		}
-		return undefined;
+	const state = $state<TableState>({
+		sorting: options.initialState?.sorting ?? [],
+		columnFilters: options.initialState?.columnFilters ?? [],
+		globalFilter: options.initialState?.globalFilter ?? '',
+		pagination: options.initialState?.pagination ?? {
+			pageIndex: 0,
+			pageSize: 50
+		},
+		columnSizing: options.initialState?.columnSizing ?? {},
+		columnSizingInfo: options.initialState?.columnSizingInfo ?? {
+			startOffset: null,
+			startSize: null,
+			deltaOffset: null,
+			deltaPercentage: null,
+			isResizingColumn: false,
+			columnSizingStart: []
+		},
+		columnPinning: options.initialState?.columnPinning ?? { left: [], right: [] },
+		rowSelection: options.initialState?.rowSelection ?? {},
+		columnVisibility: options.initialState?.columnVisibility ?? {}
+	});
+
+	const notifyStateChange = () => {
+		options.onStateChange?.(state);
 	};
 
-	return new Proxy(Object.create(null), {
-		get(_, key) {
-			const src = findSourceWithKey(key);
-
-			return src?.[key as never];
+	const table = createTable<TData>({
+		data: options.data,
+		columns: options.columns,
+		state,
+		onStateChange: () => {
+			// Handled by the individual updaters
 		},
-
-		has(_, key) {
-			return !!findSourceWithKey(key);
+		renderFallbackValue: null,
+		onSortingChange: (updater) => {
+			state.sorting = typeof updater === 'function' ? updater(state.sorting) : updater;
+			notifyStateChange();
 		},
-
-		ownKeys(): (string | symbol)[] {
-			const all = new SvelteSet<string | symbol>();
-			for (const s of sources) {
-				const obj = resolve(s);
-				if (obj) {
-					for (const k of Reflect.ownKeys(obj) as (string | symbol)[]) {
-						all.add(k);
-					}
-				}
-			}
-			return [...all];
+		onColumnFiltersChange: (updater) => {
+			state.columnFilters = typeof updater === 'function' ? updater(state.columnFilters) : updater;
+			notifyStateChange();
 		},
+		onGlobalFilterChange: (updater) => {
+			state.globalFilter = typeof updater === 'function' ? updater(state.globalFilter) : updater;
+			notifyStateChange();
+		},
+		onPaginationChange: (updater) => {
+			state.pagination = typeof updater === 'function' ? updater(state.pagination) : updater;
+			notifyStateChange();
+		},
+		onColumnSizingChange: (updater) => {
+			state.columnSizing = typeof updater === 'function' ? updater(state.columnSizing) : updater;
+			notifyStateChange();
+		},
+		onColumnSizingInfoChange: (updater) => {
+			state.columnSizingInfo =
+				typeof updater === 'function' ? updater(state.columnSizingInfo) : updater;
+			notifyStateChange();
+		},
+		onColumnPinningChange: (updater) => {
+			state.columnPinning = typeof updater === 'function' ? updater(state.columnPinning) : updater;
+			notifyStateChange();
+		},
+		onRowSelectionChange: (updater) => {
+			state.rowSelection = typeof updater === 'function' ? updater(state.rowSelection) : updater;
+			notifyStateChange();
+		},
+		onColumnVisibilityChange: (updater) => {
+			state.columnVisibility =
+				typeof updater === 'function' ? updater(state.columnVisibility) : updater;
+			notifyStateChange();
+		},
+		getCoreRowModel: getCoreRowModel(),
+		...(options.enableSorting !== false && { getSortedRowModel: getSortedRowModel() }),
+		...(options.enableFiltering !== false && { getFilteredRowModel: getFilteredRowModel() }),
+		...(options.enablePagination !== false && { getPaginationRowModel: getPaginationRowModel() }),
+		...(options.enableColumnResizing !== false && {
+			enableColumnResizing: true,
+			columnResizeMode: 'onEnd' as const
+		})
+	});
 
-		getOwnPropertyDescriptor(_, key) {
-			const src = findSourceWithKey(key);
-			if (!src) return undefined;
-			return {
-				configurable: true,
-				enumerable: true,
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				value: (src as any)[key],
-				writable: true
-			};
-		}
-	}) as Intersection<{ [K in keyof Sources]: Sources[K] }>;
+	$effect(() => {
+		table.setOptions(prev => ({
+			...prev,
+			data: options.data,
+			columns: options.columns
+		}));
+
+		// Running this causes the table to update its internal state.
+		// I don't exactly know why, but pagination would not work if this is not executed.
+		table.getPageCount();
+	});
+
+	return {
+		...table,
+		state
+	};
+}
+
+export function createQueryColumns(columnNames: string[]): ColumnDef<Record<string, any>>[] {
+	return columnNames.map((column) => ({
+		accessorKey: column,
+		header: column,
+		size: 150,
+		minSize: 50,
+		maxSize: 800,
+		enableResizing: true,
+		enableSorting: true
+	}));
 }
