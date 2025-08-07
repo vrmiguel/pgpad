@@ -1,43 +1,43 @@
 import { writable } from 'svelte/store';
 
 const defaultTheme = 'light';
-const initialTheme = typeof localStorage !== 'undefined'
-    ? localStorage.getItem('theme') ?? defaultTheme
-    : defaultTheme;
+const initialTheme =
+	typeof localStorage !== 'undefined'
+		? (localStorage.getItem('theme') ?? defaultTheme)
+		: defaultTheme;
 
 export const theme = writable<'light' | 'dark'>(initialTheme as 'light' | 'dark');
 
 const editorThemeCallbacks = new Set<(theme: 'light' | 'dark') => void>();
 
 theme.subscribe((value) => {
-    if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('theme', value);
-    }
+	if (typeof localStorage !== 'undefined') {
+		localStorage.setItem('theme', value);
+	}
 
-    if (typeof document !== 'undefined') {
-        if (value === 'dark') {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    }
+	if (typeof document !== 'undefined') {
+		if (value === 'dark') {
+			document.documentElement.classList.add('dark');
+		} else {
+			document.documentElement.classList.remove('dark');
+		}
+	}
 
-    editorThemeCallbacks.forEach(callback => callback(value));
+	editorThemeCallbacks.forEach((callback) => callback(value));
 });
 
 if (typeof document !== 'undefined' && initialTheme === 'dark') {
-    document.documentElement.classList.add('dark');
+	document.documentElement.classList.add('dark');
 }
 
 export function toggleTheme() {
-    theme.update(current => current === 'light' ? 'dark' : 'light');
+	theme.update((current) => (current === 'light' ? 'dark' : 'light'));
 }
 
 export function registerEditorThemeCallback(callback: (theme: 'light' | 'dark') => void) {
-    editorThemeCallbacks.add(callback);
+	editorThemeCallbacks.add(callback);
 
-    return () => {
-        editorThemeCallbacks.delete(callback);
-    };
+	return () => {
+		editorThemeCallbacks.delete(callback);
+	};
 }
-

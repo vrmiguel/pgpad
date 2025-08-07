@@ -9,4 +9,4 @@
 
 <div class="p-3 {className}">
 	{@render children?.()}
-</div> 
+</div>

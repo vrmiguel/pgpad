@@ -14,54 +14,57 @@
 
 <div class="space-y-3">
 	{#if !selectedConnection}
-		<div class="text-center py-8 px-4">
-			<div class="p-3 rounded-lg bg-muted/30 border border-border/50 inline-flex mb-3">
-				<Table class="w-6 h-6 text-muted-foreground/50" />
+		<div class="px-4 py-8 text-center">
+			<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
+				<Table class="text-muted-foreground/50 h-6 w-6" />
 			</div>
-			<p class="text-xs font-medium text-muted-foreground mb-1">No connection selected</p>
-			<p class="text-xs text-muted-foreground/70">Select a connection to view tables</p>
+			<p class="text-muted-foreground mb-1 text-xs font-medium">No connection selected</p>
+			<p class="text-muted-foreground/70 text-xs">Select a connection to view tables</p>
 		</div>
 	{:else if loadingSchema}
-		<div class="text-center py-8 px-4">
-			<div class="p-3 rounded-lg bg-muted/30 border border-border/50 inline-flex mb-3">
-				<Table class="w-6 h-6 text-muted-foreground/50 animate-pulse" />
+		<div class="px-4 py-8 text-center">
+			<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
+				<Table class="text-muted-foreground/50 h-6 w-6 animate-pulse" />
 			</div>
-			<p class="text-xs font-medium text-muted-foreground mb-1">Loading schema...</p>
+			<p class="text-muted-foreground mb-1 text-xs font-medium">Loading schema...</p>
 		</div>
 	{:else if !databaseSchema}
-		<div class="text-center py-8 px-4">
-			<div class="p-3 rounded-lg bg-muted/30 border border-border/50 inline-flex mb-3">
-				<Table class="w-6 h-6 text-muted-foreground/50" />
+		<div class="px-4 py-8 text-center">
+			<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
+				<Table class="text-muted-foreground/50 h-6 w-6" />
 			</div>
-			<p class="text-xs font-medium text-muted-foreground mb-1">Schema not loaded</p>
-			<p class="text-xs text-muted-foreground/70">Connect to database to view tables</p>
+			<p class="text-muted-foreground mb-1 text-xs font-medium">Schema not loaded</p>
+			<p class="text-muted-foreground/70 text-xs">Connect to database to view tables</p>
 		</div>
 	{:else if databaseSchema.tables.length === 0}
-		<div class="text-center py-8 px-4">
-			<div class="p-3 rounded-lg bg-muted/30 border border-border/50 inline-flex mb-3">
-				<Table class="w-6 h-6 text-muted-foreground/50" />
+		<div class="px-4 py-8 text-center">
+			<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
+				<Table class="text-muted-foreground/50 h-6 w-6" />
 			</div>
-			<p class="text-xs font-medium text-muted-foreground mb-1">No tables found</p>
-			<p class="text-xs text-muted-foreground/70">This database has no tables</p>
+			<p class="text-muted-foreground mb-1 text-xs font-medium">No tables found</p>
+			<p class="text-muted-foreground/70 text-xs">This database has no tables</p>
 		</div>
 	{:else}
 		{#each databaseSchema.tables as table (table.name)}
-			<details class="group border rounded-lg overflow-hidden">
-				<summary class="flex items-center gap-3 p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+			<details class="group overflow-hidden rounded-lg border">
+				<summary
+					class="hover:bg-muted/30 flex cursor-pointer items-center gap-3 p-3 transition-colors"
+				>
 					<div class="flex-shrink-0">
-						<Table class="w-3 h-3 text-muted-foreground" />
+						<Table class="text-muted-foreground h-3 w-3" />
 					</div>
-					<div class="flex-1 text-left min-w-0">
-						<div class="font-medium text-xs text-foreground truncate">
+					<div class="min-w-0 flex-1 text-left">
+						<div class="text-foreground truncate text-xs font-medium">
 							{table.name}
 						</div>
-						<div class="text-xs text-muted-foreground/80 truncate">
-							{table.schema !== 'public' ? `${table.schema}.${table.name}` : table.name} • {table.columns.length} columns
+						<div class="text-muted-foreground/80 truncate text-xs">
+							{table.schema !== 'public' ? `${table.schema}.${table.name}` : table.name} • {table
+								.columns.length} columns
 						</div>
 					</div>
 					{#if onTableClick}
 						<button
-							class="flex-shrink-0 p-1 hover:bg-primary/10 rounded text-primary/70 hover:text-primary transition-colors"
+							class="hover:bg-primary/10 text-primary/70 hover:text-primary flex-shrink-0 rounded p-1 transition-colors"
 							onclick={(e) => {
 								e.preventDefault();
 								e.stopPropagation();
@@ -69,17 +72,17 @@
 							}}
 							title="Browse table data"
 						>
-							<Table class="w-3 h-3" />
+							<Table class="h-3 w-3" />
 						</button>
 					{/if}
 				</summary>
-				<div class="border-t bg-muted/10">
-					<div class="p-2 space-y-1">
+				<div class="bg-muted/10 border-t">
+					<div class="space-y-1 p-2">
 						{#each table.columns as column}
-							<div class="w-full flex items-center gap-3 p-2 text-xs">
-								<Columns class="w-2.5 h-2.5 text-muted-foreground/60 flex-shrink-0" />
-								<div class="flex-1 min-w-0">
-									<div class="font-medium text-foreground truncate">
+							<div class="flex w-full items-center gap-3 p-2 text-xs">
+								<Columns class="text-muted-foreground/60 h-2.5 w-2.5 flex-shrink-0" />
+								<div class="min-w-0 flex-1">
+									<div class="text-foreground truncate font-medium">
 										{column.name}
 									</div>
 									<div class="text-muted-foreground/70 truncate">
@@ -93,4 +96,4 @@
 			</details>
 		{/each}
 	{/if}
-</div> 
+</div>

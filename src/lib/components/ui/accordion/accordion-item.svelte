@@ -18,29 +18,28 @@
 	}
 </script>
 
-<div class="border border-border/50 rounded-lg bg-background/50 {className}">
+<div class="border-border/50 bg-background/50 rounded-lg border {className}">
 	<button
-		class="flex items-center justify-between w-full p-3 text-left hover:bg-muted/50 transition-colors duration-200 rounded-lg"
+		class="hover:bg-muted/50 flex w-full items-center justify-between rounded-lg p-3 text-left transition-colors duration-200"
 		onclick={toggle}
 	>
 		<div class="flex items-center gap-2">
 			{#if icon}
 				{@const IconComponent = icon}
-				<IconComponent class="w-4 h-4 text-muted-foreground" />
+				<IconComponent class="text-muted-foreground h-4 w-4" />
 			{/if}
-			<span class="text-sm font-medium text-foreground">{title}</span>
+			<span class="text-foreground text-sm font-medium">{title}</span>
 		</div>
-		<ChevronDown 
-			class="w-4 h-4 text-muted-foreground transition-transform duration-200 {open ? 'rotate-180' : ''}" 
+		<ChevronDown
+			class="text-muted-foreground h-4 w-4 transition-transform duration-200 {open
+				? 'rotate-180'
+				: ''}"
 		/>
 	</button>
-	
+
 	{#if open}
-		<div
-			class="border-t border-border/30"
-			transition:slide={{ duration: 300, easing: cubicOut }}
-		>
+		<div class="border-border/30 border-t" transition:slide={{ duration: 300, easing: cubicOut }}>
 			{@render children?.()}
 		</div>
 	{/if}
-</div> 
+</div>

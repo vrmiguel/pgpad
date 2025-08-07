@@ -13,14 +13,14 @@
 		onScriptRename: (scriptId: number, newName: string) => void;
 	}
 
-	let { 
-		openScripts, 
-		activeScriptId, 
+	let {
+		openScripts,
+		activeScriptId,
 		unsavedChanges,
-		onTabSelect, 
-		onTabClose, 
+		onTabSelect,
+		onTabClose,
 		onNewScript,
-		onScriptRename 
+		onScriptRename
 	}: Props = $props();
 
 	let editingScriptId = $state<number | null>(null);
@@ -30,13 +30,13 @@
 	function handleTabClick(scriptId: number) {
 		// Don't switch tabs while editing
 		if (editingScriptId === scriptId) return;
-		
+
 		// Clear any ongoing editing when switching tabs
 		if (editingScriptId !== null) {
 			editingScriptId = null;
 			editingName = '';
 		}
-		
+
 		onTabSelect(scriptId);
 	}
 
@@ -59,12 +59,12 @@
 
 	function finishEditingName() {
 		if (editingScriptId === null) return;
-		
+
 		const trimmedName = editingName.trim();
-		if (trimmedName && trimmedName !== openScripts.find(s => s.id === editingScriptId)?.name) {
+		if (trimmedName && trimmedName !== openScripts.find((s) => s.id === editingScriptId)?.name) {
 			onScriptRename(editingScriptId, trimmedName);
 		}
-		
+
 		editingScriptId = null;
 		editingName = '';
 	}
@@ -84,19 +84,26 @@
 
 	// Safe check for unsaved changes
 	function hasUnsavedChanges(scriptId: number): boolean {
-		return unsavedChanges && typeof unsavedChanges.has === 'function' && unsavedChanges.has(scriptId);
+		return (
+			unsavedChanges && typeof unsavedChanges.has === 'function' && unsavedChanges.has(scriptId)
+		);
 	}
 </script>
 
-<div class="flex items-center bg-card border-b border-border/50 overflow-hidden">
+<div class="bg-card border-border/50 flex items-center overflow-hidden border-b">
 	<!-- Tab bar -->
 	<div class="flex flex-1 overflow-x-auto">
 		{#each openScripts as script (script.id)}
-			<div class="group flex items-center border-r border-border/30 min-w-0 max-w-48 {activeScriptId === script.id ? 'bg-background border-b-2 border-b-primary' : ''}">
+			<div
+				class="group border-border/30 flex max-w-48 min-w-0 items-center border-r {activeScriptId ===
+				script.id
+					? 'bg-background border-b-primary border-b-2'
+					: ''}"
+			>
 				<!-- Tab content area (clickable) -->
 				<button
 					type="button"
-					class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/30 transition-colors flex-1 min-w-0"
+					class="hover:bg-muted/30 flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm transition-colors"
 					onclick={() => handleTabClick(script.id)}
 					ondblclick={() => startEditingName(script.id, script.name)}
 				>
@@ -108,41 +115,41 @@
 							onkeydown={handleNameKeydown}
 							onblur={finishEditingName}
 							onclick={(e) => e.stopPropagation()}
-							class="h-6 text-sm font-medium bg-transparent border-none shadow-none p-0 focus:ring-1 focus:ring-primary focus:outline-none"
+							class="focus:ring-primary h-6 border-none bg-transparent p-0 text-sm font-medium shadow-none focus:ring-1 focus:outline-none"
 						/>
 					{:else}
 						<span class="truncate font-medium">
 							{script.name}
 						</span>
 					{/if}
-					
+
 					<!-- Unsaved changes indicator -->
 					{#if hasUnsavedChanges(script.id)}
-						<Circle class="w-2 h-2 fill-orange-500 text-orange-500 flex-shrink-0" />
+						<Circle class="h-2 w-2 flex-shrink-0 fill-orange-500 text-orange-500" />
 					{/if}
 				</button>
-				
+
 				<!-- Close button (separate from tab button) -->
 				<button
 					type="button"
-					class="opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive rounded p-0.5 transition-all flex-shrink-0 mr-2"
+					class="hover:bg-destructive/10 hover:text-destructive mr-2 flex-shrink-0 rounded p-0.5 opacity-0 transition-all group-hover:opacity-100"
 					onclick={(e) => handleTabClose(e, script.id)}
 					title="Close tab"
 				>
-					<X class="w-3 h-3" />
+					<X class="h-3 w-3" />
 				</button>
 			</div>
 		{/each}
 	</div>
-	
+
 	<!-- New tab button -->
 	<Button
 		variant="ghost"
 		size="sm"
-		class="border-l border-border/30 rounded-none hover:bg-muted/30"
+		class="border-border/30 hover:bg-muted/30 rounded-none border-l"
 		onclick={onNewScript}
 		title="New Script"
 	>
-		<Plus class="w-4 h-4" />
+		<Plus class="h-4 w-4" />
 	</Button>
-</div> 
+</div>

@@ -16,13 +16,13 @@
 <Button
 	{variant}
 	{size}
-	class={`transition-all duration-200 {className}`}
+	class={`{className} transition-all duration-200`}
 	onclick={toggleTheme}
 	title={$theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
 >
 	{#if $theme === 'light'}
-		<Sun class="w-4 h-4" />
+		<Sun class="h-4 w-4" />
 	{:else}
-		<Moon class="w-4 h-4" />
+		<Moon class="h-4 w-4" />
 	{/if}
-</Button> 
+</Button>

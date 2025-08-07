@@ -8,7 +8,7 @@
 	let isConnecting = $state(false);
 </script>
 
-<div class="h-screen flex flex-col overflow-hidden">
+<div class="flex h-screen flex-col overflow-hidden">
 	<TitleBar {currentConnection} {isConnecting} />
 	<div class="flex-1 overflow-hidden">
 		<PostgresEditor bind:currentConnection bind:isConnecting />

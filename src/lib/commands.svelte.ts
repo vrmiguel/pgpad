@@ -28,30 +28,28 @@ export interface QueryResult {
 
 export type QueryStreamEvent =
 	| {
-		event: 'start';
-		data: {
-			columns: string[];
-		};
-	}
+			event: 'start';
+			data: {
+				columns: string[];
+			};
+	  }
 	| {
-		event: 'batch';
-		data: {
-			// JSON serialized rows
-			rows: string;
-		};
-	}
+			event: 'batch';
+			data: {
+				// JSON serialized rows
+				rows: string;
+			};
+	  }
 	| {
-		event: 'finish';
-		data: {};
-	}
+			event: 'finish';
+			data: {};
+	  }
 	| {
-		event: 'error';
-		data: {
-			error: string;
-		};
-	};
-
-
+			event: 'error';
+			data: {
+				error: string;
+			};
+	  };
 
 // UI-facing result type that includes success/error state
 export interface QueryResultUI {

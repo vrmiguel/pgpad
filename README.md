@@ -4,8 +4,8 @@
 
 ### Requirements
 
-* `npm`
-* Rust
+- `npm`
+- Rust
 
 ### Setup
 
@@ -26,4 +26,3 @@ npm run tauri dev
 ```
 npm run tauri build
 ```
-

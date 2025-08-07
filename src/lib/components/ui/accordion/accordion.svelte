@@ -9,4 +9,4 @@
 
 <div class="space-y-2 {className}">
 	{@render children?.()}
-</div> 
+</div>
