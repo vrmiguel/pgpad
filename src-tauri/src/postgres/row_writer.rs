@@ -1,98 +1,20 @@
-use bytes::Buf;
-use chrono::Utc;
-use std::{error::Error, fmt::Write};
-use tokio_postgres::{
-    types::{FromSql, Type},
-    Row,
-};
 use rust_decimal::Decimal;
+use std::fmt::Write;
+use tokio_postgres::{types::Type, Row};
 
-#[derive(Debug)]
-pub struct PgRecord {
-    pub fields: Vec<serde_json::Value>,
-}
+/// Accepts any type, returning their raw bytes
+mod bytes;
+/// Deserializes Postgres intervals
+mod interval;
+/// Checks if a Pg value is null
+mod null;
+/// Deserializes record types
+mod record;
 
-impl<'a> FromSql<'a> for PgRecord {
-    fn from_sql(_: &Type, mut raw: &'a [u8]) -> Result<Self, Box<dyn Error + Sync + Send>> {
-        let field_count = raw.get_i32() as usize;
-        let mut fields = Vec::with_capacity(field_count);
+use null::NullChecker;
+use record::PgRecord;
 
-        for _ in 0..field_count {
-            let field_oid = raw.get_u32();
-            let field_length = raw.get_i32();
-
-            if field_length == -1 {
-                // NULL value
-                fields.push(serde_json::Value::Null);
-            } else {
-                let field_length = field_length as usize;
-                if raw.remaining() < field_length {
-                    return Err("Not enough data for field".into());
-                }
-
-                let field_data = &raw[..field_length];
-                raw.advance(field_length);
-
-                let pg_type = Type::from_oid(field_oid).unwrap_or(Type::TEXT);
-                let field_value = convert_pg_binary_to_json(&pg_type, field_data)?;
-                fields.push(field_value);
-            }
-        }
-
-        Ok(PgRecord { fields })
-    }
-
-    fn accepts(ty: &Type) -> bool {
-        matches!(*ty, Type::RECORD)
-    }
-}
-
-/// Taken from https://github.com/sfackler/rust-postgres/issues/879#issuecomment-1084149480
-#[derive(Debug)]
-pub struct NullChecker(pub bool);
-
-impl tokio_postgres::types::FromSql<'_> for NullChecker {
-    fn from_sql(
-        _ty: &tokio_postgres::types::Type,
-        _raw: &[u8],
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
-        Ok(Self(false))
-    }
-
-    fn from_sql_null(
-        _ty: &tokio_postgres::types::Type,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync + 'static>> {
-        Ok(Self(true))
-    }
-
-    fn accepts(_ty: &tokio_postgres::types::Type) -> bool {
-        true
-    }
-}
-
-#[derive(Debug)]
-pub struct PgInterval {
-    pub months: i32,
-    pub days: i32,
-    pub microseconds: i64,
-}
-
-impl<'a> FromSql<'a> for PgInterval {
-    fn from_sql(_: &Type, mut raw: &'a [u8]) -> Result<Self, Box<dyn Error + Sync + Send>> {
-        let microseconds = raw.get_i64();
-        let days = raw.get_i32();
-        let months = raw.get_i32();
-        Ok(PgInterval {
-            months,
-            days,
-            microseconds,
-        })
-    }
-
-    fn accepts(ty: &Type) -> bool {
-        matches!(*ty, Type::INTERVAL)
-    }
-}
+use crate::postgres::row_writer::{bytes::PgBytes, interval::PgInterval};
 
 /// A somewhat efficient way of converting the raw Postgres query results into a JSON string.
 ///
@@ -161,8 +83,6 @@ impl RowWriter {
             self.json.push_str("null");
             return Ok(());
         }
-
-        use tokio_postgres::types::Type;
 
         match *pg_type {
             Type::BOOL => {
@@ -282,10 +202,20 @@ impl RowWriter {
                 self.json.push(']');
             }
 
-            // Default to string
-            _ => {
-                let value: String = row.try_get(column_index)?;
+            // TODO(vini): BPCHAR and NAME are correct here?
+            Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME => {
+                let value: &str = row.try_get(column_index)?;
                 self.write_json_string(&value);
+            }
+
+            _ => {
+                let bytes = row.try_get::<_, PgBytes>(column_index)?;
+                if let Ok(value) = std::str::from_utf8(bytes.bytes) {
+                    self.write_json_string(value);
+                } else {
+                    log::error!("Unknown type `{:?}`, kind: {:?}", pg_type, pg_type.kind());
+                    self.write_json_string(&format!("\\x{}", hex::encode(bytes.bytes)));
+                }
             }
         }
 
@@ -311,10 +241,10 @@ impl RowWriter {
     }
 }
 
+/// TODO(vini): convert to fmt::Display impl
 fn format_pg_interval(interval: &PgInterval) -> String {
     let mut parts = Vec::new();
 
-    // Handle years and months
     if interval.months != 0 {
         let years = interval.months / 12;
         let months = interval.months % 12;
@@ -336,7 +266,6 @@ fn format_pg_interval(interval: &PgInterval) -> String {
         }
     }
 
-    // Handle days
     if interval.days != 0 {
         if interval.days == 1 {
             parts.push("1 day".to_string());
@@ -345,7 +274,6 @@ fn format_pg_interval(interval: &PgInterval) -> String {
         }
     }
 
-    // Handle time portion (microseconds)
     if interval.microseconds != 0 {
         let total_seconds = interval.microseconds / 1_000_000;
         let microseconds = interval.microseconds % 1_000_000;
@@ -377,99 +305,24 @@ fn format_pg_interval(interval: &PgInterval) -> String {
     }
 }
 
-fn convert_pg_binary_to_json(
-    pg_type: &Type,
-    data: &[u8],
-) -> Result<serde_json::Value, Box<dyn Error + Sync + Send>> {
-    let mut buf = data;
-
-    match *pg_type {
-        Type::BOOL => {
-            let value = buf.get_u8() != 0;
-            Ok(serde_json::Value::Bool(value))
-        }
-
-        Type::INT2 => {
-            let value = buf.get_i16();
-            Ok(serde_json::Value::Number(value.into()))
-        }
-        Type::INT4 => {
-            let value = buf.get_i32();
-            Ok(serde_json::Value::Number(value.into()))
-        }
-        Type::INT8 => {
-            let value = buf.get_i64();
-            Ok(serde_json::Value::Number(value.into()))
-        }
-
-        Type::FLOAT4 => {
-            let value = buf.get_f32();
-            if let Some(num) = serde_json::Number::from_f64(value as f64) {
-                Ok(serde_json::Value::Number(num))
-            } else {
-                Ok(serde_json::Value::String(value.to_string()))
-            }
-        }
-        Type::FLOAT8 => {
-            let value = buf.get_f64();
-            if let Some(num) = serde_json::Number::from_f64(value) {
-                Ok(serde_json::Value::Number(num))
-            } else {
-                Ok(serde_json::Value::String(value.to_string()))
-            }
-        }
-
-        Type::TIMESTAMP => {
-            let microseconds = buf.get_i64();
-            // PostgreSQL epoch is 2000-01-01 00:00:00 UTC
-            let pg_epoch = chrono::NaiveDate::from_ymd_opt(2000, 1, 1)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap();
-            let timestamp = pg_epoch + chrono::Duration::microseconds(microseconds);
-            Ok(serde_json::Value::String(timestamp.to_string()))
-        }
-        Type::TIMESTAMPTZ => {
-            let microseconds = buf.get_i64();
-            let pg_epoch = chrono::NaiveDate::from_ymd_opt(2000, 1, 1)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap();
-            let timestamp = chrono::DateTime::<Utc>::from_naive_utc_and_offset(pg_epoch, Utc)
-                + chrono::Duration::microseconds(microseconds);
-            Ok(serde_json::Value::String(timestamp.to_rfc3339()))
-        }
-
-        // For text types and unknown types, convert to string
-        Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME | _ => {
-            match std::str::from_utf8(data) {
-                Ok(s) => Ok(serde_json::Value::String(s.to_string())),
-                Err(_) => {
-                    // If it's not valid UTF-8, return as hex string
-                    Ok(serde_json::Value::String(format!(
-                        "\\x{}",
-                        hex::encode(data)
-                    )))
-                }
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
+    use pgtemp::PgTempDB;
+    use serde_json::Value;
+
     use crate::postgres::row_writer::RowWriter;
 
-    // cargo test --package app --lib -- postgres::row_writer::tests::test_pg_val_to_json --exact --show-output --ignored
-    #[ignore = "Requires a local Postgres instance"]
     #[tokio::test]
-    async fn test_pg_val_to_json() {
-        let (client, conn) = tokio_postgres::connect(
-            "postgresql://postgres:postgres@localhost:5432/postgres",
-            tokio_postgres::NoTls,
-        )
-        .await
-        .unwrap();
+    async fn test_row_writer() {
+        let now = Instant::now();
+        let db = PgTempDB::async_new().await;
+        println!("Created DB in {:?}ms", now.elapsed().as_millis());
+
+        let (client, conn) = tokio_postgres::connect(&db.connection_uri(), tokio_postgres::NoTls)
+            .await
+            .unwrap();
 
         tokio::spawn(async move {
             if let Err(e) = conn.await {
@@ -477,18 +330,24 @@ mod tests {
             }
         });
 
+        client
+            .batch_execute("CREATE TYPE pg_temp.mood AS ENUM ('sad','ok','happy');")
+            .await
+            .unwrap();
+
         let sql = r#"
             SELECT
                 1::int AS int_col,
                 3.14::float AS float_col,
                 'Hello'::text AS text_col,
                 true AS bool_col,
-                now()::timestamp AS ts_col,
-                now()::timestamptz AS ts_tz_col,
+                '2025-08-07 12:00:00'::timestamp AS ts_col,
+                '2025-08-07 12:00:00+00'::timestamptz AS ts_tz_col,
                 '1 day'::interval AS interval_col,
                 ARRAY['a','b','c'] AS array_col,
                 '{"x": 10}'::json AS json_col,
                 '192.168.0.1'::inet AS inet_col,
+                'happy'::pg_temp.mood AS enum_col,
                 ROW(1, 'foo') AS record_col
             ;
         "#;
@@ -500,6 +359,26 @@ mod tests {
         let mut writer = RowWriter::new();
         writer.add_row(&row).unwrap();
         let result = writer.finish();
+        let result: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(
+            result,
+            serde_json::json!([
+                [
+                    1,
+                    3.14,
+                    "Hello",
+                    true,
+                    "2025-08-07 12:00:00",
+                    "2025-08-07 12:00:00 UTC",
+                    "1 day",
+                    ["a", "b", "c"],
+                    {"x": 10},
+                    "192.168.0.1",
+                    "happy",
+                    [1, "foo"]
+                ]
+            ])
+        );
 
         println!("{:?}", result);
     }

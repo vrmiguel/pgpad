@@ -125,7 +125,7 @@ export function createSvelteTable<TData extends RowData>(options: DataTableOptio
 	});
 
 	$effect(() => {
-		table.setOptions(prev => ({
+		table.setOptions((prev) => ({
 			...prev,
 			data: options.data,
 			columns: options.columns

@@ -47,3 +47,6 @@ codegen-units = 1
 lto = true
 opt-level = 3
 strip = true
+
+[dev-dependencies]
+pgtemp = "0.6.0"
