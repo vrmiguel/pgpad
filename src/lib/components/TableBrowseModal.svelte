@@ -3,7 +3,6 @@
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import StreamingQueryResults from './StreamingQueryResults.svelte';
-	import { Commands } from '$lib/commands.svelte';
 
 	interface Props {
 		isOpen: boolean;
@@ -15,16 +14,14 @@
 
 	let { isOpen, tableName, schema, connectionId, onClose }: Props = $props();
 
-	// Query state
 	let currentQuery = $state<string>('');
 	let error = $state<string | null>(null);
 
-	// Auto-generate query when modal opens
 	$effect(() => {
 		if (isOpen && tableName && connectionId) {
 			const query =
 				schema === 'public'
-					? `SELECT * FROM ${tableName} LIMIT 1000`
+					? `SELECT * FROM "${tableName}" LIMIT 1000`
 					: `SELECT * FROM "${schema}"."${tableName}" LIMIT 1000`;
 			currentQuery = query;
 			error = null;

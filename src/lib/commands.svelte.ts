@@ -42,7 +42,9 @@ export type QueryStreamEvent =
 	  }
 	| {
 			event: 'finish';
-			data: {};
+			data: {
+				// TODO: add time elapsed
+			};
 	  }
 	| {
 			event: 'error';

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
+
 	interface Props {
 		json: any;
 		depth?: number;
@@ -11,8 +13,8 @@
 	// If a path is in the set as __collapsed, it is collapsed
 	//
 	// I tried using a Map<string, boolean> but for some reason it didn't work
-	let userOverrides = $state<Set<string>>(new Set());
-	let expandedStrings = $state<Set<string>>(new Set());
+	let userOverrides = new SvelteSet<string>();
+	let expandedStrings = new SvelteSet<string>();
 
 	function getValueType(value: any): string {
 		if (value === null) return 'null';
@@ -29,47 +31,41 @@
 	}
 
 	function toggleExpanded(path: string): void {
-		const newExpanded = new Set(userOverrides);
-
 		const currentPath = path;
 		const pathParts = currentPath.split('.').filter(Boolean);
 		const depth = pathParts.length;
-		const isUserCollapsed = newExpanded.has(path + '__collapsed');
+		const isUserCollapsed = userOverrides.has(path + '__collapsed');
 		const isCurrentlyExpanded =
-			!isUserCollapsed && (newExpanded.has(path) || shouldAutoExpand(depth));
+			!isUserCollapsed && (userOverrides.has(path) || shouldAutoExpand(depth));
 
 		if (isCurrentlyExpanded) {
 			// Currently expanded -> collapse it
 			// For auto-expanded items, we add them to expanded Set as "collapsed" marker
-			if (shouldAutoExpand(depth) && !newExpanded.has(path)) {
+			if (shouldAutoExpand(depth) && !userOverrides.has(path)) {
 				// This is an auto-expanded item, mark it as user-collapsed
-				newExpanded.add(path + '__collapsed');
+				userOverrides.add(path + '__collapsed');
 			} else {
 				// This was user-expanded, remove it
-				newExpanded.delete(path);
+				userOverrides.delete(path);
 			}
 		} else {
 			// Currently collapsed -> expand it
-			if (newExpanded.has(path + '__collapsed')) {
+			if (userOverrides.has(path + '__collapsed')) {
 				// Remove the collapsed marker
-				newExpanded.delete(path + '__collapsed');
+				userOverrides.delete(path + '__collapsed');
 			} else {
 				// Add to expanded
-				newExpanded.add(path);
+				userOverrides.add(path);
 			}
 		}
-
-		userOverrides = newExpanded;
 	}
 
 	function toggleStringExpanded(path: string): void {
-		const newExpandedStrings = new Set(expandedStrings);
-		if (newExpandedStrings.has(path)) {
-			newExpandedStrings.delete(path);
+		if (expandedStrings.has(path)) {
+			expandedStrings.delete(path);
 		} else {
-			newExpandedStrings.add(path);
+			expandedStrings.add(path);
 		}
-		expandedStrings = newExpandedStrings;
 	}
 
 	function shouldAutoExpand(currentDepth: number): boolean {

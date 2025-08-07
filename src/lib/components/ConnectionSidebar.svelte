@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Database, Circle, AlertTriangle, Loader2 } from '@lucide/svelte';
+	import { Database, AlertTriangle, Loader2 } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 
 	interface Connection {

@@ -26,6 +26,7 @@
 		type DatabaseSchema
 	} from '$lib/commands.svelte';
 	import { onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	interface Props {
 		currentConnection?: {
@@ -42,16 +43,16 @@
 	let connections = $state<ConnectionInfo[]>([]);
 	let isRunningQuery = $state(false);
 	let sqlEditorRef = $state<any>();
-	let establishingConnections = $state<Set<string>>(new Set());
+	let establishingConnections = new SvelteSet<string>();
 
 	let scripts = $state<Script[]>([]);
 	let openScripts = $state<Script[]>([]);
 	let activeScriptId = $state<number | null>(null);
-	let unsavedChanges = $state<Set<number>>(new Set());
+	let unsavedChanges = new SvelteSet<number>();
 	let scriptContents = $state<Map<number, string>>(new Map());
 	let currentEditorContent = $state<string>('');
 	// Scripts not yet persisted in SQLite
-	let newScripts = $state<Set<number>>(new Set());
+	let newScripts = new SvelteSet<number>();
 	// Let's use negative IDs for unpersisted scripts
 	let nextTempId = $state(-1);
 
@@ -127,11 +128,11 @@
 
 			if (shouldShowUnsaved) {
 				if (!unsavedChanges.has(activeScriptId)) {
-					unsavedChanges = new Set([...unsavedChanges, activeScriptId]);
+					unsavedChanges.add(activeScriptId);
 				}
 			} else {
 				if (unsavedChanges.has(activeScriptId)) {
-					unsavedChanges = new Set([...unsavedChanges].filter((id) => id !== activeScriptId));
+					unsavedChanges.delete(activeScriptId);
 				}
 			}
 		}
@@ -214,7 +215,7 @@
 
 		// Clean up state
 		scriptContents.delete(scriptId);
-		unsavedChanges = new Set([...unsavedChanges].filter((id) => id !== scriptId));
+		unsavedChanges.delete(scriptId);
 		newScripts.delete(scriptId);
 
 		// If closing active tab, switch to another or clear active
@@ -312,7 +313,7 @@
 	}
 
 	async function connectToDatabase(connectionId: string) {
-		establishingConnections = new Set([...establishingConnections, connectionId]);
+		establishingConnections.add(connectionId);
 
 		try {
 			const success = await Commands.connectToDatabase(connectionId);
@@ -327,9 +328,7 @@
 		} catch (error) {
 			console.error('Failed to connect:', error);
 		} finally {
-			establishingConnections = new Set(
-				[...establishingConnections].filter((id) => id !== connectionId)
-			);
+			establishingConnections.delete(connectionId);
 		}
 	}
 
@@ -492,7 +491,7 @@
 				currentScript.query_text = content;
 				currentScript.updated_at = Date.now() / 1000;
 				scriptContents.set(activeScriptId, content);
-				unsavedChanges = new Set([...unsavedChanges].filter((id) => id !== activeScriptId));
+				unsavedChanges.delete(activeScriptId);
 
 				// Update scripts list
 				const scriptIndex = scripts.findIndex((s) => s.id === activeScriptId);
@@ -549,7 +548,7 @@
 				if (activeScriptId === script.id) {
 					activeScriptId = null;
 					scriptContents.delete(script.id);
-					unsavedChanges = new Set([...unsavedChanges].filter((id) => id !== script.id));
+					unsavedChanges.delete(script.id);
 					newScripts.delete(script.id);
 				}
 			}

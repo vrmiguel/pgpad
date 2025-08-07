@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
-	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
+	import { Card, CardHeader, CardContent } from '$lib/components/ui/card';
 	import StreamingQueryResults from './StreamingQueryResults.svelte';
 	import {
 		Commands,
@@ -10,9 +8,9 @@
 		type Script,
 		type QueryHistoryEntry
 	} from '$lib/commands.svelte';
-	import { createEditor, type CreateEditorOptions } from '$lib/codemirror';
+	import { createEditor } from '$lib/codemirror';
 	import { onMount } from 'svelte';
-	import { ChevronDown, ChevronRight, Play, Loader, Table, Clock, History } from '@lucide/svelte';
+	import { Table, History } from '@lucide/svelte';
 
 	interface Props {
 		selectedConnection: string | null;

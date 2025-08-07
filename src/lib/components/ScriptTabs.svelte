@@ -2,11 +2,12 @@
 	import { X, Plus, Circle } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import type { Script } from '$lib/commands.svelte';
+	import type { SvelteSet } from 'svelte/reactivity';
 
 	interface Props {
 		openScripts: Script[];
 		activeScriptId: number | null;
-		unsavedChanges: Set<number>;
+		unsavedChanges: SvelteSet<number>;
 		onTabSelect: (scriptId: number) => void;
 		onTabClose: (scriptId: number) => void;
 		onNewScript: () => void;
