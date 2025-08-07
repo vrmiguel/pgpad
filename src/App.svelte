@@ -1,6 +1,6 @@
 <script lang="ts">
 	import TitleBar from '$lib/components/TitleBar.svelte';
-	import PostgresEditor from '$lib/components/PostgresEditor.svelte';
+	import Main from '$lib/components/Main.svelte';
 	import '$lib/stores/theme';
 
 	// Connection state for title bar
@@ -11,6 +11,6 @@
 <div class="flex h-screen flex-col overflow-hidden">
 	<TitleBar {currentConnection} {isConnecting} />
 	<div class="flex-1 overflow-hidden">
-		<PostgresEditor bind:currentConnection bind:isConnecting />
+		<Main bind:currentConnection bind:isConnecting />
 	</div>
 </div>

@@ -1,22 +1,12 @@
 <script lang="ts">
-	import {
-		Database,
-		Plus,
-		Play,
-		Save,
-		ChevronLeft,
-		ChevronRight,
-		FileText,
-		Table
-	} from '@lucide/svelte';
+	import { Play, Save } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
-	import { Accordion, AccordionItem, AccordionContent } from '$lib/components/ui/accordion';
 	import SqlEditor from './SqlEditor.svelte';
 	import ConnectionForm from './ConnectionForm.svelte';
 	import ScriptTabs from './ScriptTabs.svelte';
-	import DatabaseSchemaItems from './DatabaseSchemaItems.svelte';
 	import TableBrowseModal from './TableBrowseModal.svelte';
+	import AppSidebar from './AppSidebar.svelte';
 	import {
 		Commands,
 		type ConnectionInfo,
@@ -70,7 +60,7 @@
 	let isConnectionsAccordionOpen = $state(true);
 	let isScriptsAccordionOpen = $state(false);
 
-	// Auto-collapse if resized below 8%
+	// Auto-collapse if resized below 12%
 	const COLLAPSE_THRESHOLD = 12;
 	// Auto-expand if resized above 10%
 	const EXPAND_THRESHOLD = 10;
@@ -137,7 +127,6 @@
 		}
 	});
 
-	// Update currentEditorContent when switching scripts
 	$effect(() => {
 		if (activeScriptId !== null) {
 			const content =
@@ -197,7 +186,6 @@
 			scriptContents.set(activeScriptId, currentEditorContent);
 		}
 
-		// Switch to new script
 		activeScriptId = scriptId;
 		const script = scripts.find((s) => s.id === scriptId);
 		if (script) {
@@ -209,22 +197,20 @@
 	}
 
 	function closeTab(scriptId: number) {
-		// Remove from open scripts
 		openScripts = openScripts.filter((s) => s.id !== scriptId);
 
-		// Clean up state
 		scriptContents.delete(scriptId);
 		unsavedChanges.delete(scriptId);
 		newScripts.delete(scriptId);
 
-		// If closing active tab, switch to another or clear active
+		// if closing the active tab, switch to another or clear active
 		if (activeScriptId === scriptId) {
 			if (openScripts.length > 0) {
 				// Switch to the last remaining tab
 				const lastScript = openScripts[openScripts.length - 1];
 				switchToTab(lastScript.id);
 			} else {
-				// No tabs left
+				// no more open tabs left
 				activeScriptId = null;
 				if (sqlEditorRef) {
 					sqlEditorRef.setContent('');
@@ -321,7 +307,7 @@
 				await loadConnections();
 				// Load schema after successful connection
 				if (selectedConnection === connectionId) {
-					await loadDatabaseSchemaForced();
+					await loadDatabaseSchema();
 				}
 			}
 		} catch (error) {
@@ -350,8 +336,7 @@
 		}
 	}
 
-	// Force load schema regardless of connection state (used after successful connection)
-	async function loadDatabaseSchemaForced() {
+	async function loadDatabaseSchema() {
 		if (!selectedConnection || loadingSchema) return;
 
 		try {
@@ -381,11 +366,6 @@
 		selectedTableSchema = '';
 	}
 
-	// Sidebar toggle functionality
-	function toggleSidebar() {
-		isSidebarCollapsed = !isSidebarCollapsed;
-	}
-
 	async function loadScripts() {
 		try {
 			scripts = await Commands.getScripts();
@@ -396,7 +376,6 @@
 
 	function generateScriptName(): string {
 		const now = new Date();
-		const timestamp = now.toISOString().split('T')[0]; // YYYY-MM-DD
 		const existingUntitled = scripts.filter((s) => s.name.startsWith('Untitled Script')).length;
 		return existingUntitled === 0 ? 'Untitled Script' : `Untitled Script ${existingUntitled + 1}`;
 	}
@@ -405,7 +384,8 @@
 		try {
 			const name = generateScriptName();
 			const content = '';
-			const tempId = nextTempId--; // Use negative ID for new scripts
+			// New scripts get negative IDs
+			const tempId = nextTempId--;
 
 			const newScript: Script = {
 				id: tempId,
@@ -609,301 +589,28 @@
 			maxSize={isSidebarCollapsed ? 40 : 40}
 			class="transition-all duration-300 ease-out"
 		>
-			<div
-				class="bg-sidebar/80 glass-subtle border-sidebar-border relative flex h-full flex-col border-r"
-			>
-				{#if isSidebarCollapsed}
-					<!-- Collapsed Sidebar Content -->
-					<button
-						class="hover:bg-sidebar-accent/80 absolute top-4 right-2 z-10 rounded-lg p-2 transition-all duration-200 hover:shadow-md"
-						onclick={toggleSidebar}
-						title="Expand sidebar"
-					>
-						<ChevronRight class="text-sidebar-foreground/70 h-4 w-4" />
-					</button>
-
-					<div class="border-sidebar-border/50 border-b p-3">
-						<div class="flex flex-col items-center gap-3">
-							<div class="bg-primary/10 border-primary/20 rounded-lg border p-2">
-								<Database class="text-primary h-6 w-6" />
-							</div>
-							<Button
-								size="icon-sm"
-								variant="outline"
-								class="shadow-md hover:shadow-lg"
-								onclick={() => (showConnectionForm = true)}
-								title="Add Connection"
-							>
-								<Plus class="h-4 w-4" />
-							</Button>
-						</div>
-					</div>
-
-					<div class="flex flex-1 flex-col items-center justify-start space-y-4 p-4">
-						<!-- Connections Icon -->
-						<button
-							class="hover:bg-sidebar-accent/80 flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md"
-							onclick={() => {
-								isSidebarCollapsed = false;
-								isConnectionsAccordionOpen = true;
-								isScriptsAccordionOpen = false;
-								isItemsAccordionOpen = false;
-							}}
-							title="Connections"
-						>
-							<Database class="text-sidebar-foreground/70 h-5 w-5" />
-						</button>
-
-						<!-- Scripts Icon -->
-						<button
-							class="hover:bg-sidebar-accent/80 flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md"
-							onclick={() => {
-								isSidebarCollapsed = false;
-								isConnectionsAccordionOpen = false;
-								isScriptsAccordionOpen = true;
-								isItemsAccordionOpen = false;
-							}}
-							title="Scripts"
-						>
-							<FileText class="text-sidebar-foreground/70 h-5 w-5" />
-						</button>
-
-						<!-- Items Icon -->
-						<button
-							class="hover:bg-sidebar-accent/80 flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md"
-							onclick={() => {
-								isSidebarCollapsed = false;
-								isConnectionsAccordionOpen = false;
-								isScriptsAccordionOpen = false;
-								isItemsAccordionOpen = true;
-							}}
-							title="Database Items"
-						>
-							<Table class="text-sidebar-foreground/70 h-5 w-5" />
-						</button>
-					</div>
-				{:else}
-					<!-- Expanded Sidebar Content -->
-					<button
-						class="hover:bg-sidebar-accent/80 absolute top-6 right-4 z-10 rounded-lg p-2 transition-all duration-200 hover:shadow-md"
-						onclick={toggleSidebar}
-						title="Collapse sidebar"
-					>
-						<ChevronLeft class="text-sidebar-foreground/70 h-4 w-4" />
-					</button>
-
-					<div class="border-sidebar-border/50 border-b p-6">
-						<div class="flex items-center gap-3">
-							<div class="bg-primary/10 border-primary/20 rounded-lg border p-2">
-								<Database class="text-primary h-6 w-6" />
-							</div>
-							<h1 class="text-sidebar-foreground text-xl font-bold">PgPad</h1>
-						</div>
-					</div>
-
-					<div class="flex-1 overflow-y-auto p-4">
-						<Accordion>
-							{#snippet children()}
-								<!-- Connections Accordion -->
-								<AccordionItem
-									title="Connections"
-									icon={Database}
-									bind:open={isConnectionsAccordionOpen}
-								>
-									{#snippet children()}
-										<AccordionContent>
-											{#snippet children()}
-												<div class="space-y-3">
-													<Button
-														class="w-full justify-start gap-2 shadow-sm hover:shadow-md"
-														variant="outline"
-														onclick={() => (showConnectionForm = true)}
-													>
-														<Plus class="h-4 w-4" />
-														Add Connection
-													</Button>
-
-													<div class="space-y-2">
-														{#if connections.length === 0}
-															<div class="px-4 py-8 text-center">
-																<div
-																	class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3"
-																>
-																	<Database class="text-muted-foreground/50 h-6 w-6" />
-																</div>
-																<p class="text-muted-foreground mb-1 text-xs font-medium">
-																	No connections yet
-																</p>
-																<p class="text-muted-foreground/70 text-xs">
-																	Add your first connection to get started
-																</p>
-															</div>
-														{:else}
-															{#each connections as connection (connection.id)}
-																<Button
-																	variant={selectedConnection === connection.id
-																		? 'secondary'
-																		: 'ghost'}
-																	class="h-auto w-full justify-start p-3 shadow-sm transition-all duration-200 hover:shadow-md {selectedConnection ===
-																	connection.id
-																		? 'bg-primary/10 border-primary/20 border shadow-md'
-																		: ''}"
-																	onclick={() => selectConnection(connection.id)}
-																	ondblclick={() => connectToDatabase(connection.id)}
-																>
-																	<div class="flex w-full items-start gap-3">
-																		<div class="mt-1 flex-shrink-0">
-																			{#if connection.connected}
-																				<div
-																					class="bg-success border-success-light h-2.5 w-2.5 rounded-full border shadow-sm"
-																				></div>
-																			{:else if establishingConnections.has(connection.id)}
-																				<div
-																					class="bg-primary border-primary-light h-2.5 w-2.5 animate-pulse rounded-full border shadow-sm"
-																				></div>
-																			{:else}
-																				<div
-																					class="bg-muted-foreground/40 border-muted-foreground/20 h-2.5 w-2.5 rounded-full border"
-																				></div>
-																			{/if}
-																		</div>
-
-																		<div class="min-w-0 flex-1 text-left">
-																			<div
-																				class="text-foreground mb-1 truncate text-xs font-medium"
-																			>
-																				{connection.name}
-																			</div>
-																			<div class="text-muted-foreground/80 truncate text-xs">
-																				{connection.connection_string
-																					.replace(/^postgresql?:\/\/[^@]*@/, '')
-																					.replace(/\/[^?]*/, '')}
-																			</div>
-																		</div>
-																	</div>
-																</Button>
-															{/each}
-														{/if}
-													</div>
-												</div>
-											{/snippet}
-										</AccordionContent>
-									{/snippet}
-								</AccordionItem>
-
-								<!-- Scripts Accordion -->
-								<AccordionItem title="Scripts" icon={FileText} bind:open={isScriptsAccordionOpen}>
-									{#snippet children()}
-										<AccordionContent>
-											{#snippet children()}
-												<div class="space-y-3">
-													<Button
-														class="w-full justify-start gap-2 shadow-sm hover:shadow-md"
-														variant="outline"
-														onclick={createNewScript}
-													>
-														<Plus class="h-4 w-4" />
-														New Script
-													</Button>
-
-													<div class="space-y-2">
-														{#if scripts.length === 0}
-															<div class="px-4 py-8 text-center">
-																<div
-																	class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3"
-																>
-																	<FileText class="text-muted-foreground/50 h-6 w-6" />
-																</div>
-																<p class="text-muted-foreground mb-1 text-xs font-medium">
-																	No saved scripts yet
-																</p>
-																<p class="text-muted-foreground/70 text-xs">
-																	Save your SQL queries to access them later
-																</p>
-															</div>
-														{:else}
-															{#each scripts as script (script.id)}
-																<div class="group relative">
-																	<Button
-																		variant={activeScriptId === script.id ? 'secondary' : 'ghost'}
-																		class="h-auto w-full justify-start p-3 shadow-sm transition-all duration-200 hover:shadow-md {activeScriptId ===
-																		script.id
-																			? 'bg-primary/10 border-primary/20 border shadow-md'
-																			: ''}"
-																		onclick={() => selectScript(script)}
-																	>
-																		<div class="flex w-full items-start gap-3">
-																			<div class="mt-1 flex-shrink-0">
-																				<FileText class="text-muted-foreground h-3 w-3" />
-																			</div>
-
-																			<div class="min-w-0 flex-1 text-left">
-																				<div
-																					class="text-foreground mb-1 truncate text-xs font-medium"
-																				>
-																					{script.name}
-																					{#if activeScriptId === script.id && unsavedChanges.has(script.id)}
-																						<span class="text-orange-500">*</span>
-																					{/if}
-																				</div>
-																				<div class="text-muted-foreground/80 truncate text-xs">
-																					Modified {new Date(
-																						script.updated_at * 1000
-																					).toLocaleDateString()}
-																				</div>
-																			</div>
-																		</div>
-																	</Button>
-
-																	<!-- Delete button (visible on hover) -->
-																	<button
-																		class="absolute top-2 right-2 rounded p-1 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-100 hover:text-red-600"
-																		onclick={(e) => {
-																			e.stopPropagation();
-																			deleteScript(script);
-																		}}
-																		title="Delete script"
-																	>
-																		<svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-																			<path
-																				fill-rule="evenodd"
-																				d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-																				clip-rule="evenodd"
-																			></path>
-																		</svg>
-																	</button>
-																</div>
-															{/each}
-														{/if}
-													</div>
-												</div>
-											{/snippet}
-										</AccordionContent>
-									{/snippet}
-								</AccordionItem>
-
-								<!-- Items Accordion -->
-								<AccordionItem title="Items" icon={Table} bind:open={isItemsAccordionOpen}>
-									{#snippet children()}
-										<AccordionContent>
-											{#snippet children()}
-												{#if isItemsAccordionOpen}
-													<DatabaseSchemaItems
-														{databaseSchema}
-														{loadingSchema}
-														{selectedConnection}
-														onTableClick={handleTableClick}
-													/>
-												{/if}
-											{/snippet}
-										</AccordionContent>
-									{/snippet}
-								</AccordionItem>
-							{/snippet}
-						</Accordion>
-					</div>
-				{/if}
-			</div>
+			<AppSidebar
+				{connections}
+				{selectedConnection}
+				{establishingConnections}
+				{scripts}
+				{activeScriptId}
+				{unsavedChanges}
+				{newScripts}
+				{databaseSchema}
+				{loadingSchema}
+				bind:isSidebarCollapsed
+				bind:isConnectionsAccordionOpen
+				bind:isScriptsAccordionOpen
+				bind:isItemsAccordionOpen
+				onSelectConnection={selectConnection}
+				onConnectToDatabase={connectToDatabase}
+				onShowConnectionForm={() => (showConnectionForm = true)}
+				onSelectScript={selectScript}
+				onCreateNewScript={createNewScript}
+				onDeleteScript={deleteScript}
+				onTableClick={handleTableClick}
+			/>
 		</ResizablePane>
 
 		<ResizableHandle />
