@@ -5,6 +5,7 @@ use tokio_postgres::{
     types::{FromSql, Type},
     Row,
 };
+use rust_decimal::Decimal;
 
 #[derive(Debug)]
 pub struct PgRecord {
@@ -204,13 +205,10 @@ impl RowWriter {
             }
 
             Type::NUMERIC => {
-                let value: String = row.try_get(column_index)?;
-                // Try to parse as number, fallback to string
-                if value.parse::<f64>().is_ok() {
-                    self.json.push_str(&value);
-                } else {
-                    self.write_json_string(&value);
-                }
+                // Decode NUMERIC into Decimal (full precision)
+                let value: Decimal = row.try_get(column_index)?;
+                // Send as string to the frontend to avoid precision loss
+                self.write_json_string(&value.to_string());
             }
 
             Type::JSON | Type::JSONB => {
