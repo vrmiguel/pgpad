@@ -142,9 +142,11 @@ export function createSvelteTable<TData extends RowData>(options: DataTableOptio
 	};
 }
 
-export function createQueryColumns(columnNames: string[]): ColumnDef<Record<string, any>>[] {
-	return columnNames.map((column) => ({
-		accessorKey: column,
+import type { PgRow } from '$lib/commands.svelte';
+
+export function createQueryColumns(columnNames: string[]): ColumnDef<PgRow>[] {
+	return columnNames.map((column, index) => ({
+		accessorFn: (row) => row[index],
 		header: column,
 		size: 150,
 		minSize: 50,
