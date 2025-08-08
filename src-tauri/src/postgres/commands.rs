@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::Context;
 use futures_util::{pin_mut, TryStreamExt};
+use serde_json::value::RawValue;
 use tauri::ipc::Channel;
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
@@ -138,7 +139,7 @@ pub async fn execute_query_stream(
 
             let mut columns_sent = false;
             let mut batch_size = 50;
-            let max_batch_size = 150;
+            let max_batch_size = 500;
             let mut total_rows = 0;
 
             let mut writer = RowWriter::new();
@@ -161,6 +162,9 @@ pub async fn execute_query_stream(
                         writer.add_row(&row)?;
 
                         total_rows += 1;
+
+                        // let s = serde_json::from_str::<&RawValue>("hey").unwrap();
+                        // TODO: maybe writer.finish returns RawValue directly?
 
                         if writer.len() >= batch_size {
                             channel

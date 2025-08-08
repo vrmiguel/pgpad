@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use tokio_postgres::Client;
 use uuid::Uuid;
 
@@ -45,7 +46,7 @@ pub struct DatabaseSchema {
     pub unique_columns: Vec<String>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Serialize)]
 #[serde(
     rename_all = "camelCase",
     rename_all_fields = "camelCase",
@@ -60,7 +61,7 @@ pub enum QueryStreamEvent<'a> {
     },
     Batch {
         // serialized JSON through [`RowBatch`]
-        rows: String,
+        rows: Box<RawValue>,
     },
     /// all rows were sent
     Finish {},

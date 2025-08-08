@@ -41,17 +41,24 @@
 
 			case 'batch':
 				console.log('Got batch data');
-				const rawRows = event.data.rows.trim();
-				const rows = rawRows === '' ? [] : JSON.parse(rawRows);
+				const rows = event.data.rows || [];
 
 				console.log(`Adding ${rows.length} rows to stream`);
-				const newRows = rows.map((row: any[]) => {
+
+				const columnCount = queryColumns.length;
+				const rowCount = rows.length;
+				const newRows = new Array(rowCount);
+
+				for (let i = 0; i < rowCount; i++) {
+					const row = rows[i];
 					const rowObj: Record<string, any> = {};
-					queryColumns.forEach((col, i) => {
-						rowObj[col] = row[i];
-					});
-					return rowObj;
-				});
+
+					for (let j = 0; j < columnCount; j++) {
+						rowObj[queryColumns[j]] = row[j];
+					}
+
+					newRows[i] = rowObj;
+				}
 
 				queryRows = queryRows.concat(newRows);
 				queryRowCount += rows.length;

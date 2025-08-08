@@ -36,8 +36,7 @@ export type QueryStreamEvent =
 	| {
 			event: 'batch';
 			data: {
-				// JSON serialized rows
-				rows: string;
+				rows: any[][];
 			};
 	  }
 	| {
