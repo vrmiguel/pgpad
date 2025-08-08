@@ -1,4 +1,5 @@
 use rust_decimal::Decimal;
+use serde_json::value::RawValue;
 use std::fmt::Write;
 use tokio_postgres::{types::Type, Row};
 
@@ -58,10 +59,11 @@ impl RowWriter {
         self.row_count == 0
     }
 
-    pub fn finish(&mut self) -> String {
+    pub fn finish(&mut self) -> Box<RawValue> {
         self.json.push(']');
 
-        std::mem::replace(&mut self.json, String::new())
+        let json = std::mem::replace(&mut self.json, String::new());
+        RawValue::from_string(json).unwrap()
     }
 
     pub fn clear(&mut self) {
@@ -359,7 +361,7 @@ mod tests {
         let mut writer = RowWriter::new();
         writer.add_row(&row).unwrap();
         let result = writer.finish();
-        let result: Value = serde_json::from_str(&result).unwrap();
+        let result: Value = serde_json::from_str(result.get()).unwrap();
         assert_eq!(
             result,
             serde_json::json!([
