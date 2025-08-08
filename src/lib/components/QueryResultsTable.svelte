@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { FlexRender, createSvelteTable, createQueryColumns } from '$lib/components/ui/data-table';
+	import type { PgRow } from '$lib/commands.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import JsonViewer from './JsonViewer.svelte';
@@ -14,7 +15,7 @@
 	import { untrack } from 'svelte';
 
 	interface Props {
-		data: Record<string, any>[];
+		data: PgRow[];
 		columns: string[];
 		table?: any;
 		globalFilter?: string;
@@ -26,34 +27,6 @@
 	let resizePreviewX = $state(0);
 	let resizingColumnId = $state<string | null>(null);
 	let tableContainer: HTMLDivElement;
-
-	function tryParseJson(value: any): { isJson: boolean; parsed?: any } {
-		if (value === null || value === undefined) {
-			return { isJson: false };
-		}
-
-		if (typeof value === 'object') {
-			return { isJson: true, parsed: value };
-		}
-
-		if (typeof value === 'string') {
-			try {
-				const trimmed = value.trim();
-				// Check if it looks like JSON (starts with { or [)
-				if (
-					(trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-					(trimmed.startsWith('[') && trimmed.endsWith(']'))
-				) {
-					const parsed = JSON.parse(trimmed);
-					return { isJson: true, parsed };
-				}
-			} catch {
-				// Not valid JSON, treat as string
-			}
-		}
-
-		return { isJson: false };
-	}
 
 	const columnDefs = $derived(createQueryColumns(columns));
 
@@ -207,28 +180,27 @@
 						{#each tableInstance.getPaginationRowModel().rows as row (row.id)}
 							<tr class="border-border/30 hover:bg-muted/20 border-b transition-colors">
 								{#each row.getVisibleCells() as cell (cell.column.id)}
-									{@const rawValue = cell.getValue()}
+									{@const cellValue = cell.getValue()}
 									{@const columnWidth = cell.column.getSize()}
-									{@const originalValue = cell.row.original[cell.column.id]}
-									{@const jsonResult = tryParseJson(rawValue)}
+									{@const isObject = typeof cellValue === 'object' && cellValue !== null}
 									<td
 										class="border-border/20 border-r px-2 py-1 align-top text-xs"
 										style="width: {columnWidth}px"
-										title={originalValue !== null && originalValue !== undefined
-											? String(originalValue)
+										title={cellValue !== null && cellValue !== undefined
+											? (isObject ? '{ .. }' : String(cellValue))
 											: undefined}
 									>
-										{#if rawValue === null || rawValue === undefined}
+										{#if cellValue === null || cellValue === undefined}
 											<span class="text-muted-foreground text-xs italic">NULL</span>
-										{:else if typeof rawValue === 'boolean'}
-											<span class="text-foreground">{rawValue ? 'true' : 'false'}</span>
-										{:else if typeof rawValue === 'number'}
-											<span class="text-foreground font-mono">{rawValue.toLocaleString()}</span>
-										{:else if jsonResult.isJson}
-											<JsonViewer json={jsonResult.parsed} depth={2} />
+										{:else if typeof cellValue === 'boolean'}
+											<span class="text-foreground">{cellValue ? 'true' : 'false'}</span>
+										{:else if typeof cellValue === 'number'}
+											<span class="text-foreground font-mono">{cellValue.toLocaleString()}</span>
+										{:else if isObject}
+											<JsonViewer json={cellValue} depth={2} />
 										{:else}
 											<div class="text-foreground truncate" style="max-width: {columnWidth - 16}px">
-												{String(rawValue || '')}
+												{String(cellValue || '')}
 											</div>
 										{/if}
 									</td>

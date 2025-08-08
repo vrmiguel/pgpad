@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Commands, type QueryStreamEvent } from '$lib/commands.svelte';
+	import { Commands, type QueryStreamEvent, type PgRow } from '$lib/commands.svelte';
 	import { onDestroy } from 'svelte';
 	import QueryResultsTable from './QueryResultsTable.svelte';
 	import { Loader } from '@lucide/svelte';
@@ -15,7 +15,7 @@
 
 	let isStreaming = $state(false);
 	let queryColumns = $state<string[]>([]);
-	let queryRows = $state<any[]>([]);
+	let queryRows = $state<PgRow[]>([]);
 	let queryRowCount = $state(0);
 	let streamingStartTime = $state<number>(0);
 	let queryError = $state<string | null>(null);
@@ -45,22 +45,7 @@
 
 				console.log(`Adding ${rows.length} rows to stream`);
 
-				const columnCount = queryColumns.length;
-				const rowCount = rows.length;
-				const newRows = new Array(rowCount);
-
-				for (let i = 0; i < rowCount; i++) {
-					const row = rows[i];
-					const rowObj: Record<string, any> = {};
-
-					for (let j = 0; j < columnCount; j++) {
-						rowObj[queryColumns[j]] = row[j];
-					}
-
-					newRows[i] = rowObj;
-				}
-
-				queryRows = queryRows.concat(newRows);
+				queryRows = queryRows.concat(rows);
 				queryRowCount += rows.length;
 				console.log(`Total rows now: ${queryRowCount}`);
 				break;
