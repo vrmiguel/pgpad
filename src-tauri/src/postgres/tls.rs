@@ -42,15 +42,12 @@ impl Certificates {
         let mut max_wait = 10;
         while !self.certs.initialized() {
             tokio::time::sleep(Duration::from_millis(100)).await;
-            max_wait -= 1;
-            if max_wait == 0 {
-                panic!("Certificates not initialized");
-            }
 
             ensure!(
                 max_wait > 0,
                 "Certificates not initialized within the expected time"
             );
+            max_wait -= 1;
         }
 
         // Safety: `initialized` just returned true

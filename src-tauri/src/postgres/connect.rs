@@ -26,7 +26,7 @@ pub async fn connect(
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to connect to Postgres: {}", e))?;
 
-            tokio::spawn(check_connection::<MakeRustlsConnect>(conn));
+            tauri::async_runtime::spawn(check_connection::<MakeRustlsConnect>(conn));
 
             client
         }
@@ -37,7 +37,7 @@ pub async fn connect(
                 .await
                 .with_context(|| format!("Failed to connect to Postgres: {}", connection_string))?;
 
-            tokio::spawn(check_connection::<NoTls>(conn));
+            tauri::async_runtime::spawn(check_connection::<NoTls>(conn));
 
             client
         }
