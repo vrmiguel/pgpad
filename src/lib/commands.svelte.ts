@@ -1,13 +1,7 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 
 // What Rust sends us after processing query results (basically, JSON)
-export type PgValue = 
-	| string 
-	| number 
-	| boolean 
-	| null 
-	| PgValue[] 
-	| { [key: string]: PgValue };
+export type PgValue = string | number | boolean | null | PgValue[] | { [key: string]: PgValue };
 
 export type PgRow = PgValue[];
 

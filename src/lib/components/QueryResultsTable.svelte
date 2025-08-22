@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { FlexRender, createSvelteTable, createQueryColumns } from '$lib/components/ui/data-table';
 	import type { PgRow } from '$lib/commands.svelte';
+	import type { Cell } from '@tanstack/table-core';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import JsonViewer from './JsonViewer.svelte';
@@ -27,6 +28,16 @@
 	let resizePreviewX = $state(0);
 	let resizingColumnId = $state<string | null>(null);
 	let tableContainer: HTMLDivElement;
+
+	const COLUMN_RESIZE = {
+		MIN_WIDTH: 150,
+		CHAR_WIDTH: 8,
+		PADDING: 32,
+		MAX_WIDTH: 600
+	} as const;
+
+	let selectedCell = $state<{ rowId: string; columnId: string } | null>(null);
+	let originalColumnWidths = $state<Map<string, number>>(new Map());
 
 	const columnDefs = $derived(createQueryColumns(columns));
 
@@ -70,6 +81,13 @@
 		table = tableInstance;
 	});
 
+	$effect(() => {
+		// Reset selection and column widths when data changes
+		data;
+		selectedCell = null;
+		originalColumnWidths.clear();
+	});
+
 	function createResizeHandler(header: any) {
 		return (downEvent: MouseEvent | TouchEvent) => {
 			if (!tableContainer) return;
@@ -108,7 +126,103 @@
 			}
 		};
 	}
+
+	function handleCellClick(cell: Cell<PgRow, unknown>, rowId: string, event: MouseEvent) {
+		const cellValue = cell.getValue();
+		const columnId = cell.column.id;
+		
+		// Deselect when clicking the selected cell
+		if (selectedCell && selectedCell.rowId === rowId && selectedCell.columnId === columnId) {
+			selectedCell = null;
+			restoreOriginalColumnWidths();
+			return;
+		}
+
+		if (tableInstance && !originalColumnWidths.has(columnId)) {
+			originalColumnWidths.set(columnId, cell.column.getSize());
+		}
+
+		selectedCell = { rowId, columnId };
+
+		if (tableInstance && cellValue !== null && cellValue !== undefined) {
+			const contentLength = String(cellValue).length;
+			const minWidth = Math.max(
+				COLUMN_RESIZE.MIN_WIDTH,
+				Math.min(
+					contentLength * COLUMN_RESIZE.CHAR_WIDTH + COLUMN_RESIZE.PADDING,
+					COLUMN_RESIZE.MAX_WIDTH
+				)
+			);
+			tableInstance.setColumnSizing((prev) => ({
+				...prev,
+				[columnId]: minWidth
+			}));
+		}
+	}
+
+	function restoreOriginalColumnWidths() {
+		if (!tableInstance || originalColumnWidths.size === 0) return;
+
+		const sizingUpdates: Record<string, number> = {};
+		originalColumnWidths.forEach((originalWidth, columnId) => {
+			sizingUpdates[columnId] = originalWidth;
+		});
+
+		tableInstance.setColumnSizing((prev) => ({
+			...prev,
+			...sizingUpdates
+		}));
+
+		originalColumnWidths.clear();
+	}
+
+	function getCellValueForCopy(): string | null {
+		if (!selectedCell) return null;
+
+		try {
+			const row = tableInstance?.getRow(selectedCell.rowId);
+			if (!row) return null;
+
+			const cellValue = row.getValue(selectedCell.columnId);		
+			return cellValue === null || cellValue === undefined
+				? 'NULL'
+				: typeof cellValue === 'object'
+					? JSON.stringify(cellValue, null, 2)
+					: String(cellValue);
+		} catch (error) {
+			console.warn('Failed to get cell value:', error);
+			return null;
+		}
+	}
+
+	async function copyCellValue(textToCopy: string): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(textToCopy);
+		} catch (err) {
+			console.error('Failed to copy text: ', err);
+		}
+	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (!selectedCell) return;
+
+		if (event.key === 'Escape') {
+			selectedCell = null;
+			restoreOriginalColumnWidths();
+		}
+
+		if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
+			event.preventDefault();
+
+			const textToCopy = getCellValueForCopy();
+			if (textToCopy !== null) {
+				copyCellValue(textToCopy);
+			}
+		}
+	}
 </script>
+
+<svelte:window on:keydown={handleKeydown} />
 
 <div class="relative grid h-full grid-rows-[1fr_auto]">
 	<!-- Resize preview line -->
@@ -119,7 +233,7 @@
 		></div>
 	{/if}
 
-	<!-- Table content - takes remaining space -->
+	<!-- Table content -->
 	<div class="overflow-hidden" bind:this={tableContainer}>
 		<div class="h-full overflow-auto">
 			{#if tableInstance}
@@ -156,18 +270,17 @@
 														<ChevronsUpDown class="text-muted-foreground/40 ml-1 h-3 w-3" />
 													{/if}
 												</Button>
-												<!-- Column Resize Handle with improved visual feedback -->
 												{#if header.column.getCanResize()}
-													<div
-														class="absolute top-0 right-0 h-full w-1 cursor-col-resize bg-transparent transition-colors select-none hover:bg-blue-400 active:bg-blue-500 {resizingColumnId ===
+													<button
+														class="absolute top-0 right-0 h-full w-1 cursor-col-resize border-none bg-transparent transition-colors select-none hover:bg-blue-400 focus:bg-blue-400 focus:outline-none active:bg-blue-500 {resizingColumnId ===
 														header.column.id
 															? 'bg-blue-500'
 															: ''}"
 														onmousedown={createResizeHandler(header)}
 														ontouchstart={createResizeHandler(header)}
-														role="separator"
+														type="button"
 														aria-label="Resize column"
-													></div>
+													></button>
 												{/if}
 											</div>
 										{/if}
@@ -183,26 +296,49 @@
 									{@const cellValue = cell.getValue()}
 									{@const columnWidth = cell.column.getSize()}
 									{@const isObject = typeof cellValue === 'object' && cellValue !== null}
+									{@const isSelected = selectedCell
+										? selectedCell.rowId === row.id && selectedCell.columnId === cell.column.id
+										: false}
 									<td
-										class="border-border/20 border-r px-2 py-1 align-top text-xs"
+										class="border-border/20 border-r px-0 py-0 align-top text-xs transition-colors {isSelected
+											? 'bg-blue-100 ring-1 ring-blue-400 dark:bg-blue-900/30'
+											: ''}"
 										style="width: {columnWidth}px"
-										title={cellValue !== null && cellValue !== undefined
-											? (isObject ? '{ .. }' : String(cellValue))
-											: undefined}
+										role="gridcell"
+										aria-selected={isSelected}
 									>
-										{#if cellValue === null || cellValue === undefined}
-											<span class="text-muted-foreground text-xs italic">NULL</span>
-										{:else if typeof cellValue === 'boolean'}
-											<span class="text-foreground">{cellValue ? 'true' : 'false'}</span>
-										{:else if typeof cellValue === 'number'}
-											<span class="text-foreground font-mono">{cellValue.toLocaleString()}</span>
-										{:else if isObject}
-											<JsonViewer json={cellValue} depth={2} />
-										{:else}
-											<div class="text-foreground truncate" style="max-width: {columnWidth - 16}px">
-												{String(cellValue || '')}
-											</div>
-										{/if}
+										<button
+											class="hover:bg-accent/30 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:ring-blue-400 focus:outline-none"
+											title={cellValue !== null && cellValue !== undefined
+												? isObject
+													? '{ .. }'
+													: String(cellValue)
+												: undefined}
+											onclick={(event) => handleCellClick(cell, row.id, event)}
+										>
+											{#if cellValue === null || cellValue === undefined}
+												<span class="cell-content text-muted-foreground text-xs italic">NULL</span>
+											{:else if typeof cellValue === 'boolean'}
+												<span class="cell-content text-foreground"
+													>{cellValue ? 'true' : 'false'}</span
+												>
+											{:else if typeof cellValue === 'number'}
+												<span class="cell-content text-foreground font-mono"
+													>{cellValue.toLocaleString()}</span
+												>
+											{:else if isObject}
+												<div class="cell-content">
+													<JsonViewer json={cellValue} depth={2} />
+												</div>
+											{:else}
+												<div
+													class="cell-content text-foreground {isSelected ? '' : 'truncate'}"
+													style="max-width: {isSelected ? 'none' : columnWidth - 16 + 'px'}"
+												>
+													{String(cellValue || '')}
+												</div>
+											{/if}
+										</button>
 									</td>
 								{/each}
 							</tr>
