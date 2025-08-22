@@ -54,18 +54,37 @@ pub struct DatabaseSchema {
     content = "data"
 )]
 pub enum QueryStreamEvent<'a> {
-    /// Sent after the query is accepted and started,
-    /// with the columns that the query will return
-    Start {
+    StatementStart {
+        statement_index: usize,
+        total_statements: usize,
+        statement: String,
+        returns_values: bool,
+    },
+
+    /// For queries that return data
+    ResultStart {
+        statement_index: usize,
         columns: Vec<&'a str>,
     },
-    Batch {
-        // serialized JSON through [`RowBatch`]
+    ResultBatch {
+        statement_index: usize,
         rows: Box<RawValue>,
     },
-    /// all rows were sent
-    Finish {},
-    Error {
+
+    /// For queries that do not return data
+    StatementComplete {
+        statement_index: usize,
+        affected_rows: u64,
+    },
+    StatementFinish {
+        statement_index: usize,
+    },
+
+    /// All statements completed
+    AllFinished {},
+    StatementError {
+        statement_index: usize,
+        statement: String,
         error: String,
     },
 }

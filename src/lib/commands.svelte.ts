@@ -33,26 +33,50 @@ export interface QueryResult {
 
 export type QueryStreamEvent =
 	| {
-			event: 'start';
+			event: 'statementStart';
 			data: {
+				statementIndex: number;
+				totalStatements: number;
+				statement: string;
+				returnsValues: boolean;
+			};
+	  }
+	| {
+			event: 'resultStart';
+			data: {
+				statementIndex: number;
 				columns: string[];
 			};
 	  }
 	| {
-			event: 'batch';
+			event: 'resultBatch';
 			data: {
+				statementIndex: number;
 				rows: PgValue[][];
 			};
 	  }
 	| {
-			event: 'finish';
+			event: 'statementComplete';
 			data: {
-				// TODO: add time elapsed
+				statementIndex: number;
+				affectedRows: number;
 			};
 	  }
 	| {
-			event: 'error';
+			event: 'statementFinish';
 			data: {
+				statementIndex: number;
+			};
+	  }
+	| {
+			event: 'allFinished';
+			data: {};
+	  }
+	| {
+			event: 'statementError';
+			data: {
+				statementIndex: number;
+				statement: string;
 				error: string;
 			};
 	  };

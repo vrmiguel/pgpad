@@ -3,19 +3,16 @@ use std::collections::{HashMap, HashSet};
 use anyhow::Context;
 use futures_util::{pin_mut, TryStreamExt};
 use tauri::ipc::Channel;
-use tokio_postgres::types::ToSql;
+use tokio_postgres::{types::ToSql, Client};
 use uuid::Uuid;
 
 use crate::{
     error::Error,
     postgres::{
-        connect::connect,
-        row_writer::RowWriter,
-        types::{
+        connect::connect, query::parse_statements, row_writer::RowWriter, types::{
             ColumnInfo, ConnectionConfig, ConnectionInfo, DatabaseConnection, DatabaseSchema,
             QueryStreamEvent, TableInfo,
-        },
-        Certificates,
+        }, Certificates
     },
     storage::{QueryHistoryEntry, SavedQuery},
     AppState,
@@ -122,8 +119,47 @@ pub async fn execute_query_stream(
         .as_ref()
         .with_context(|| format!("Connection not found: {}", connection_id))?;
 
-    let start = std::time::Instant::now();
+    let statements = parse_statements(query)?;
+    let total_statements = statements.len();
 
+    for (index, statement) in statements.iter().enumerate() {
+        channel
+            .send(QueryStreamEvent::StatementStart {
+                statement_index: index,
+                total_statements,
+                statement: statement.statement.clone(),
+                returns_values: statement.returns_values,
+            })
+            .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
+
+        if statement.returns_values {
+            execute_query_with_results(client, &statement.statement, index, &channel).await?;
+        } else {
+            execute_modification_query(client, &statement.statement, index, &channel).await?;
+        }
+
+        channel
+            .send(QueryStreamEvent::StatementFinish {
+                statement_index: index,
+            })
+            .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
+    }
+
+    channel
+        .send(QueryStreamEvent::AllFinished {})
+        .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
+
+    Ok(())
+}
+
+async fn execute_query_with_results(
+    client: &Client,
+    query: &str,
+    statement_index: usize,
+    channel: &Channel<QueryStreamEvent<'_>>,
+) -> Result<(), Error> {
+    let start = std::time::Instant::now();
+    // execute_query_with_results
     log::info!("Starting streaming query: {}", query);
 
     fn slice_iter<'a>(
@@ -152,7 +188,10 @@ pub async fn execute_query_stream(
                                 row.columns().iter().map(|col| col.name()).collect();
 
                             channel
-                                .send(QueryStreamEvent::Start { columns })
+                                .send(QueryStreamEvent::ResultStart { 
+                                    statement_index,
+                                    columns 
+                                })
                                 .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
 
                             columns_sent = true;
@@ -167,7 +206,8 @@ pub async fn execute_query_stream(
 
                         if writer.len() >= batch_size {
                             channel
-                                .send(QueryStreamEvent::Batch {
+                                .send(QueryStreamEvent::ResultBatch {
+                                    statement_index,
                                     rows: writer.finish(),
                                 })
                                 .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
@@ -185,7 +225,9 @@ pub async fn execute_query_stream(
                         let error_msg = format!("Query failed: {}", e);
 
                         channel
-                            .send(QueryStreamEvent::Error {
+                            .send(QueryStreamEvent::StatementError {
+                                statement_index,
+                                statement: query.to_string(),
                                 error: error_msg.clone(),
                             })
                             .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
@@ -197,16 +239,12 @@ pub async fn execute_query_stream(
 
             if !writer.is_empty() {
                 channel
-                    .send(QueryStreamEvent::Batch {
+                    .send(QueryStreamEvent::ResultBatch {
+                        statement_index,
                         rows: writer.finish(),
                     })
                     .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
             }
-
-            log::info!("Emitting stream completion");
-            channel
-                .send(QueryStreamEvent::Finish {})
-                .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
 
             let duration = start.elapsed().as_millis() as u64;
             log::info!(
@@ -222,7 +260,44 @@ pub async fn execute_query_stream(
             let error_msg = format!("Query failed: {}", e);
 
             channel
-                .send(QueryStreamEvent::Error {
+                .send(QueryStreamEvent::StatementError {
+                    statement_index,
+                    statement: query.to_string(),
+                    error: error_msg.clone(),
+                })
+                .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
+
+            Err(Error::Any(anyhow::anyhow!(error_msg)))
+        }
+    }
+}
+
+async fn execute_modification_query(
+    client: &Client,
+    query: &str,
+    statement_index: usize,
+    channel: &Channel<QueryStreamEvent<'_>>,
+) -> Result<(), Error> {
+    log::info!("Executing modification query: {}", query);
+
+    match client.execute(query, &[]).await {
+        Ok(rows_affected) => {
+            channel
+                .send(QueryStreamEvent::StatementComplete {
+                    statement_index,
+                    affected_rows: rows_affected,
+                })
+                .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Modification query failed: {:?}", e);
+            let error_msg = format!("Query failed: {}", e);
+
+            channel
+                .send(QueryStreamEvent::StatementError {
+                    statement_index,
+                    statement: query.to_string(),
                     error: error_msg.clone(),
                 })
                 .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;

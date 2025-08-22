@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { Card, CardHeader, CardContent } from '$lib/components/ui/card';
-	import StreamingQueryResults from './StreamingQueryResults.svelte';
+	import QueryResultsTable from './QueryResultsTable.svelte';
+	import StatementExecutor from './StatementExecutor.svelte';
+	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import {
 		Commands,
 		type ConnectionInfo,
@@ -41,7 +43,24 @@
 SELECT 1 as test;`);
 
 	let queryHistory = $state<QueryHistoryEntry[]>([]);
-	let activeTab = $state<'results' | 'history'>('results');
+
+	interface QueryResultTab {
+		id: string;
+		name: string;
+		query: string;
+		timestamp: number;
+		status: 'running' | 'completed' | 'error';
+		statementIndex?: number;
+		isModificationQuery?: boolean;
+		affectedRows?: number;
+		columns?: string[];
+		rows?: any[][];
+		error?: string;
+	}
+
+	let resultTabs = $state<QueryResultTab[]>([]);
+	let activeResultTabId = $state<string | null>(null);
+	let showHistory = $state(false);
 
 	// Query execution state
 	let currentQuery = $state<string>('');
@@ -76,10 +95,11 @@ SELECT 1 as test;`);
 	}
 
 	function handleQueryComplete(rowCount: number, duration: number) {
-		// Don't set isExecuting = false here!
-		// Let the StreamingQueryResults component stay mounted to show results
+		if (activeResultTabId) {
+			const tab = resultTabs.find((t) => t.id === activeResultTabId);
+			if (tab) tab.status = 'completed';
+		}
 
-		// Save successful query to history
 		if (selectedConnection) {
 			Commands.saveQueryToHistory(
 				selectedConnection,
@@ -94,11 +114,18 @@ SELECT 1 as test;`);
 	}
 
 	function handleQueryError(error: string) {
+		if (activeResultTabId) {
+			const tab = resultTabs.find((t) => t.id === activeResultTabId);
+			if (tab) tab.status = 'error';
+		}
+
 		if (selectedConnection) {
 			Commands.saveQueryToHistory(selectedConnection, currentQuery, 0, 'error', 0, error);
 			loadQueryHistory();
 		}
 	}
+
+	let executionTrigger = $state(0);
 
 	export function handleExecuteQuery(queryToExecute?: string) {
 		const query = queryToExecute || sqlQuery;
@@ -110,8 +137,107 @@ SELECT 1 as test;`);
 		}
 
 		currentQuery = query.trim();
-		// Remove isExecuting = true since we're not using it for component mounting anymore
-		activeTab = 'results';
+
+		resultTabs = [];
+		activeResultTabId = null;
+
+		// Trigger new execution
+		executionTrigger++;
+
+		console.log('HandleExecuteQuery called with:', currentQuery, 'trigger:', executionTrigger);
+
+		showHistory = false;
+	}
+
+	function handleStatementStart(
+		statementIndex: number,
+		statement: string,
+		returnsValues: boolean
+	): string {
+		const tabId = crypto.randomUUID();
+
+		if (returnsValues) {
+			const newTab: QueryResultTab = {
+				id: tabId,
+				name: generateTabTitle(statement),
+				query: statement,
+				timestamp: Date.now(),
+				status: 'running',
+				statementIndex
+			};
+
+			resultTabs.push(newTab);
+			activeResultTabId = tabId;
+		} else {
+			const newTab: QueryResultTab = {
+				id: tabId,
+				name: generateTabTitle(statement),
+				query: statement,
+				timestamp: Date.now(),
+				status: 'running',
+				statementIndex,
+				isModificationQuery: true
+			};
+
+			resultTabs.push(newTab);
+			activeResultTabId = tabId;
+		}
+
+		return tabId;
+	}
+
+	function handleStatementComplete(tabId: string, rowCount: number, duration: number) {
+		const tab = resultTabs.find((t) => t.id === tabId);
+		if (tab) {
+			if (tab.isModificationQuery) {
+				tab.affectedRows = rowCount;
+			}
+			tab.status = 'completed';
+		}
+
+		if (selectedConnection && tab) {
+			Commands.saveQueryToHistory(
+				selectedConnection,
+				tab.query,
+				duration,
+				'success',
+				rowCount,
+				undefined
+			);
+			loadQueryHistory();
+		}
+	}
+
+	// Handle when a statement has an error
+	function handleStatementError(tabId: string, error: string) {
+		const tab = resultTabs.find((t) => t.id === tabId);
+		if (tab) {
+			tab.status = 'error';
+			tab.error = error;
+		}
+
+		// Save to history
+		if (selectedConnection && tab) {
+			Commands.saveQueryToHistory(selectedConnection, tab.query, 0, 'error', 0, error);
+			loadQueryHistory();
+		}
+	}
+
+	// Handle tab updates from StatementExecutor
+	function handleTabUpdate(tabId: string, updates: Partial<QueryResultTab>) {
+		const tabIndex = resultTabs.findIndex((t) => t.id === tabId);
+		if (tabIndex !== -1) {
+			const tab = resultTabs[tabIndex];
+
+			// Handle row batching specially
+			if (updates.rows && tab.rows) {
+				// Append new rows to existing ones
+				tab.rows = [...tab.rows, ...updates.rows];
+			} else {
+				// Apply other updates
+				Object.assign(tab, updates);
+			}
+		}
 	}
 
 	export function handleExecuteQueryStream(queryToExecute?: string) {
@@ -133,6 +259,58 @@ SELECT 1 as test;`);
 	function formatTimestamp(timestamp: number): string {
 		return new Date(timestamp * 1000).toLocaleString();
 	}
+
+	function generateTabTitle(query: string): string {
+		const cleaned = query.trim().replace(/\s+/g, ' ');
+		if (cleaned.length <= 30) return cleaned;
+		return cleaned.substring(0, 27) + '...';
+	}
+
+	function handleResultTabClose(tabId: string | number) {
+		if (tabId === 'history') return;
+
+		resultTabs = resultTabs.filter((tab) => tab.id !== tabId);
+
+		if (activeResultTabId === tabId) {
+			activeResultTabId = resultTabs.length > 0 ? resultTabs[0].id : null;
+		}
+	}
+
+	function handleResultTabSelect(tabId: string | number) {
+		if (tabId === 'history') {
+			showHistory = true;
+			activeResultTabId = null;
+		} else {
+			showHistory = false;
+			activeResultTabId = tabId as string;
+		}
+	}
+
+	function getTabStatus(tab: any): 'normal' | 'modified' | 'error' {
+		if (tab.id === 'history') return 'normal';
+
+		switch (tab.status) {
+			case 'error':
+				return 'error';
+			case 'running':
+				return 'modified';
+			default:
+				return 'normal';
+		}
+	}
+
+	// Create combined tabs (results + history)
+	const allTabs = $derived(() => {
+		const tabs = [...resultTabs];
+		tabs.push({
+			id: 'history',
+			name: `History (${queryHistory.length})`,
+			query: '',
+			timestamp: 0,
+			status: 'completed' as const
+		});
+		return tabs;
+	});
 
 	// Load database schema for editor completion
 	async function loadDatabaseSchema() {
@@ -209,63 +387,23 @@ SELECT 1 as test;`);
 		<ResizablePane defaultSize={40} minSize={20}>
 			<div class="h-full px-1 pt-0.5 pb-1">
 				<Card class="flex h-full min-h-0 flex-col gap-1 overflow-hidden py-2">
-					<CardHeader class="flex-shrink-0 pb-1">
-						<!-- Tab navigation -->
-						<div class="mb-1 flex items-center gap-1">
-							<button
-								type="button"
-								class="flex items-center gap-2 rounded px-2 py-1 text-xs transition-colors {activeTab ===
-								'results'
-									? 'bg-primary text-primary-foreground'
-									: 'hover:bg-muted'}"
-								onclick={() => (activeTab = 'results')}
-							>
-								<Table class="h-3 w-3" />
-								Results
-							</button>
-							<button
-								type="button"
-								class="flex items-center gap-2 rounded px-2 py-1 text-xs transition-colors {activeTab ===
-								'history'
-									? 'bg-primary text-primary-foreground'
-									: 'hover:bg-muted'}"
-								onclick={() => (activeTab = 'history')}
-							>
-								<History class="h-3 w-3" />
-								History
-								{#if queryHistory.length > 0}
-									<span class="text-xs opacity-75">({queryHistory.length})</span>
-								{/if}
-							</button>
-						</div>
+					<CardHeader class="flex-shrink-0 pb-0">
+						<!-- Result Tabs -->
+						<TabBar
+							tabs={allTabs()}
+							activeTabId={showHistory ? 'history' : activeResultTabId}
+							onTabSelect={handleResultTabSelect}
+							onTabClose={handleResultTabClose}
+							showCloseButton={true}
+							showNewTabButton={false}
+							allowRename={false}
+							{getTabStatus}
+							closeTabLabel="Close result tab"
+							maxTabWidth="max-w-64"
+						/>
 					</CardHeader>
 
-					{#if activeTab === 'results'}
-						<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
-							{#if currentQuery && selectedConnection}
-								<StreamingQueryResults
-									connectionId={selectedConnection}
-									query={currentQuery}
-									onComplete={handleQueryComplete}
-									onError={handleQueryError}
-								/>
-							{:else}
-								<div class="text-muted-foreground flex flex-1 items-center justify-center">
-									<div class="text-center">
-										<div
-											class="bg-muted/20 mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
-										>
-											<Table class="text-muted-foreground/50 h-8 w-8" />
-										</div>
-										<p class="text-sm font-medium">No results to display</p>
-										<p class="text-muted-foreground/70 mt-1 text-xs">
-											Run a query to see results here
-										</p>
-									</div>
-								</div>
-							{/if}
-						</CardContent>
-					{:else if activeTab === 'history'}
+					{#if showHistory}
 						<CardContent class="flex min-h-0 flex-1 flex-col p-0">
 							{#if queryHistory.length > 0}
 								<div class="flex-1 overflow-auto">
@@ -335,9 +473,84 @@ SELECT 1 as test;`);
 								</div>
 							{/if}
 						</CardContent>
+					{:else if activeResultTabId}
+						{@const activeTab = resultTabs.find((t) => t.id === activeResultTabId)}
+						{#if activeTab}
+							<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
+								{#if activeTab.error}
+									<!-- Error state -->
+									<div class="flex h-full flex-1 items-center justify-center">
+										<div class="text-center">
+											<div class="text-sm text-red-600">❌ {activeTab.error}</div>
+										</div>
+									</div>
+								{:else if activeTab.isModificationQuery}
+									<!-- Modification query result -->
+									<div class="flex h-full flex-1 items-center justify-center">
+										<div class="text-center">
+											{#if activeTab.status === 'running'}
+												<div class="text-muted-foreground text-sm">
+													Executing modification query...
+												</div>
+											{:else if activeTab.status === 'completed'}
+												<div class="text-sm font-medium text-green-600">
+													✓ {activeTab.affectedRows || 0} rows affected
+												</div>
+											{/if}
+										</div>
+									</div>
+								{:else if activeTab.status === 'running'}
+									<!-- Loading state for SELECT queries -->
+									<div class="flex h-full flex-1 items-center justify-center">
+										<div class="text-center">
+											<div class="text-muted-foreground text-sm">Loading results...</div>
+										</div>
+									</div>
+								{:else if activeTab.columns && activeTab.rows}
+									<!-- SELECT query results -->
+									{#if activeTab.rows.length > 0}
+										<QueryResultsTable data={activeTab.rows} columns={activeTab.columns} />
+									{:else}
+										<div class="flex h-full flex-1 items-center justify-center">
+											<div class="text-center">
+												<div class="text-muted-foreground text-sm">No rows returned.</div>
+											</div>
+										</div>
+									{/if}
+								{/if}
+							</CardContent>
+						{/if}
+					{:else}
+						<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
+							<div class="text-muted-foreground flex flex-1 items-center justify-center">
+								<div class="text-center">
+									<div
+										class="bg-muted/20 mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
+									>
+										<Table class="text-muted-foreground/50 h-8 w-8" />
+									</div>
+									<p class="text-sm font-medium">No results to display</p>
+									<p class="text-muted-foreground/70 mt-1 text-xs">
+										Run a query to see results here
+									</p>
+								</div>
+							</div>
+						</CardContent>
 					{/if}
 				</Card>
 			</div>
 		</ResizablePane>
 	</ResizablePaneGroup>
+
+	{#if currentQuery && selectedConnection}
+		<StatementExecutor
+			connectionId={selectedConnection}
+			query={currentQuery}
+			{executionTrigger}
+			onStatementStart={handleStatementStart}
+			onStatementComplete={handleStatementComplete}
+			onStatementError={handleStatementError}
+			onTabUpdate={handleTabUpdate}
+		/>
+	{/if}
 </div>
