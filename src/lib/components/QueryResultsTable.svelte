@@ -127,10 +127,10 @@
 		};
 	}
 
-	function handleCellClick(cell: Cell<PgRow, unknown>, rowId: string, event: MouseEvent) {
+	function handleCellClick(cell: Cell<PgRow, unknown>, rowId: string, _event: MouseEvent) {
 		const cellValue = cell.getValue();
 		const columnId = cell.column.id;
-		
+
 		// Deselect when clicking the selected cell
 		if (selectedCell && selectedCell.rowId === rowId && selectedCell.columnId === columnId) {
 			selectedCell = null;
@@ -183,7 +183,7 @@
 			const row = tableInstance?.getRow(selectedCell.rowId);
 			if (!row) return null;
 
-			const cellValue = row.getValue(selectedCell.columnId);		
+			const cellValue = row.getValue(selectedCell.columnId);
 			return cellValue === null || cellValue === undefined
 				? 'NULL'
 				: typeof cellValue === 'object'
@@ -209,15 +209,84 @@
 		if (event.key === 'Escape') {
 			selectedCell = null;
 			restoreOriginalColumnWidths();
+			return;
 		}
 
 		if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
 			event.preventDefault();
-
 			const textToCopy = getCellValueForCopy();
 			if (textToCopy !== null) {
 				copyCellValue(textToCopy);
 			}
+			return;
+		}
+
+		if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+			event.preventDefault();
+			navigateCell(event.key);
+		}
+	}
+
+	function navigateCell(direction: string) {
+		if (!selectedCell || !tableInstance) return;
+
+		const row = tableInstance.getRow(selectedCell.rowId);
+		const column = tableInstance.getColumn(selectedCell.columnId);
+
+		if (row === undefined || column === undefined) return;
+
+		const rows = tableInstance.getPaginationRowModel().rows;
+		const columns = tableInstance.getVisibleLeafColumns();
+
+		const currentRowIndex = row.index;
+		const currentColumnIndex = column.getIndex();
+
+		if (currentRowIndex === -1 || currentColumnIndex === -1) return;
+
+		let newRowIndex = currentRowIndex;
+		let newColumnIndex = currentColumnIndex;
+
+		switch (direction) {
+			case 'ArrowUp':
+				newRowIndex = Math.max(0, currentRowIndex - 1);
+				break;
+			case 'ArrowDown':
+				newRowIndex = Math.min(rows.length - 1, currentRowIndex + 1);
+				break;
+			case 'ArrowLeft':
+				newColumnIndex = Math.max(0, currentColumnIndex - 1);
+				break;
+			case 'ArrowRight':
+				newColumnIndex = Math.min(columns.length - 1, currentColumnIndex + 1);
+				break;
+		}
+
+		if (newRowIndex !== currentRowIndex || newColumnIndex !== currentColumnIndex) {
+			const row = rows[newRowIndex];
+			const column = columns[newColumnIndex];
+			const cell = row.getVisibleCells().find((c) => c.column.id === column.id);
+
+			if (cell) {
+				const mockEvent = new MouseEvent('click');
+				handleCellClick(cell, row.id, mockEvent);
+				scrollCellIntoView(newRowIndex, newColumnIndex);
+			}
+		}
+	}
+
+	function scrollCellIntoView(rowIndex: number, columnIndex: number) {
+		const tbody = tableContainer?.querySelector('tbody');
+		if (!tbody) return;
+
+		const targetRow = tbody.children[rowIndex] as HTMLElement;
+		const targetCell = targetRow?.children[columnIndex] as HTMLElement;
+
+		if (targetCell) {
+			targetCell.scrollIntoView({
+				behavior: 'smooth',
+				block: 'nearest',
+				inline: 'nearest'
+			});
 		}
 	}
 </script>
