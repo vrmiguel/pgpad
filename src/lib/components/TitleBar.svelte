@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Database, Minus, Square, X, Circle } from '@lucide/svelte';
+	import { Database, Minus, Square, X, Circle, Play, Save } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { onMount } from 'svelte';
@@ -11,9 +11,20 @@
 			connected: boolean;
 		} | null;
 		isConnecting?: boolean;
+		selectedConnection?: string | null;
+		hasUnsavedChanges?: boolean;
+		onRunQuery?: () => void;
+		onSaveScript?: () => void;
 	}
 
-	let { currentConnection, isConnecting = false }: Props = $props();
+	let {
+		currentConnection,
+		isConnecting = false,
+		selectedConnection = null,
+		hasUnsavedChanges = false,
+		onRunQuery = () => {},
+		onSaveScript = () => {}
+	}: Props = $props();
 
 	let isMacOS = $state(false);
 
@@ -37,7 +48,7 @@
 	}
 </script>
 
-<div class="bg-background border-border/50 flex h-8 items-center border-b select-none">
+<div class="bg-background border-border/50 flex h-12 items-center border-b select-none">
 	{#if isMacOS}
 		<!-- macOS-style controls (left side) - NOT draggable -->
 		<div class="flex items-center gap-2 px-4">
@@ -81,14 +92,41 @@
 			</button>
 		</div>
 
-		<!-- Center section - App info and connection status - DRAGGABLE -->
+		<!-- Center section - Action buttons and app info - DRAGGABLE areas -->
 		<div class="flex flex-1 items-center justify-center gap-3 px-4" data-tauri-drag-region>
+			<!-- App info - draggable -->
 			<div class="flex items-center gap-2" data-tauri-drag-region>
 				<Database class="text-primary h-4 w-4" data-tauri-drag-region />
 				<span class="text-foreground text-sm font-semibold" data-tauri-drag-region>pgpad</span>
 			</div>
 
-			<!-- Connection status -->
+			<!-- Action buttons - NOT draggable -->
+			<div class="flex items-center gap-2">
+				<Button
+					variant="ghost"
+					size="sm"
+					class="bg-muted/30 hover:bg-muted/50 border-border/30 hover:border-border/50 h-8 gap-1.5 border px-3 text-xs font-medium shadow-none"
+					disabled={!selectedConnection}
+					onclick={onRunQuery}
+					title="Run Query (Ctrl+R for full script, Ctrl+Enter for selection)"
+				>
+					<Play class="h-3.5 w-3.5" />
+					Run Query
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="bg-muted/30 hover:bg-muted/50 border-border/30 hover:border-border/50 h-8 gap-1.5 border px-3 text-xs font-medium shadow-none {hasUnsavedChanges
+						? 'border-orange-300/50 bg-orange-50/30'
+						: ''}"
+					onclick={onSaveScript}
+				>
+					<Save class="h-3.5 w-3.5" />
+					Save Script{hasUnsavedChanges ? '*' : ''}
+				</Button>
+			</div>
+
+			<!-- Connection status - draggable -->
 			{#if currentConnection}
 				<div
 					class="bg-muted/30 flex items-center gap-2 rounded-md px-2 py-1"
@@ -126,14 +164,41 @@
 		</div>
 	{:else}
 		<!-- Windows/Linux controls (right side) -->
-		<!-- Left section - App info - DRAGGABLE -->
+		<!-- Left section - App info, action buttons, and connection status -->
 		<div class="flex flex-1 items-center gap-3 px-4" data-tauri-drag-region>
+			<!-- App info - draggable -->
 			<div class="flex items-center gap-2" data-tauri-drag-region>
 				<Database class="text-primary h-4 w-4" data-tauri-drag-region />
 				<span class="text-foreground text-sm font-semibold" data-tauri-drag-region>pgpad</span>
 			</div>
 
-			<!-- Connection status -->
+			<!-- Action buttons - NOT draggable -->
+			<div class="flex items-center gap-2">
+				<Button
+					variant="ghost"
+					size="sm"
+					class="bg-muted/30 hover:bg-muted/50 border-border/30 hover:border-border/50 h-8 gap-1.5 border px-3 text-xs font-medium shadow-none"
+					disabled={!selectedConnection}
+					onclick={onRunQuery}
+					title="Run Query (Ctrl+R for full script, Ctrl+Enter for selection)"
+				>
+					<Play class="h-3.5 w-3.5" />
+					Run Query
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="bg-muted/30 hover:bg-muted/50 border-border/30 hover:border-border/50 h-8 gap-1.5 border px-3 text-xs font-medium shadow-none {hasUnsavedChanges
+						? 'border-orange-300/50 bg-orange-50/30'
+						: ''}"
+					onclick={onSaveScript}
+				>
+					<Save class="h-3.5 w-3.5" />
+					Save Script{hasUnsavedChanges ? '*' : ''}
+				</Button>
+			</div>
+
+			<!-- Connection status - draggable -->
 			{#if currentConnection}
 				<div
 					class="bg-muted/30 flex items-center gap-2 rounded-md px-2 py-1"

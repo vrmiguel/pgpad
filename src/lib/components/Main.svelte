@@ -23,12 +23,22 @@
 			connected: boolean;
 		} | null;
 		isConnecting?: boolean;
+		selectedConnection?: string | null;
+		hasUnsavedChanges?: boolean;
+		runQueryCallback?: (() => void) | null;
+		saveScriptCallback?: (() => void) | null;
 	}
 
-	let { currentConnection = $bindable(), isConnecting = $bindable() }: Props = $props();
+	let {
+		currentConnection = $bindable(),
+		isConnecting = $bindable(),
+		selectedConnection = $bindable(),
+		hasUnsavedChanges = $bindable(),
+		runQueryCallback = $bindable(),
+		saveScriptCallback = $bindable()
+	}: Props = $props();
 
 	let showConnectionForm = $state(false);
-	let selectedConnection = $state<string | null>(null);
 	let connections = $state<ConnectionInfo[]>([]);
 	let isRunningQuery = $state(false);
 	let sqlEditorRef = $state<any>();
@@ -57,6 +67,25 @@
 	let selectedTableSchema = $state('');
 
 	let isItemsAccordionOpen = $state(false);
+
+	if (selectedConnection === undefined) {
+		selectedConnection = null;
+	}
+
+	$effect(() => {
+		if (hasUnsavedChanges !== undefined) {
+			hasUnsavedChanges = activeScriptId !== null && unsavedChanges.has(activeScriptId);
+		}
+	});
+
+	$effect(() => {
+		if (runQueryCallback !== undefined) {
+			runQueryCallback = () => sqlEditorRef?.handleExecuteQuery();
+		}
+	});
+	$effect(() => {
+		if (saveScriptCallback !== undefined) saveScriptCallback = saveCurrentScript;
+	});
 	let isConnectionsAccordionOpen = $state(true);
 	let isScriptsAccordionOpen = $state(false);
 
@@ -591,7 +620,7 @@
 		>
 			<AppSidebar
 				{connections}
-				{selectedConnection}
+				selectedConnection={selectedConnection ?? null}
 				{establishingConnections}
 				{scripts}
 				{activeScriptId}
@@ -618,80 +647,6 @@
 		<!-- Main Editor Pane - always in same position -->
 		<ResizablePane defaultSize={isSidebarCollapsed ? 96 : 75}>
 			<div class="bg-background/50 flex h-full flex-col">
-				<!-- Toolbar -->
-				<div class="glass-card border-border/50 border-b p-6 shadow-md">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-4">
-							<div class="flex items-center gap-3">
-								<Button
-									class="gap-2 shadow-md hover:shadow-lg"
-									disabled={!selectedConnection}
-									onclick={() => sqlEditorRef?.handleExecuteQuery()}
-									title="Run Query (Ctrl+R for full script, Ctrl+Enter for selection)"
-								>
-									<Play class="h-4 w-4" />
-									Run Query
-								</Button>
-								<Button
-									variant="outline"
-									class="gap-2 shadow-sm hover:shadow-md {activeScriptId !== null &&
-									unsavedChanges.has(activeScriptId)
-										? 'border-orange-300 bg-orange-50'
-										: ''}"
-									onclick={saveCurrentScript}
-								>
-									<Save class="h-4 w-4" />
-									Save Script {activeScriptId !== null && unsavedChanges.has(activeScriptId)
-										? '*'
-										: ''}
-								</Button>
-							</div>
-
-							{#if selectedConnection}
-								{@const connection = connections.find((c) => c.id === selectedConnection)}
-								{#if connection}
-									{#if connection.connected}
-										<div
-											class="bg-success-light/20 border-success/30 flex items-center gap-2 rounded-lg border px-4 py-2"
-										>
-											<div class="bg-success h-2 w-2 rounded-full shadow-sm"></div>
-											<span class="text-foreground text-sm font-semibold"
-												>Connected to: {connection.name}</span
-											>
-										</div>
-									{:else if establishingConnections.has(connection.id)}
-										<div
-											class="bg-primary/10 border-primary/30 flex items-center gap-2 rounded-lg border px-4 py-2"
-										>
-											<div class="bg-primary h-2 w-2 animate-pulse rounded-full shadow-sm"></div>
-											<span class="text-foreground text-sm font-semibold"
-												>Connecting to: {connection.name}</span
-											>
-										</div>
-									{:else}
-										<div
-											class="bg-muted/20 border-border flex items-center gap-2 rounded-lg border px-4 py-2"
-										>
-											<div class="bg-muted-foreground/60 h-2 w-2 rounded-full shadow-sm"></div>
-											<span class="text-foreground text-sm font-semibold"
-												>Selected: {connection.name} (double-click to connect)</span
-											>
-										</div>
-									{/if}
-								{/if}
-							{:else}
-								<div
-									class="bg-muted/30 border-border flex items-center gap-2 rounded-lg border px-4 py-2"
-								>
-									<span class="text-muted-foreground text-sm font-semibold"
-										>Select a connection to start</span
-									>
-								</div>
-							{/if}
-						</div>
-					</div>
-				</div>
-
 				<!-- Editor and Results - same component instance always -->
 				<div class="bg-background/30 flex flex-1 flex-col">
 					<!-- Script Tabs -->
@@ -706,7 +661,7 @@
 					/>
 
 					<SqlEditor
-						{selectedConnection}
+						selectedConnection={selectedConnection ?? null}
 						{connections}
 						currentScript={activeScriptId !== null
 							? scripts.find((s) => s.id === activeScriptId) || null
@@ -727,7 +682,7 @@
 	isOpen={tableBrowseModalOpen}
 	tableName={selectedTableName}
 	schema={selectedTableSchema}
-	connectionId={selectedConnection || ''}
+	connectionId={(selectedConnection ?? null) || ''}
 	onClose={closeTableBrowseModal}
 />
 
