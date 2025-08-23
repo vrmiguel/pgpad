@@ -52,7 +52,7 @@
 		console.log('StatementExecutor got event:', event);
 
 		switch (event.event) {
-			case 'statementStart':
+			case 'statementStart': {
 				console.log('Statement started:', event.data);
 				const tabId = onStatementStart?.(
 					event.data.statementIndex,
@@ -65,8 +65,9 @@
 					onTabUpdate?.(tabId, { status: 'running' });
 				}
 				break;
+			}
 
-			case 'resultStart':
+			case 'resultStart': {
 				console.log('Result started for statement:', event.data.statementIndex);
 				const startTabId = statementTabMap.get(event.data.statementIndex);
 				if (startTabId) {
@@ -76,6 +77,7 @@
 					});
 				}
 				break;
+			}
 
 			case 'resultBatch':
 				console.log('Got batch data for statement:', event.data.statementIndex);

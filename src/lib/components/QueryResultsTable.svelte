@@ -3,7 +3,7 @@
 	import type { PgRow } from '$lib/commands.svelte';
 	import type { Cell } from '@tanstack/table-core';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
+
 	import JsonViewer from './JsonViewer.svelte';
 	import {
 		ChevronUp,
@@ -13,12 +13,11 @@
 		ChevronRight,
 		Search
 	} from '@lucide/svelte';
-	import { untrack } from 'svelte';
 
 	interface Props {
 		data: PgRow[];
 		columns: string[];
-		table?: any;
+		table?: unknown;
 		globalFilter?: string;
 	}
 

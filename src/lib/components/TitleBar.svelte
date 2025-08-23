@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Database, Minus, Square, X, Circle, Play, Save } from '@lucide/svelte';
+	import { Database, Minus, Square, X, Play, Save } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { onMount } from 'svelte';

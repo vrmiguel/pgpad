@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
-	import { Card, CardHeader, CardContent } from '$lib/components/ui/card';
+	import { Card, CardContent } from '$lib/components/ui/card';
 	import QueryResultsTable from './QueryResultsTable.svelte';
 	import StatementExecutor from './StatementExecutor.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
@@ -54,7 +54,7 @@ SELECT 1 as test;`);
 		queryReturnsResults?: boolean;
 		affectedRows?: number;
 		columns?: string[];
-		rows?: any[][];
+		rows?: unknown[][];
 		error?: string;
 	}
 
@@ -94,37 +94,6 @@ SELECT 1 as test;`);
 		}
 	}
 
-	function handleQueryComplete(rowCount: number, duration: number) {
-		if (activeResultTabId) {
-			const tab = resultTabs.find((t) => t.id === activeResultTabId);
-			if (tab) tab.status = 'completed';
-		}
-
-		if (selectedConnection) {
-			Commands.saveQueryToHistory(
-				selectedConnection,
-				currentQuery,
-				duration,
-				'success',
-				rowCount,
-				undefined
-			);
-			loadQueryHistory();
-		}
-	}
-
-	function handleQueryError(error: string) {
-		if (activeResultTabId) {
-			const tab = resultTabs.find((t) => t.id === activeResultTabId);
-			if (tab) tab.status = 'error';
-		}
-
-		if (selectedConnection) {
-			Commands.saveQueryToHistory(selectedConnection, currentQuery, 0, 'error', 0, error);
-			loadQueryHistory();
-		}
-	}
-
 	let executionTrigger = $state(0);
 
 	export function handleExecuteQuery(queryToExecute?: string) {
@@ -149,6 +118,32 @@ SELECT 1 as test;`);
 		showHistory = false;
 	}
 
+	let currentTableBrowse: { tableName: string; schema: string } | null = $state(null);
+
+	export function handleTableBrowse(tableName: string, schema: string) {
+		if (!selectedConnection || !tableName) return;
+
+		if (!isConnected) {
+			console.warn('Cannot browse table: No active database connection');
+			return;
+		}
+
+		const query =
+			schema === 'public'
+				? `SELECT * FROM "${tableName}" LIMIT 1000`
+				: `SELECT * FROM "${schema}"."${tableName}" LIMIT 1000`;
+
+		currentTableBrowse = { tableName, schema };
+
+		resultTabs = [];
+		activeResultTabId = null;
+		currentQuery = query.trim();
+		executionTrigger++;
+		showHistory = false;
+
+		console.log('Table browse started for:', tableName, 'with query:', query);
+	}
+
 	function handleStatementStart(
 		statementIndex: number,
 		statement: string,
@@ -156,10 +151,20 @@ SELECT 1 as test;`);
 	): string {
 		const tabId = crypto.randomUUID();
 
+		let tabName = generateTabTitle(statement);
+		if (currentTableBrowse) {
+			const tableDisplayName =
+				currentTableBrowse.schema === 'public'
+					? currentTableBrowse.tableName
+					: `${currentTableBrowse.schema}.${currentTableBrowse.tableName}`;
+			tabName = `📋 ${tableDisplayName}`;
+			currentTableBrowse = null;
+		}
+
 		if (returnsValues) {
 			const newTab: QueryResultTab = {
 				id: tabId,
-				name: generateTabTitle(statement),
+				name: tabName,
 				query: statement,
 				timestamp: Date.now(),
 				status: 'running',
@@ -171,7 +176,7 @@ SELECT 1 as test;`);
 		} else {
 			const newTab: QueryResultTab = {
 				id: tabId,
-				name: generateTabTitle(statement),
+				name: tabName,
 				query: statement,
 				timestamp: Date.now(),
 				status: 'running',

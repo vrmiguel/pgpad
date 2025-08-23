@@ -10,7 +10,7 @@
 		class?: string;
 	}
 
-	let { size = 'sm', variant = 'ghost', class: className = '' }: Props = $props();
+	let { size = 'sm', variant = 'ghost', class: _className = '' }: Props = $props();
 </script>
 
 <Button

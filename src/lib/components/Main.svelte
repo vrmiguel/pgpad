@@ -1,11 +1,8 @@
 <script lang="ts">
-	import { Play, Save } from '@lucide/svelte';
-	import { Button } from '$lib/components/ui/button';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import SqlEditor from './SqlEditor.svelte';
 	import ConnectionForm from './ConnectionForm.svelte';
 	import ScriptTabs from './ScriptTabs.svelte';
-	import TableBrowseModal from './TableBrowseModal.svelte';
 	import AppSidebar from './AppSidebar.svelte';
 	import {
 		Commands,
@@ -41,7 +38,7 @@
 
 	let showConnectionForm = $state(false);
 	let connections = $state<ConnectionInfo[]>([]);
-	let sqlEditorRef = $state<any>();
+	let sqlEditorRef = $state<SqlEditor>();
 	let establishingConnections = new SvelteSet<string>();
 
 	let scripts = $state<Script[]>([]);
@@ -62,10 +59,6 @@
 	let loadingSchema = $state(false);
 	let lastLoadedSchemaConnectionId = $state<string | null>(null);
 
-	let tableBrowseModalOpen = $state(false);
-	let selectedTableName = $state('');
-	let selectedTableSchema = $state('');
-
 	let isItemsAccordionOpen = $state(false);
 
 	let unlistenDisconnect: (() => void) | null = null;
@@ -80,14 +73,12 @@
 		}
 	});
 
-	$effect(() => {
-		if (runQueryCallback !== undefined) {
-			runQueryCallback = () => sqlEditorRef?.handleExecuteQuery();
-		}
-	});
-	$effect(() => {
-		if (saveScriptCallback !== undefined) saveScriptCallback = saveCurrentScript;
-	});
+	if (runQueryCallback !== undefined) {
+		runQueryCallback = () => sqlEditorRef?.handleExecuteQuery();
+	}
+	if (saveScriptCallback !== undefined) {
+		saveScriptCallback = saveCurrentScript;
+	}
 	let isConnectionsAccordionOpen = $state(true);
 	let isScriptsAccordionOpen = $state(false);
 
@@ -412,15 +403,7 @@
 	}
 
 	function handleTableClick(tableName: string, schema: string) {
-		selectedTableName = tableName;
-		selectedTableSchema = schema;
-		tableBrowseModalOpen = true;
-	}
-
-	function closeTableBrowseModal() {
-		tableBrowseModalOpen = false;
-		selectedTableName = '';
-		selectedTableSchema = '';
+		sqlEditorRef?.handleTableBrowse(tableName, schema);
 	}
 
 	async function loadScripts() {
@@ -432,7 +415,6 @@
 	}
 
 	function generateScriptName(): string {
-		const now = new Date();
 		const existingUntitled = scripts.filter((s) => s.name.startsWith('Untitled Script')).length;
 		return existingUntitled === 0 ? 'Untitled Script' : `Untitled Script ${existingUntitled + 1}`;
 	}
@@ -704,15 +686,6 @@
 		</ResizablePane>
 	</ResizablePaneGroup>
 </div>
-
-<!-- Table Browse Modal -->
-<TableBrowseModal
-	isOpen={tableBrowseModalOpen}
-	tableName={selectedTableName}
-	schema={selectedTableSchema}
-	connectionId={(selectedConnection ?? null) || ''}
-	onClose={closeTableBrowseModal}
-/>
 
 <!-- Connection Form Modal -->
 {#if showConnectionForm}
