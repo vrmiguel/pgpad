@@ -51,7 +51,7 @@ SELECT 1 as test;`);
 		timestamp: number;
 		status: 'running' | 'completed' | 'error';
 		statementIndex?: number;
-		isModificationQuery?: boolean;
+		queryReturnsResults?: boolean;
 		affectedRows?: number;
 		columns?: string[];
 		rows?: any[][];
@@ -176,7 +176,7 @@ SELECT 1 as test;`);
 				timestamp: Date.now(),
 				status: 'running',
 				statementIndex,
-				isModificationQuery: true
+				queryReturnsResults: true
 			};
 
 			resultTabs.push(newTab);
@@ -189,7 +189,7 @@ SELECT 1 as test;`);
 	function handleStatementComplete(tabId: string, rowCount: number, duration: number) {
 		const tab = resultTabs.find((t) => t.id === tabId);
 		if (tab) {
-			if (tab.isModificationQuery) {
+			if (tab.queryReturnsResults) {
 				tab.affectedRows = rowCount;
 			}
 			tab.status = 'completed';
@@ -484,7 +484,7 @@ SELECT 1 as test;`);
 											<div class="text-sm text-red-600">❌ {activeTab.error}</div>
 										</div>
 									</div>
-								{:else if activeTab.isModificationQuery}
+								{:else if activeTab.queryReturnsResults}
 									<!-- Modification query result -->
 									<div class="flex h-full flex-1 items-center justify-center">
 										<div class="text-center">

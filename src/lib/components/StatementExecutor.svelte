@@ -9,7 +9,7 @@
 		rows?: any[][];
 		affectedRows?: number;
 		error?: string;
-		isModificationQuery?: boolean;
+		queryReturnsResults?: boolean;
 	}
 
 	interface Props {
