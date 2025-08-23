@@ -4,9 +4,13 @@ mod storage;
 mod window;
 
 use dashmap::DashMap;
+use tauri::Manager;
 use uuid::Uuid;
 
-use crate::{postgres::types::DatabaseConnection, storage::Storage};
+use crate::{
+    postgres::{types::DatabaseConnection, ConnectionMonitor},
+    storage::Storage,
+};
 pub use error::{Error, Result};
 
 #[derive(Debug)]
@@ -54,6 +58,10 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            let handle = app.handle();
+            let monitor = ConnectionMonitor::new(handle.clone());
+            handle.manage(monitor);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -1,9 +1,10 @@
+pub mod commands;
 mod connect;
+mod connection_monitor;
 mod query;
-// Convert rows to something front-end friendly
 mod row_writer;
 mod tls;
-
-pub use tls::Certificates;
-pub mod commands;
 pub mod types;
+
+pub use connection_monitor::ConnectionMonitor;
+pub use tls::Certificates;

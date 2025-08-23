@@ -14,7 +14,8 @@
 		type Script,
 		type DatabaseSchema
 	} from '$lib/commands.svelte';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { listen } from '@tauri-apps/api/event';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	interface Props {
@@ -40,7 +41,6 @@
 
 	let showConnectionForm = $state(false);
 	let connections = $state<ConnectionInfo[]>([]);
-	let isRunningQuery = $state(false);
 	let sqlEditorRef = $state<any>();
 	let establishingConnections = new SvelteSet<string>();
 
@@ -67,6 +67,8 @@
 	let selectedTableSchema = $state('');
 
 	let isItemsAccordionOpen = $state(false);
+
+	let unlistenDisconnect: (() => void) | null = null;
 
 	if (selectedConnection === undefined) {
 		selectedConnection = null;
@@ -280,6 +282,11 @@
 			await loadConnections();
 			await loadScripts();
 
+			unlistenDisconnect = await listen('end-of-connection', (event) => {
+				const connectionId = event.payload as string;
+				handleConnectionDisconnect(connectionId);
+			});
+
 			// Create a new script on startup if no scripts are open
 			if (openScripts.length === 0) {
 				// Reuse "Untitled Script" on startup
@@ -293,6 +300,12 @@
 			}
 		} catch (error) {
 			console.error(`Failed to initialize connections: ${JSON.stringify(error)}`);
+		}
+	});
+
+	onDestroy(() => {
+		if (unlistenDisconnect) {
+			unlistenDisconnect();
 		}
 	});
 
@@ -310,6 +323,21 @@
 		} catch (error) {
 			console.error('Failed to load connections:', error);
 		}
+	}
+
+	function handleConnectionDisconnect(connectionId: string) {
+		console.log('Connection disconnected:', connectionId);
+
+		connections = connections.map((conn) =>
+			conn.id === connectionId ? { ...conn, connected: false } : conn
+		);
+
+		if (selectedConnection === connectionId) {
+			databaseSchema = null;
+			lastLoadedSchemaConnectionId = null;
+		}
+
+		establishingConnections.delete(connectionId);
 	}
 
 	async function addConnection(config: ConnectionConfig) {

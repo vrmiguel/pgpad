@@ -9,10 +9,14 @@ use uuid::Uuid;
 use crate::{
     error::Error,
     postgres::{
-        connect::connect, query::parse_statements, row_writer::RowWriter, types::{
+        connect::connect,
+        query::parse_statements,
+        row_writer::RowWriter,
+        types::{
             ColumnInfo, ConnectionConfig, ConnectionInfo, DatabaseConnection, DatabaseSchema,
             QueryStreamEvent, TableInfo,
-        }, Certificates
+        },
+        Certificates, ConnectionMonitor,
     },
     storage::{QueryHistoryEntry, SavedQuery},
     AppState,
@@ -46,6 +50,7 @@ pub async fn add_connection(
 pub async fn connect_to_database(
     connection_id: Uuid,
     state: tauri::State<'_, AppState>,
+    monitor: tauri::State<'_, ConnectionMonitor>,
     certificates: tauri::State<'_, Certificates>,
 ) -> Result<bool, Error> {
     if !state.connections.contains_key(&connection_id) {
@@ -67,13 +72,15 @@ pub async fn connect_to_database(
     let connection = connection_entry.value_mut();
 
     match connect(&connection.info.connection_string, &certificates).await {
-        Ok(client) => {
+        Ok((client, conn_check)) => {
             connection.client = Some(client);
             connection.info.connected = true;
 
             if let Err(e) = state.storage.update_last_connected(&connection_id) {
                 log::warn!("Failed to update last connected timestamp: {}", e);
             }
+
+            monitor.add_connection(connection_id, conn_check).await;
 
             Ok(true)
         }
@@ -188,9 +195,9 @@ async fn execute_query_with_results(
                                 row.columns().iter().map(|col| col.name()).collect();
 
                             channel
-                                .send(QueryStreamEvent::ResultStart { 
+                                .send(QueryStreamEvent::ResultStart {
                                     statement_index,
-                                    columns 
+                                    columns,
                                 })
                                 .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
 
