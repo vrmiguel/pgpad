@@ -246,46 +246,46 @@ function includes(str: string, substring: string): boolean {
 }
 
 const sqlKeywords = [
-	'SELECT',
-	'FROM',
-	'WHERE',
-	'INSERT INTO',
-	'UPDATE',
-	'DELETE FROM',
-	'CREATE TABLE',
-	'DROP TABLE',
-	'ORDER BY',
-	'GROUP BY',
-	'HAVING',
-	'JOIN',
-	'LEFT JOIN',
-	'RIGHT JOIN',
-	'INNER JOIN',
-	'OUTER JOIN',
-	'UNION',
-	'UNION ALL',
-	'DISTINCT',
-	'COUNT',
-	'SUM',
-	'AVG',
-	'MAX',
-	'MIN',
-	'AND',
-	'OR',
-	'NOT',
-	'IN',
-	'LIKE',
-	'BETWEEN',
-	'IS NULL',
-	'IS NOT NULL',
-	'AS',
-	'LIMIT',
-	'OFFSET',
-	'CASE',
-	'WHEN',
-	'THEN',
-	'ELSE',
-	'END'
+	{ keyword: 'SELECT', boost: 1.0 },
+	{ keyword: 'FROM', boost: 1.0 },
+	{ keyword: 'WHERE', boost: 1.0 },
+	{ keyword: 'INSERT INTO', boost: 0.9 },
+	{ keyword: 'UPDATE', boost: 0.9 },
+	{ keyword: 'DELETE FROM', boost: 0.9 },
+	{ keyword: 'ORDER BY', boost: 0.8 },
+	{ keyword: 'GROUP BY', boost: 0.8 },
+	{ keyword: 'JOIN', boost: 0.8 },
+	{ keyword: 'LEFT JOIN', boost: 0.7 },
+	{ keyword: 'INNER JOIN', boost: 0.7 },
+	{ keyword: 'RIGHT JOIN', boost: 0.6 },
+	{ keyword: 'OUTER JOIN', boost: 0.6 },
+	{ keyword: 'UNION', boost: 0.5 },
+	{ keyword: 'UNION ALL', boost: 0.5 },
+	{ keyword: 'CREATE TABLE', boost: 0.7 },
+	{ keyword: 'DROP TABLE', boost: 0.6 },
+	{ keyword: 'HAVING', boost: 0.6 },
+	{ keyword: 'DISTINCT', boost: 0.7 },
+	{ keyword: 'COUNT', boost: 0.7 },
+	{ keyword: 'SUM', boost: 0.6 },
+	{ keyword: 'AVG', boost: 0.6 },
+	{ keyword: 'MAX', boost: 0.6 },
+	{ keyword: 'MIN', boost: 0.6 },
+	{ keyword: 'AND', boost: 0.8 },
+	{ keyword: 'OR', boost: 0.8 },
+	{ keyword: 'NOT', boost: 0.7 },
+	{ keyword: 'IN', boost: 0.6 },
+	{ keyword: 'LIKE', boost: 0.7 },
+	{ keyword: 'BETWEEN', boost: 0.6 },
+	{ keyword: 'IS NULL', boost: 0.6 },
+	{ keyword: 'IS NOT NULL', boost: 0.6 },
+	{ keyword: 'AS', boost: 0.7 },
+	{ keyword: 'LIMIT', boost: 0.7 },
+	{ keyword: 'OFFSET', boost: 0.6 },
+	{ keyword: 'CASE', boost: 0.6 },
+	{ keyword: 'WHEN', boost: 0.5 },
+	{ keyword: 'THEN', boost: 0.5 },
+	{ keyword: 'ELSE', boost: 0.5 },
+	{ keyword: 'END', boost: 0.5 }
 ];
 
 function needsQuoting(identifier: string): boolean {
@@ -314,7 +314,6 @@ function formatIdentifierForCompletion(identifier: string): string {
 
 	// Handle simple identifiers
 	if (needsQuoting(identifier)) {
-		// Always use both quotes for identifiers that need quoting
 		return `"${identifier}"`;
 	}
 
@@ -323,7 +322,35 @@ function formatIdentifierForCompletion(identifier: string): string {
 
 function createSqlAutocompletion(schema: DatabaseSchema | null) {
 	const cachedCompletions = generateSchemaCompletions(schema);
-	console.log(`Cached ${cachedCompletions.length} schema completions`);
+
+	const completionsByFirstChar = new Map<string, any[]>();
+
+	for (const completion of cachedCompletions) {
+		completion.formattedLabel = formatIdentifierForCompletion(completion.label);
+
+		const firstChar = completion.label[0]?.toLowerCase() || '';
+		if (!completionsByFirstChar.has(firstChar)) {
+			completionsByFirstChar.set(firstChar, []);
+		}
+		completionsByFirstChar.get(firstChar)!.push(completion);
+	}
+
+	for (const keywordData of sqlKeywords) {
+		const keywordCompletion = {
+			label: keywordData.keyword,
+			type: 'keyword',
+			info: `SQL keyword: ${keywordData.keyword}`,
+			detail: 'keyword',
+			boost: keywordData.boost,
+			formattedLabel: keywordData.keyword
+		};
+
+		const firstChar = keywordData.keyword[0]?.toLowerCase() || '';
+		if (!completionsByFirstChar.has(firstChar)) {
+			completionsByFirstChar.set(firstChar, []);
+		}
+		completionsByFirstChar.get(firstChar)!.push(keywordCompletion);
+	}
 
 	return autocompletion({
 		override: [
@@ -332,8 +359,6 @@ function createSqlAutocompletion(schema: DatabaseSchema | null) {
 				if (!word) return null;
 
 				if (word.from === word.to && !context.explicit) return null;
-
-				console.log(`Completion triggered for "${word.text}"`);
 
 				// Check if there's an opening quote before the matched word
 				const charBeforeWord =
@@ -350,54 +375,68 @@ function createSqlAutocompletion(schema: DatabaseSchema | null) {
 
 				const searchText = word.text;
 
-				const options = [];
+				const maxOptions = 100;
+				const tempOptions = new Array(maxOptions);
+				let tempCount = 0;
 
-				for (const keyword of sqlKeywords) {
-					if (startsWith(keyword, searchText)) {
-						options.push({
-							label: keyword,
-							type: 'keyword',
-							info: `SQL keyword: ${keyword}`,
-							boost: 0.7
-						});
-					}
-				}
+				const isShortSearch = searchText.length < 2;
 
-				for (const completion of cachedCompletions) {
-					let boost = 0;
+				const firstChar = searchText[0]?.toLowerCase() || '';
+				const relevantCompletions = completionsByFirstChar.get(firstChar) || [];
+
+				// Process keywords first to give them priority
+				const keywords = relevantCompletions.filter((c) => c.type === 'keyword');
+				const nonKeywords = relevantCompletions.filter((c) => c.type !== 'keyword');
+				const orderedCompletions = [...keywords, ...nonKeywords];
+
+				for (const completion of orderedCompletions) {
+					if (tempCount >= maxOptions) break;
+
+					let boost = completion.boost || 0;
 					let matches = false;
 
 					if (startsWith(completion.label, searchText)) {
 						matches = true;
-						boost = 1.0;
-					} else if (
-						completion.label.includes('.') &&
-						includes(completion.label, '.' + searchText)
-					) {
-						matches = true;
-						boost = 0.8;
-					} else if (searchText.length >= 2 && includes(completion.label, searchText)) {
-						matches = true;
-						boost = 0.3;
+
+						if (completion.type === 'keyword') {
+							boost = completion.boost + (isShortSearch ? 2.0 : 1.0);
+
+							if (completion.label.startsWith(searchText)) {
+								boost += 0.2;
+							}
+						} else {
+							// Schema items get lower boost for short searches
+							boost = isShortSearch ? 0.1 : 0.4;
+						}
+					} else if (!isShortSearch) {
+						if (completion.label.includes('.') && includes(completion.label, '.' + searchText)) {
+							matches = true;
+							boost = completion.type === 'keyword' ? completion.boost * 0.9 : 0.3;
+						} else if (includes(completion.label, searchText)) {
+							matches = true;
+							boost = completion.type === 'keyword' ? completion.boost * 0.8 : 0.2;
+						}
 					}
 
 					if (matches) {
-						const formattedCompletion = {
-							...completion,
-							label: formatIdentifierForCompletion(completion.label),
+						tempOptions[tempCount++] = {
+							label: completion.formattedLabel || completion.label,
+							type: completion.type,
+							info: completion.info,
+							detail: completion.detail,
 							boost
 						};
-						options.push(formattedCompletion);
 					}
 				}
 
-				const limitedOptions = options.sort((a, b) => (b.boost || 0) - (a.boost || 0)).slice(0, 50);
+				const sortedOptions = tempOptions
+					.slice(0, tempCount)
+					.sort((a, b) => (b.boost || 0) - (a.boost || 0));
 
 				return {
 					from: hasOpeningQuote ? word.from - 1 : word.from,
 					to: hasAutoClosingQuote ? word.to + 1 : word.to,
-					options: limitedOptions,
-					// Be more restrictive for short searches
+					options: sortedOptions,
 					validFor: searchText.length >= 2 ? /^[\w.]*$/ : /^[\w.]{0,3}$/
 				};
 			}
