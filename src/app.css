@@ -23,7 +23,7 @@
 	--text-dark-primary: oklch(0.95 0.01 240);
 	--text-dark-secondary: oklch(0.85 0.02 240);
 
-	--background: var(--color-gray-50);
+	--background: oklch(0.98 0.005 240);
 	--foreground: var(--text-light-primary);
 	--card: var(--color-white);
 	--card-foreground: oklch(0.145 0.02 240);
@@ -60,13 +60,13 @@
 	--input: oklch(0.98 0.01 240);
 	--ring: oklch(0.55 0.18 250 / 30%);
 
-	--sidebar: oklch(0.98 0.01 240);
+	--sidebar: oklch(0.96 0.01 240);
 	--sidebar-foreground: oklch(0.15 0.03 240);
 	--sidebar-primary: oklch(0.55 0.18 250);
 	--sidebar-primary-foreground: var(--color-gray-50);
 	--sidebar-accent: var(--color-gray-200);
 	--sidebar-accent-foreground: oklch(0.25 0.06 250);
-	--sidebar-border: var(--color-gray-300);
+	--sidebar-border: oklch(0.85 0.02 240);
 	--sidebar-ring: oklch(0.55 0.18 250 / 30%);
 
 	--shadow-sm: 0 1px 2px oklch(0.125 0.02 240 / 8%);

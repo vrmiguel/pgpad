@@ -194,8 +194,8 @@
 								{#snippet children()}
 									<div class="space-y-3">
 										<Button
-											class="w-full justify-start gap-2 shadow-sm hover:shadow-md"
-											variant="outline"
+											variant="ghost"
+											class="mb-3 w-full gap-2 rounded-lg border border-dashed border-gray-300 bg-black/5 transition-all duration-200 hover:border-gray-400 hover:bg-black/10 dark:border-gray-600 dark:bg-white/5 dark:hover:border-gray-500 dark:hover:bg-white/10"
 											onclick={showConnectionForm}
 										>
 											<Plus class="h-4 w-4" />
@@ -220,36 +220,32 @@
 											{:else}
 												{#each connections as connection (connection.id)}
 													<Button
-														variant={selectedConnection === connection.id ? 'secondary' : 'ghost'}
-														class="h-auto w-full justify-start p-3 shadow-sm transition-all duration-200 hover:shadow-md {selectedConnection ===
+														variant="ghost"
+														class="h-auto w-full justify-start rounded-lg p-2.5 transition-all duration-200 hover:bg-black/5 dark:hover:bg-white/5 {selectedConnection ===
 														connection.id
-															? 'bg-primary/10 border-primary/20 border shadow-md'
-															: ''}"
+															? 'border border-blue-200/50 bg-blue-50 dark:border-blue-800/50 dark:bg-blue-950/30'
+															: 'border border-transparent'}"
 														onclick={() => selectConnection(connection.id)}
 														ondblclick={() => connectToDatabase(connection.id)}
 													>
-														<div class="flex w-full items-start gap-3">
-															<div class="mt-1 flex-shrink-0">
+														<div class="flex w-full items-center gap-2.5">
+															<div class="flex-shrink-0">
 																{#if connection.connected}
-																	<div
-																		class="bg-success border-success-light h-2.5 w-2.5 rounded-full border shadow-sm"
-																	></div>
+																	<div class="h-2 w-2 rounded-full bg-green-500 shadow-sm"></div>
 																{:else if establishingConnections.has(connection.id)}
 																	<div
-																		class="bg-primary border-primary-light h-2.5 w-2.5 animate-pulse rounded-full border shadow-sm"
+																		class="h-2 w-2 animate-pulse rounded-full bg-amber-500 shadow-sm"
 																	></div>
 																{:else}
-																	<div
-																		class="bg-muted-foreground/40 border-muted-foreground/20 h-2.5 w-2.5 rounded-full border"
-																	></div>
+																	<div class="h-2 w-2 rounded-full bg-gray-400"></div>
 																{/if}
 															</div>
 
 															<div class="min-w-0 flex-1 text-left">
-																<div class="text-foreground mb-1 truncate text-xs font-medium">
+																<div class="text-foreground mb-0.5 truncate text-sm font-medium">
 																	{connection.name}
 																</div>
-																<div class="text-muted-foreground/80 truncate text-xs">
+																<div class="text-muted-foreground truncate font-mono text-xs">
 																	{connection.connection_string
 																		.replace(/^postgresql?:\/\/[^@]*@/, '')
 																		.replace(/\/[^?]*/, '')}

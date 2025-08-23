@@ -101,27 +101,27 @@
 			</div>
 
 			<!-- Action buttons - NOT draggable -->
-			<div class="flex items-center gap-2">
+			<div class="flex items-center gap-1.5">
 				<Button
 					variant="ghost"
 					size="sm"
-					class="bg-muted/30 hover:bg-muted/50 border-border/30 hover:border-border/50 h-8 gap-1.5 border px-3 text-xs font-medium shadow-none"
+					class="h-7 gap-1.5 rounded-md border-0 bg-black/5 px-2.5 text-xs font-medium transition-all duration-150 hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white/5 dark:hover:bg-white/10"
 					disabled={!selectedConnection}
 					onclick={onRunQuery}
 					title="Run Query (Ctrl+R for full script, Ctrl+Enter for selection)"
 				>
-					<Play class="h-3.5 w-3.5" />
+					<Play class="h-3 w-3" />
 					Run Query
 				</Button>
 				<Button
 					variant="ghost"
 					size="sm"
-					class="bg-muted/30 hover:bg-muted/50 border-border/30 hover:border-border/50 h-8 gap-1.5 border px-3 text-xs font-medium shadow-none {hasUnsavedChanges
-						? 'border-orange-300/50 bg-orange-50/30'
-						: ''}"
+					class="h-7 gap-1.5 rounded-md border-0 px-2.5 text-xs font-medium transition-all duration-150 {hasUnsavedChanges
+						? 'bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-200 dark:hover:bg-orange-900/40'
+						: 'bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10'}"
 					onclick={onSaveScript}
 				>
-					<Save class="h-3.5 w-3.5" />
+					<Save class="h-3 w-3" />
 					Save Script{hasUnsavedChanges ? '*' : ''}
 				</Button>
 			</div>
@@ -129,31 +129,38 @@
 			<!-- Connection status - draggable -->
 			{#if currentConnection}
 				<div
-					class="bg-muted/30 flex items-center gap-2 rounded-md px-2 py-1"
+					class="flex items-center gap-2 rounded-md bg-black/5 px-2.5 py-1 dark:bg-white/5"
 					data-tauri-drag-region
 				>
 					{#if isConnecting}
-						<div class="bg-warning h-2 w-2 animate-pulse rounded-full" data-tauri-drag-region></div>
-						<span class="text-muted-foreground text-xs" data-tauri-drag-region>Connecting...</span>
+						<div
+							class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500"
+							data-tauri-drag-region
+						></div>
+						<span class="text-muted-foreground text-xs font-medium" data-tauri-drag-region
+							>Connecting...</span
+						>
 					{:else if currentConnection.connected}
-						<div class="bg-success h-2 w-2 rounded-full" data-tauri-drag-region></div>
-						<span class="text-foreground text-xs" data-tauri-drag-region
+						<div class="h-1.5 w-1.5 rounded-full bg-green-500" data-tauri-drag-region></div>
+						<span class="text-foreground text-xs font-medium" data-tauri-drag-region
 							>{currentConnection.name}</span
 						>
 					{:else}
-						<div class="bg-muted-foreground/40 h-2 w-2 rounded-full" data-tauri-drag-region></div>
-						<span class="text-muted-foreground text-xs" data-tauri-drag-region
-							>{currentConnection.name} (disconnected)</span
+						<div class="h-1.5 w-1.5 rounded-full bg-red-400" data-tauri-drag-region></div>
+						<span class="text-muted-foreground text-xs font-medium" data-tauri-drag-region
+							>{currentConnection.name}</span
 						>
 					{/if}
 				</div>
 			{:else}
 				<div
-					class="bg-muted/20 flex items-center gap-2 rounded-md px-2 py-1"
+					class="flex items-center gap-2 rounded-md bg-black/5 px-2.5 py-1 dark:bg-white/5"
 					data-tauri-drag-region
 				>
-					<Circle class="text-muted-foreground/50 h-2 w-2" data-tauri-drag-region />
-					<span class="text-muted-foreground text-xs" data-tauri-drag-region>No connection</span>
+					<div class="h-1.5 w-1.5 rounded-full bg-gray-400" data-tauri-drag-region></div>
+					<span class="text-muted-foreground text-xs font-medium" data-tauri-drag-region
+						>No connection</span
+					>
 				</div>
 			{/if}
 		</div>
@@ -173,27 +180,27 @@
 			</div>
 
 			<!-- Action buttons - NOT draggable -->
-			<div class="flex items-center gap-2">
+			<div class="flex items-center gap-1.5">
 				<Button
 					variant="ghost"
 					size="sm"
-					class="bg-muted/30 hover:bg-muted/50 border-border/30 hover:border-border/50 h-8 gap-1.5 border px-3 text-xs font-medium shadow-none"
+					class="h-7 gap-1.5 rounded-md border-0 bg-black/5 px-2.5 text-xs font-medium transition-all duration-150 hover:bg-black/10 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white/5 dark:hover:bg-white/10"
 					disabled={!selectedConnection}
 					onclick={onRunQuery}
 					title="Run Query (Ctrl+R for full script, Ctrl+Enter for selection)"
 				>
-					<Play class="h-3.5 w-3.5" />
+					<Play class="h-3 w-3" />
 					Run Query
 				</Button>
 				<Button
 					variant="ghost"
 					size="sm"
-					class="bg-muted/30 hover:bg-muted/50 border-border/30 hover:border-border/50 h-8 gap-1.5 border px-3 text-xs font-medium shadow-none {hasUnsavedChanges
-						? 'border-orange-300/50 bg-orange-50/30'
-						: ''}"
+					class="h-7 gap-1.5 rounded-md border-0 px-2.5 text-xs font-medium transition-all duration-150 {hasUnsavedChanges
+						? 'bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-200 dark:hover:bg-orange-900/40'
+						: 'bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10'}"
 					onclick={onSaveScript}
 				>
-					<Save class="h-3.5 w-3.5" />
+					<Save class="h-3 w-3" />
 					Save Script{hasUnsavedChanges ? '*' : ''}
 				</Button>
 			</div>
@@ -201,31 +208,38 @@
 			<!-- Connection status - draggable -->
 			{#if currentConnection}
 				<div
-					class="bg-muted/30 flex items-center gap-2 rounded-md px-2 py-1"
+					class="flex items-center gap-2 rounded-md bg-black/5 px-2.5 py-1 dark:bg-white/5"
 					data-tauri-drag-region
 				>
 					{#if isConnecting}
-						<div class="bg-warning h-2 w-2 animate-pulse rounded-full" data-tauri-drag-region></div>
-						<span class="text-muted-foreground text-xs" data-tauri-drag-region>Connecting...</span>
+						<div
+							class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500"
+							data-tauri-drag-region
+						></div>
+						<span class="text-muted-foreground text-xs font-medium" data-tauri-drag-region
+							>Connecting...</span
+						>
 					{:else if currentConnection.connected}
-						<div class="bg-success h-2 w-2 rounded-full" data-tauri-drag-region></div>
-						<span class="text-foreground text-xs" data-tauri-drag-region
+						<div class="h-1.5 w-1.5 rounded-full bg-green-500" data-tauri-drag-region></div>
+						<span class="text-foreground text-xs font-medium" data-tauri-drag-region
 							>{currentConnection.name}</span
 						>
 					{:else}
-						<div class="bg-muted-foreground/40 h-2 w-2 rounded-full" data-tauri-drag-region></div>
-						<span class="text-muted-foreground text-xs" data-tauri-drag-region
-							>{currentConnection.name} (disconnected)</span
+						<div class="h-1.5 w-1.5 rounded-full bg-red-400" data-tauri-drag-region></div>
+						<span class="text-muted-foreground text-xs font-medium" data-tauri-drag-region
+							>{currentConnection.name}</span
 						>
 					{/if}
 				</div>
 			{:else}
 				<div
-					class="bg-muted/20 flex items-center gap-2 rounded-md px-2 py-1"
+					class="flex items-center gap-2 rounded-md bg-black/5 px-2.5 py-1 dark:bg-white/5"
 					data-tauri-drag-region
 				>
-					<Circle class="text-muted-foreground/50 h-2 w-2" data-tauri-drag-region />
-					<span class="text-muted-foreground text-xs" data-tauri-drag-region>No connection</span>
+					<div class="h-1.5 w-1.5 rounded-full bg-gray-400" data-tauri-drag-region></div>
+					<span class="text-muted-foreground text-xs font-medium" data-tauri-drag-region
+						>No connection</span
+					>
 				</div>
 			{/if}
 		</div>

@@ -60,7 +60,7 @@ SELECT 1 as test;`);
 
 	let resultTabs = $state<QueryResultTab[]>([]);
 	let activeResultTabId = $state<string | null>(null);
-	let showHistory = $state(false);
+	let showHistory = $state(true);
 
 	// Query execution state
 	let currentQuery = $state<string>('');
@@ -385,26 +385,29 @@ SELECT 1 as test;`);
 
 		<!-- Results & History Section Pane -->
 		<ResizablePane defaultSize={40} minSize={20}>
-			<div class="h-full px-1 pt-0.5 pb-1">
-				<Card class="flex h-full min-h-0 flex-col gap-1 overflow-hidden py-2">
-					<CardHeader class="flex-shrink-0 pb-0">
-						<!-- Result Tabs -->
-						<TabBar
-							tabs={allTabs()}
-							activeTabId={showHistory ? 'history' : activeResultTabId}
-							onTabSelect={handleResultTabSelect}
-							onTabClose={handleResultTabClose}
-							showCloseButton={true}
-							showNewTabButton={false}
-							allowRename={false}
-							{getTabStatus}
-							closeTabLabel="Close result tab"
-							maxTabWidth="max-w-64"
-						/>
-					</CardHeader>
+			<div class="relative h-full px-1 pt-0.5 pb-1">
+				<!-- Result Tabs -->
+				<div class="relative z-10">
+					<TabBar
+						tabs={allTabs()}
+						activeTabId={showHistory ? 'history' : activeResultTabId}
+						onTabSelect={handleResultTabSelect}
+						onTabClose={handleResultTabClose}
+						showCloseButton={true}
+						showNewTabButton={false}
+						allowRename={false}
+						{getTabStatus}
+						closeTabLabel="Close result tab"
+						maxTabWidth="max-w-64"
+						variant="seamless"
+					/>
+				</div>
 
+				<Card
+					class="-mt-px flex h-full min-h-0 flex-col gap-0 overflow-hidden rounded-t-none border-t-0 pt-0 pb-2"
+				>
 					{#if showHistory}
-						<CardContent class="flex min-h-0 flex-1 flex-col p-0">
+						<CardContent class="flex min-h-0 flex-1 flex-col px-6 pt-0 pb-6">
 							{#if queryHistory.length > 0}
 								<div class="flex-1 overflow-auto">
 									<div class="space-y-2 p-2">
@@ -476,7 +479,13 @@ SELECT 1 as test;`);
 					{:else if activeResultTabId}
 						{@const activeTab = resultTabs.find((t) => t.id === activeResultTabId)}
 						{#if activeTab}
-							<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
+							<CardContent
+								class="flex h-full min-h-0 flex-1 flex-col overflow-hidden {activeTab.columns &&
+								activeTab.rows &&
+								activeTab.rows.length > 0
+									? 'p-0'
+									: 'px-6 pb-6'}"
+							>
 								{#if activeTab.error}
 									<!-- Error state -->
 									<div class="flex h-full flex-1 items-center justify-center">
@@ -521,7 +530,7 @@ SELECT 1 as test;`);
 							</CardContent>
 						{/if}
 					{:else}
-						<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
+						<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-6 pt-0 pb-6">
 							<div class="text-muted-foreground flex flex-1 items-center justify-center">
 								<div class="text-center">
 									<div

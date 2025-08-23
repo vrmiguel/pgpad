@@ -21,6 +21,7 @@
 		getTabStatus?: (tab: T) => 'normal' | 'modified' | 'error';
 		// Styling
 		maxTabWidth?: string;
+		variant?: 'default' | 'seamless';
 		// Labels
 		newTabLabel?: string;
 		closeTabLabel?: string;
@@ -38,6 +39,7 @@
 		allowRename = false,
 		getTabStatus,
 		maxTabWidth = 'max-w-48',
+		variant = 'default',
 		newTabLabel = 'New Tab',
 		closeTabLabel = 'Close tab'
 	}: Props<TabItem> = $props();
@@ -120,21 +122,28 @@
 	}
 </script>
 
-<div class="bg-card border-border/50 flex items-center overflow-hidden border-b">
+<div
+	class="flex items-center overflow-hidden border-b border-gray-300 dark:border-gray-600 {variant ===
+	'seamless'
+		? 'bg-transparent'
+		: 'bg-slate-50 dark:bg-slate-800'}"
+>
 	<!-- Tab bar -->
 	<div class="flex flex-1 overflow-x-auto">
 		{#each tabs as tab (tab.id)}
 			{@const statusIndicator = getStatusIndicator(tab)}
 			<div
-				class="group border-border/30 flex {maxTabWidth} min-w-0 items-center border-r {activeTabId ===
-				tab.id
-					? 'bg-background border-b-primary border-b-2'
-					: ''}"
+				class="group flex {maxTabWidth} relative min-w-0 items-center {activeTabId === tab.id
+					? 'z-10 mx-0.5 mt-1 rounded-t-lg border border-b-0 border-gray-300 bg-white shadow-md dark:border-gray-600 dark:bg-gray-900'
+					: 'mx-0.5 bg-transparent hover:bg-white/20 dark:hover:bg-gray-700/40'}"
 			>
 				<!-- Tab content area (clickable) -->
 				<button
 					type="button"
-					class="hover:bg-muted/30 flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm transition-colors"
+					class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm transition-all duration-150 {activeTabId ===
+					tab.id
+						? 'rounded-t-lg font-semibold text-blue-600 dark:text-blue-400'
+						: 'text-muted-foreground hover:text-foreground hover:bg-white/20 dark:hover:bg-gray-700/40'}"
 					onclick={() => handleTabClick(tab.id)}
 					ondblclick={() => startEditingName(tab.id, tab.name)}
 				>
@@ -164,7 +173,7 @@
 				{#if showCloseButton && onTabClose}
 					<button
 						type="button"
-						class="hover:bg-destructive/10 hover:text-destructive mr-2 flex-shrink-0 rounded p-0.5 opacity-0 transition-all group-hover:opacity-100"
+						class="mr-2 flex-shrink-0 rounded p-0.5 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
 						onclick={(e) => handleTabClose(e, tab.id)}
 						title={closeTabLabel}
 					>

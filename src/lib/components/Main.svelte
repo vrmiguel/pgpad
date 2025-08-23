@@ -646,9 +646,9 @@
 
 		<!-- Main Editor Pane - always in same position -->
 		<ResizablePane defaultSize={isSidebarCollapsed ? 96 : 75}>
-			<div class="bg-background/50 flex h-full flex-col">
+			<div class="flex h-full flex-col bg-white dark:bg-gray-900">
 				<!-- Editor and Results - same component instance always -->
-				<div class="bg-background/30 flex flex-1 flex-col">
+				<div class="flex flex-1 flex-col bg-gray-50/50 dark:bg-gray-800/50">
 					<!-- Script Tabs -->
 					<ScriptTabs
 						{openScripts}
