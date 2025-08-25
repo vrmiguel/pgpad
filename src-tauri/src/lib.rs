@@ -1,4 +1,5 @@
 mod error;
+mod init;
 mod postgres;
 mod storage;
 mod window;
@@ -58,6 +59,8 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            init::build_window(app)?;
 
             let handle = app.handle();
             let monitor = ConnectionMonitor::new(handle.clone());

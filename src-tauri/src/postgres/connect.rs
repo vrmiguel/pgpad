@@ -54,7 +54,6 @@ async fn check_connection<T>(conn: Connection<Socket, T::Stream>)
 where
     T: MakeTlsConnect<Socket>,
 {
-    log::info!("Checking connection!");
     let res = conn.await;
     log::info!("Connection finished");
     match res {

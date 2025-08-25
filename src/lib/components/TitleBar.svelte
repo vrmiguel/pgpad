@@ -2,7 +2,6 @@
 	import { Database, Minus, Square, X, Play, Save } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ThemeToggle from './ThemeToggle.svelte';
-	import { onMount } from 'svelte';
 	import { Commands } from '$lib/commands.svelte';
 
 	interface Props {
@@ -26,13 +25,7 @@
 		onSaveScript = () => {}
 	}: Props = $props();
 
-	let isMacOS = $state(false);
-
-	onMount(() => {
-		// TODO(vini): convert this to backend command
-		isMacOS =
-			navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.includes('Mac');
-	});
+	const isMacOS = window.__PGPAD_INTERNAL__?.platform === 'macos';
 
 	// Window controls
 	async function minimizeWindow() {

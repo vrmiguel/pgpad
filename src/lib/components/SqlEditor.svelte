@@ -8,7 +8,8 @@
 		Commands,
 		type ConnectionInfo,
 		type Script,
-		type QueryHistoryEntry
+		type QueryHistoryEntry,
+		type PgRow
 	} from '$lib/commands.svelte';
 	import { createEditor } from '$lib/codemirror';
 	import { onMount } from 'svelte';
@@ -54,7 +55,7 @@ SELECT 1 as test;`);
 		queryReturnsResults?: boolean;
 		affectedRows?: number;
 		columns?: string[];
-		rows?: unknown[][];
+		rows?: PgRow[];
 		error?: string;
 	}
 
@@ -378,9 +379,9 @@ SELECT 1 as test;`);
 		<!-- SQL Editor Pane -->
 		<ResizablePane defaultSize={60} minSize={30} maxSize={80}>
 			<div class="h-full p-1 pb-0.5">
-				<Card class="flex h-full flex-col gap-0 py-0">
+				<Card class="flex h-full flex-col gap-0 overflow-hidden py-0">
 					<CardContent class="min-h-0 flex-1 p-0">
-						<div bind:this={editorContainer} class="h-full w-full overflow-hidden rounded-md"></div>
+						<div bind:this={editorContainer} class="h-full w-full"></div>
 					</CardContent>
 				</Card>
 			</div>
@@ -390,7 +391,7 @@ SELECT 1 as test;`);
 
 		<!-- Results & History Section Pane -->
 		<ResizablePane defaultSize={40} minSize={20}>
-			<div class="relative h-full px-1 pt-0.5 pb-1">
+			<div class="relative flex h-full flex-col px-1 pb-1">
 				<!-- Result Tabs -->
 				<div class="relative z-10">
 					<TabBar
@@ -409,10 +410,10 @@ SELECT 1 as test;`);
 				</div>
 
 				<Card
-					class="-mt-px flex h-full min-h-0 flex-col gap-0 overflow-hidden rounded-t-none border-t-0 pt-0 pb-2"
+					class="-mt-px flex flex-1 flex-col gap-0 overflow-hidden rounded-t-none border-t-0 pt-0 pb-0"
 				>
 					{#if showHistory}
-						<CardContent class="flex min-h-0 flex-1 flex-col px-6 pt-0 pb-6">
+						<CardContent class="flex min-h-0 flex-1 flex-col px-6 pt-0">
 							{#if queryHistory.length > 0}
 								<div class="flex-1 overflow-auto">
 									<div class="space-y-2 p-2">
@@ -489,7 +490,7 @@ SELECT 1 as test;`);
 								activeTab.rows &&
 								activeTab.rows.length > 0
 									? 'p-0'
-									: 'px-6 pb-6'}"
+									: 'px-6'}"
 							>
 								{#if activeTab.error}
 									<!-- Error state -->
@@ -535,7 +536,7 @@ SELECT 1 as test;`);
 							</CardContent>
 						{/if}
 					{:else}
-						<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-6 pt-0 pb-6">
+						<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-6 pt-0">
 							<div class="text-muted-foreground flex flex-1 items-center justify-center">
 								<div class="text-center">
 									<div

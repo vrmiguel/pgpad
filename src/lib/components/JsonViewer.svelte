@@ -218,6 +218,7 @@
 						{@const stringPath = `${item.path}_string`}
 						{@const isStringExpanded = expandedStrings.has(stringPath)}
 						{@const shouldTruncate = item.value.length > 30}
+
 						{#if shouldTruncate && !isStringExpanded}
 							<button
 								class="json-string-value clickable"
@@ -227,16 +228,17 @@
 							>
 								"{item.value.slice(0, 30)}…"
 							</button>
-						{:else}
-							<span
-								class="json-string-value"
-								class:expanded={isStringExpanded}
-								onclick={() => (shouldTruncate ? toggleStringExpanded(stringPath) : null)}
-								role={shouldTruncate ? 'button' : undefined}
-								tabindex={shouldTruncate ? 0 : undefined}
+						{:else if shouldTruncate && isStringExpanded}
+							<button
+								class="json-string-value expanded"
+								onclick={() => toggleStringExpanded(stringPath)}
+								title="Click to collapse string"
+								type="button"
 							>
 								"{item.value}"
-							</span>
+							</button>
+						{:else}
+							<span class="json-string-value">"{item.value}"</span>
 						{/if}
 					{:else}
 						{JSON.stringify(item.value)}

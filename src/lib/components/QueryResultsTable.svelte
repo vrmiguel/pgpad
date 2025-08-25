@@ -23,10 +23,9 @@
 
 	let { data, columns, table = $bindable(), globalFilter = $bindable('') }: Props = $props();
 
-	let isResizing = $state(false);
 	let resizePreviewX = $state(0);
-	let resizingColumnId = $state<string | null>(null);
 	let tableContainer: HTMLDivElement;
+	let hasFocus = $state(false);
 
 	const COLUMN_RESIZE = {
 		MIN_WIDTH: 150,
@@ -87,46 +86,14 @@
 		originalColumnWidths.clear();
 	});
 
-	function createResizeHandler(header: any) {
-		return (downEvent: MouseEvent | TouchEvent) => {
-			if (!tableContainer) return;
+	function handleWindowMouseMove(event: MouseEvent) {
+		if (!tableContainer || !tableInstance.getState().columnSizingInfo.isResizingColumn) return;
 
-			const startX = 'clientX' in downEvent ? downEvent.clientX : downEvent.touches[0].clientX;
-			const columnId = header.column.id;
-			const containerRect = tableContainer.getBoundingClientRect();
-
-			isResizing = true;
-			resizingColumnId = columnId;
-			resizePreviewX = startX - containerRect.left + tableContainer.scrollLeft;
-
-			const handleMouseMove = (moveEvent: MouseEvent | TouchEvent) => {
-				const currentX = 'clientX' in moveEvent ? moveEvent.clientX : moveEvent.touches[0].clientX;
-				resizePreviewX = currentX - containerRect.left + tableContainer.scrollLeft;
-			};
-
-			const handleMouseUp = () => {
-				isResizing = false;
-				resizingColumnId = null;
-
-				document.removeEventListener('mousemove', handleMouseMove);
-				document.removeEventListener('mouseup', handleMouseUp);
-				document.removeEventListener('touchmove', handleMouseMove);
-				document.removeEventListener('touchend', handleMouseUp);
-			};
-
-			document.addEventListener('mousemove', handleMouseMove);
-			document.addEventListener('mouseup', handleMouseUp);
-			document.addEventListener('touchmove', handleMouseMove);
-			document.addEventListener('touchend', handleMouseUp);
-
-			const originalHandler = header.getResizeHandler();
-			if (originalHandler) {
-				originalHandler(downEvent);
-			}
-		};
+		const containerRect = tableContainer.getBoundingClientRect();
+		resizePreviewX = event.clientX - containerRect.left + tableContainer.scrollLeft;
 	}
 
-	function handleCellClick(cell: Cell<PgRow, unknown>, rowId: string, _event: MouseEvent) {
+	function handleCellClick(cell: Cell<PgRow, unknown>, rowId: string, _: MouseEvent) {
 		const cellValue = cell.getValue();
 		const columnId = cell.column.id;
 
@@ -203,6 +170,8 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
+		if (!hasFocus) return;
+
 		if (!selectedCell) return;
 
 		if (event.key === 'Escape') {
@@ -290,11 +259,17 @@
 	}
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window on:keydown={handleKeydown} onmousemove={handleWindowMouseMove} />
 
-<div class="relative grid h-full grid-rows-[1fr_auto]">
+<div
+	class="relative flex h-full flex-col"
+	tabindex="0"
+	role="application"
+	onfocus={() => (hasFocus = true)}
+	onblur={() => (hasFocus = false)}
+>
 	<!-- Resize preview line -->
-	{#if isResizing}
+	{#if tableInstance && tableInstance.getState().columnSizingInfo.isResizingColumn}
 		<div
 			class="pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 bg-blue-500 opacity-75"
 			style="left: {resizePreviewX}px"
@@ -302,7 +277,7 @@
 	{/if}
 
 	<!-- Table content -->
-	<div class="overflow-hidden" bind:this={tableContainer}>
+	<div class="flex-1 overflow-hidden" bind:this={tableContainer}>
 		<div class="h-full overflow-auto">
 			{#if tableInstance}
 				<table
@@ -340,12 +315,12 @@
 												</Button>
 												{#if header.column.getCanResize()}
 													<button
-														class="absolute top-0 right-0 h-full w-1 cursor-col-resize border-none bg-transparent transition-colors select-none hover:bg-blue-400 focus:bg-blue-400 focus:outline-none active:bg-blue-500 {resizingColumnId ===
-														header.column.id
+														class="absolute top-0 right-0 h-full w-1 cursor-col-resize border-none bg-transparent transition-colors select-none hover:bg-blue-400 focus:bg-blue-400 focus:outline-none active:bg-blue-500 {tableInstance.getState()
+															.columnSizingInfo.isResizingColumn === header.column.id
 															? 'bg-blue-500'
 															: ''}"
-														onmousedown={createResizeHandler(header)}
-														ontouchstart={createResizeHandler(header)}
+														onmousedown={header.getResizeHandler()}
+														ontouchstart={header.getResizeHandler()}
 														type="button"
 														aria-label="Resize column"
 													></button>

@@ -79,7 +79,7 @@
 				break;
 			}
 
-			case 'resultBatch':
+			case 'resultBatch': {
 				console.log('Got batch data for statement:', event.data.statementIndex);
 				const batchTabId = statementTabMap.get(event.data.statementIndex);
 				if (batchTabId) {
@@ -90,8 +90,9 @@
 					});
 				}
 				break;
+			}
 
-			case 'statementComplete':
+			case 'statementComplete': {
 				const completeTabId = statementTabMap.get(event.data.statementIndex);
 				if (completeTabId) {
 					onTabUpdate?.(completeTabId, {
@@ -101,21 +102,24 @@
 					onStatementComplete?.(completeTabId, event.data.affectedRows, Date.now() - startTime);
 				}
 				break;
+			}
 
-			case 'statementFinish':
+			case 'statementFinish': {
 				const finishTabId = statementTabMap.get(event.data.statementIndex);
 				if (finishTabId) {
 					onTabUpdate?.(finishTabId, { status: 'completed' });
 				}
 				break;
+			}
 
-			case 'allFinished':
+			case 'allFinished': {
 				console.log('All statements finished');
 				cleanup();
 				onAllComplete?.();
 				break;
+			}
 
-			case 'statementError':
+			case 'statementError': {
 				console.error('Statement error:', event.data);
 				const errorTabId = statementTabMap.get(event.data.statementIndex);
 				if (errorTabId) {
@@ -126,6 +130,7 @@
 					onStatementError?.(errorTabId, event.data.error);
 				}
 				break;
+			}
 		}
 	}
 
