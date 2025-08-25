@@ -4,11 +4,16 @@ fn init_script() -> String {
     format!(
         r#"
         console.log(`I am in the init script, window.location.origin: ${{window.location.origin}}`);
-        if (window.location.origin === 'http://localhost:1420') {{
+        if (window.location.origin === '{}') {{
             window.__PGPAD_INTERNAL__ = {{ platform: "{}" }};
             console.log("window.__PGPAD_INTERNAL__: ", window.__PGPAD_INTERNAL__);
         }}
     "#,
+        if cfg!(debug_assertions) {
+            "http://localhost:1420"
+        } else {
+            "tauri://localhost"
+        },
         std::env::consts::OS
     )
 }
