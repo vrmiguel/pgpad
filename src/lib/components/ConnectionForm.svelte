@@ -158,14 +158,14 @@
 
 		{#if testResult === 'success'}
 			<div
-				class="bg-success-light/50 border-success/20 flex items-center gap-2 rounded-lg border px-3 py-1.5"
+				class="bg-success/35 border-success/40 flex items-center gap-2 rounded-lg border px-3 py-1.5"
 			>
 				<CheckCircle class="text-success h-4 w-4" />
 				<span class="text-success-foreground/80 text-sm font-medium">Connection successful!</span>
 			</div>
 		{:else if testResult === 'error'}
 			<div
-				class="bg-error-light/50 border-error/20 flex items-center gap-2 rounded-lg border px-3 py-1.5"
+				class="bg-error/35 border-error/40 text-error-foreground flex items-center gap-2 rounded-lg border px-3 py-1.5"
 			>
 				<AlertCircle class="text-error h-4 w-4" />
 				<span class="text-error-foreground/80 text-sm font-medium">Connection failed</span>
