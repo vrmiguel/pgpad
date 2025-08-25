@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Database, Minus, Square, X, Play, Save } from '@lucide/svelte';
+	import { Cable, Minus, Square, X, Play, Save } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ThemeToggle from './ThemeToggle.svelte';
+	import Logo from './Logo.svelte';
 	import { Commands } from '$lib/commands.svelte';
 
 	interface Props {
@@ -89,7 +90,7 @@
 		<div class="flex flex-1 items-center justify-center gap-3 px-4" data-tauri-drag-region>
 			<!-- App info - draggable -->
 			<div class="flex items-center gap-2" data-tauri-drag-region>
-				<Database class="text-primary h-4 w-4" data-tauri-drag-region />
+				<Logo class="text-primary" size="sm" data-tauri-drag-region />
 				<span class="text-foreground text-sm font-semibold" data-tauri-drag-region>pgpad</span>
 			</div>
 
@@ -168,7 +169,7 @@
 		<div class="flex flex-1 items-center gap-3 px-4" data-tauri-drag-region>
 			<!-- App info - draggable -->
 			<div class="flex items-center gap-2" data-tauri-drag-region>
-				<Database class="text-primary h-4 w-4" data-tauri-drag-region />
+				<Logo class="text-primary" size="sm" data-tauri-drag-region />
 				<span class="text-foreground text-sm font-semibold" data-tauri-drag-region>pgpad</span>
 			</div>
 

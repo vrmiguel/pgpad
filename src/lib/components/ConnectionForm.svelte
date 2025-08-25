@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Database, X, CheckCircle, AlertCircle, Info } from '@lucide/svelte';
+	import { Cable, X, CheckCircle, AlertCircle, Info } from '@lucide/svelte';
 	import { Commands, type ConnectionConfig } from '$lib/commands.svelte';
 
 	interface Props {
@@ -70,7 +70,7 @@
 	<div class="mb-8 flex items-center justify-between">
 		<div class="flex items-center gap-3">
 			<div class="bg-primary/10 border-primary/20 rounded-lg border p-2">
-				<Database class="text-primary h-5 w-5" />
+				<Cable class="text-primary h-5 w-5" />
 			</div>
 			<h2 class="text-foreground text-xl font-bold">Add Connection</h2>
 		</div>
@@ -178,7 +178,7 @@
 			Cancel
 		</Button>
 		<Button type="submit" class="gap-2 shadow-md hover:shadow-lg">
-			<Database class="h-4 w-4" />
+			<Cable class="h-4 w-4" />
 			Add Connection
 		</Button>
 	</div>

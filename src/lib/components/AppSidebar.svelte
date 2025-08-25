@@ -1,8 +1,16 @@
 <script lang="ts">
-	import { Database, Plus, ChevronLeft, ChevronRight, FileText, Table } from '@lucide/svelte';
+	import {
+		Cable,
+		Plus,
+		ChevronLeft,
+		ChevronRight,
+		FileJson,
+		TableProperties
+	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Accordion, AccordionItem, AccordionContent } from '$lib/components/ui/accordion';
 	import DatabaseSchemaItems from './DatabaseSchemaItems.svelte';
+	import Logo from './Logo.svelte';
 	import type { ConnectionInfo, Script, DatabaseSchema } from '$lib/commands.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
@@ -95,19 +103,15 @@
 	class="bg-sidebar/80 glass-subtle border-sidebar-border relative flex h-full flex-col border-r"
 >
 	{#if isSidebarCollapsed}
-		<button
-			class="hover:bg-sidebar-accent/80 absolute top-4 right-2 z-10 rounded-lg p-2 transition-all duration-200 hover:shadow-md"
-			onclick={toggleSidebar}
-			title="Expand sidebar"
-		>
-			<ChevronRight class="text-sidebar-foreground/70 h-4 w-4" />
-		</button>
-
 		<div class="border-sidebar-border/50 border-b p-3">
 			<div class="flex flex-col items-center gap-3">
-				<div class="bg-primary/10 border-primary/20 rounded-lg border p-2">
-					<Database class="text-primary h-6 w-6" />
-				</div>
+				<button
+					class="hover:bg-sidebar-accent/80 rounded-lg p-2 transition-all duration-200 hover:shadow-md"
+					onclick={toggleSidebar}
+					title="Expand sidebar"
+				>
+					<ChevronRight class="text-sidebar-foreground/70 h-4 w-4" />
+				</button>
 				<Button
 					size="icon-sm"
 					variant="outline"
@@ -123,7 +127,7 @@
 		<div class="flex flex-1 flex-col items-center justify-start space-y-4 p-4">
 			<!-- Connections icon -->
 			<button
-				class="hover:bg-sidebar-accent/80 flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md"
+				class="group flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 ease-out hover:bg-white/3 dark:hover:bg-white/5"
 				onclick={() => {
 					isSidebarCollapsed = false;
 					isConnectionsAccordionOpen = true;
@@ -132,12 +136,14 @@
 				}}
 				title="Connections"
 			>
-				<Database class="text-sidebar-foreground/70 h-5 w-5" />
+				<Cable
+					class="text-sidebar-foreground/70 group-hover:text-primary/90 h-5 w-5 transition-colors duration-200"
+				/>
 			</button>
 
 			<!-- Scripts icon -->
 			<button
-				class="hover:bg-sidebar-accent/80 flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md"
+				class="group flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 ease-out hover:bg-white/3 dark:hover:bg-white/5"
 				onclick={() => {
 					isSidebarCollapsed = false;
 					isConnectionsAccordionOpen = false;
@@ -146,12 +152,14 @@
 				}}
 				title="Scripts"
 			>
-				<FileText class="text-sidebar-foreground/70 h-5 w-5" />
+				<FileJson
+					class="text-sidebar-foreground/70 group-hover:text-primary/90 h-5 w-5 transition-colors duration-200"
+				/>
 			</button>
 
 			<!-- items icon -->
 			<button
-				class="hover:bg-sidebar-accent/80 flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 hover:shadow-md"
+				class="group flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 ease-out hover:bg-white/3 dark:hover:bg-white/5"
 				onclick={() => {
 					isSidebarCollapsed = false;
 					isConnectionsAccordionOpen = false;
@@ -160,7 +168,9 @@
 				}}
 				title="Database Items"
 			>
-				<Table class="text-sidebar-foreground/70 h-5 w-5" />
+				<TableProperties
+					class="text-sidebar-foreground/70 group-hover:text-primary/90 h-5 w-5 transition-colors duration-200"
+				/>
 			</button>
 		</div>
 	{:else}
@@ -174,10 +184,11 @@
 		</button>
 
 		<div class="border-sidebar-border/50 border-b p-6">
-			<div class="flex items-center gap-3">
-				<div class="bg-primary/10 border-primary/20 rounded-lg border p-2">
-					<Database class="text-primary h-6 w-6" />
-				</div>
+			<div class="flex items-center gap-4">
+				<Logo
+					class="text-primary/90 hover:text-primary drop-shadow-lg transition-all duration-300 hover:scale-105"
+					size="md"
+				/>
 				<h1 class="text-sidebar-foreground text-xl font-bold">PgPad</h1>
 			</div>
 		</div>
@@ -185,7 +196,7 @@
 		<div class="flex-1 overflow-y-auto p-4">
 			<Accordion>
 				<!-- Connections accordion -->
-				<AccordionItem title="Connections" icon={Database} bind:open={isConnectionsAccordionOpen}>
+				<AccordionItem title="Connections" icon={Cable} bind:open={isConnectionsAccordionOpen}>
 					<AccordionContent>
 						<div class="space-y-3">
 							<Button
@@ -203,7 +214,7 @@
 										<div
 											class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3"
 										>
-											<Database class="text-muted-foreground/50 h-6 w-6" />
+											<Cable class="text-muted-foreground/50 h-6 w-6" />
 										</div>
 										<p class="text-muted-foreground mb-1 text-xs font-medium">No connections yet</p>
 										<p class="text-muted-foreground/70 text-xs">
@@ -254,7 +265,7 @@
 				</AccordionItem>
 
 				<!-- Scripts accordion -->
-				<AccordionItem title="Scripts" icon={FileText} bind:open={isScriptsAccordionOpen}>
+				<AccordionItem title="Scripts" icon={FileJson} bind:open={isScriptsAccordionOpen}>
 					<AccordionContent>
 						<div class="space-y-3">
 							<Button
@@ -272,7 +283,7 @@
 										<div
 											class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3"
 										>
-											<FileText class="text-muted-foreground/50 h-6 w-6" />
+											<FileJson class="text-muted-foreground/50 h-6 w-6" />
 										</div>
 										<p class="text-muted-foreground mb-1 text-xs font-medium">
 											No saved scripts yet
@@ -294,7 +305,7 @@
 											>
 												<div class="flex w-full items-start gap-3">
 													<div class="mt-1 flex-shrink-0">
-														<FileText class="text-muted-foreground h-3 w-3" />
+														<FileJson class="text-muted-foreground h-3 w-3" />
 													</div>
 
 													<div class="min-w-0 flex-1 text-left">
@@ -338,7 +349,7 @@
 				</AccordionItem>
 
 				<!-- database items accordion -->
-				<AccordionItem title="Items" icon={Table} bind:open={isItemsAccordionOpen}>
+				<AccordionItem title="Items" icon={TableProperties} bind:open={isItemsAccordionOpen}>
 					<AccordionContent>
 						<DatabaseSchemaItems
 							{databaseSchema}

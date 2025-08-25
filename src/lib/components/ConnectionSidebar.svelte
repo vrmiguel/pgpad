@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Database, AlertTriangle, Loader2 } from '@lucide/svelte';
+	import { Cable, AlertTriangle, Loader2 } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 
 	interface Connection {
@@ -30,7 +30,7 @@
 		{#if connections.length === 0}
 			<div class="px-4 py-12 text-center">
 				<div class="bg-muted/30 border-border/50 mb-4 inline-flex rounded-xl border p-4">
-					<Database class="text-muted-foreground/50 h-8 w-8" />
+					<Cable class="text-muted-foreground/50 h-8 w-8" />
 				</div>
 				<p class="text-muted-foreground mb-2 text-sm font-medium">No connections yet</p>
 				<p class="text-muted-foreground/70 text-xs">Add your first connection to get started</p>

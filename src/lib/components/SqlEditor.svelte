@@ -13,7 +13,7 @@
 	} from '$lib/commands.svelte';
 	import { createEditor } from '$lib/codemirror';
 	import { onMount } from 'svelte';
-	import { Table, History } from '@lucide/svelte';
+	import { TableProperties, History } from '@lucide/svelte';
 
 	interface Props {
 		selectedConnection: string | null;
@@ -542,7 +542,7 @@ SELECT 1 as test;`);
 									<div
 										class="bg-muted/20 mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
 									>
-										<Table class="text-muted-foreground/50 h-8 w-8" />
+										<TableProperties class="text-muted-foreground/50 h-8 w-8" />
 									</div>
 									<p class="text-sm font-medium">No results to display</p>
 									<p class="text-muted-foreground/70 mt-1 text-xs">

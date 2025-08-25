@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Table, Columns } from '@lucide/svelte';
+	import { TableProperties, Columns } from '@lucide/svelte';
 	import type { DatabaseSchema } from '$lib/commands.svelte';
 
 	interface Props {
@@ -16,7 +16,7 @@
 	{#if !selectedConnection}
 		<div class="px-4 py-8 text-center">
 			<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
-				<Table class="text-muted-foreground/50 h-6 w-6" />
+				<TableProperties class="text-muted-foreground/50 h-6 w-6" />
 			</div>
 			<p class="text-muted-foreground mb-1 text-xs font-medium">No connection selected</p>
 			<p class="text-muted-foreground/70 text-xs">Select a connection to view tables</p>
@@ -24,14 +24,14 @@
 	{:else if loadingSchema}
 		<div class="px-4 py-8 text-center">
 			<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
-				<Table class="text-muted-foreground/50 h-6 w-6 animate-pulse" />
+				<TableProperties class="text-muted-foreground/50 h-6 w-6 animate-pulse" />
 			</div>
 			<p class="text-muted-foreground mb-1 text-xs font-medium">Loading schema...</p>
 		</div>
 	{:else if !databaseSchema}
 		<div class="px-4 py-8 text-center">
 			<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
-				<Table class="text-muted-foreground/50 h-6 w-6" />
+				<TableProperties class="text-muted-foreground/50 h-6 w-6" />
 			</div>
 			<p class="text-muted-foreground mb-1 text-xs font-medium">Schema not loaded</p>
 			<p class="text-muted-foreground/70 text-xs">Connect to database to view tables</p>
@@ -39,7 +39,7 @@
 	{:else if databaseSchema.tables.length === 0}
 		<div class="px-4 py-8 text-center">
 			<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
-				<Table class="text-muted-foreground/50 h-6 w-6" />
+				<TableProperties class="text-muted-foreground/50 h-6 w-6" />
 			</div>
 			<p class="text-muted-foreground mb-1 text-xs font-medium">No tables found</p>
 			<p class="text-muted-foreground/70 text-xs">This database has no tables</p>
@@ -51,7 +51,7 @@
 					class="hover:bg-muted/30 flex cursor-pointer items-center gap-3 p-3 transition-colors"
 				>
 					<div class="flex-shrink-0">
-						<Table class="text-muted-foreground h-3 w-3" />
+						<TableProperties class="text-muted-foreground h-3 w-3" />
 					</div>
 					<div class="min-w-0 flex-1 text-left">
 						<div class="text-foreground truncate text-xs font-medium">
@@ -72,7 +72,7 @@
 							}}
 							title="Browse table data"
 						>
-							<Table class="h-3 w-3" />
+							<TableProperties class="h-3 w-3" />
 						</button>
 					{/if}
 				</summary>
