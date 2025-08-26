@@ -28,7 +28,6 @@
 
 	const isMacOS = window.__PGPAD_INTERNAL__?.platform === 'macos';
 
-	// Window controls
 	async function minimizeWindow() {
 		await Commands.minimizeWindow();
 	}
@@ -42,58 +41,12 @@
 	}
 </script>
 
-<div class="bg-background border-border/50 flex h-12 items-center border-b select-none">
+<div
+	class="border-border/50 flex h-12 items-center border-b select-none"
+	style="background-color: rgb(241, 245, 249);"
+>
 	{#if isMacOS}
-		<!-- macOS-style controls (left side) - NOT draggable -->
-		<div class="flex items-center gap-2 px-4">
-			<!-- Close (red) -->
-			<button
-				class="group h-3 w-3 rounded-full bg-red-500 transition-colors hover:bg-red-600"
-				onclick={closeWindow}
-				title="Close"
-			>
-				<div
-					class="flex h-full w-full items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100"
-				>
-					<X class="h-2 w-2 text-red-900" />
-				</div>
-			</button>
-
-			<!-- Minimize (yellow) -->
-			<button
-				class="group h-3 w-3 rounded-full bg-yellow-500 transition-colors hover:bg-yellow-600"
-				onclick={minimizeWindow}
-				title="Minimize"
-			>
-				<div
-					class="flex h-full w-full items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100"
-				>
-					<Minus class="h-2 w-2 text-yellow-900" />
-				</div>
-			</button>
-
-			<!-- Maximize/Fullscreen (green) -->
-			<button
-				class="group h-3 w-3 rounded-full bg-green-500 transition-colors hover:bg-green-600"
-				onclick={maximizeWindow}
-				title="Maximize"
-			>
-				<div
-					class="flex h-full w-full items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100"
-				>
-					<Square class="h-1.5 w-1.5 text-green-900" />
-				</div>
-			</button>
-		</div>
-
-		<!-- Center section - Action buttons and app info - DRAGGABLE areas -->
-		<div class="flex flex-1 items-center justify-center gap-3 px-4" data-tauri-drag-region>
-			<!-- App info - draggable -->
-			<div class="flex items-center gap-2" data-tauri-drag-region>
-				<Logo class="text-primary" size="sm" data-tauri-drag-region />
-				<span class="text-foreground text-sm font-semibold" data-tauri-drag-region>pgpad</span>
-			</div>
-
+		<div class="flex flex-1 items-center justify-center gap-3 pr-4 pl-20" data-tauri-drag-region>
 			<!-- Action buttons - NOT draggable -->
 			<div class="flex items-center gap-1.5">
 				<Button
@@ -167,12 +120,6 @@
 		<!-- Windows/Linux controls (right side) -->
 		<!-- Left section - App info, action buttons, and connection status -->
 		<div class="flex flex-1 items-center gap-3 px-4" data-tauri-drag-region>
-			<!-- App info - draggable -->
-			<div class="flex items-center gap-2" data-tauri-drag-region>
-				<Logo class="text-primary" size="sm" data-tauri-drag-region />
-				<span class="text-foreground text-sm font-semibold" data-tauri-drag-region>pgpad</span>
-			</div>
-
 			<!-- Action buttons - NOT draggable -->
 			<div class="flex items-center gap-1.5">
 				<Button

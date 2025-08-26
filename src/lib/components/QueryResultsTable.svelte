@@ -3,8 +3,8 @@
 	import type { PgRow } from '$lib/commands.svelte';
 	import type { Cell } from '@tanstack/table-core';
 	import { Button } from '$lib/components/ui/button';
+	import { CellFormatter } from '$lib/utils/cell-formatter';
 
-	import JsonViewer from './JsonViewer.svelte';
 	import {
 		ChevronUp,
 		ChevronDown,
@@ -19,9 +19,16 @@
 		columns: string[];
 		table?: unknown;
 		globalFilter?: string;
+		selectedCellData?: any | null;
 	}
 
-	let { data, columns, table = $bindable(), globalFilter = $bindable('') }: Props = $props();
+	let {
+		data,
+		columns,
+		table = $bindable(),
+		globalFilter = $bindable(''),
+		selectedCellData = $bindable(null)
+	}: Props = $props();
 
 	let resizePreviewX = $state(0);
 	let tableContainer: HTMLDivElement;
@@ -83,6 +90,7 @@
 		// Reset selection and column widths when data changes
 		data;
 		selectedCell = null;
+		selectedCellData = null;
 		originalColumnWidths.clear();
 	});
 
@@ -100,6 +108,7 @@
 		// Deselect when clicking the selected cell
 		if (selectedCell && selectedCell.rowId === rowId && selectedCell.columnId === columnId) {
 			selectedCell = null;
+			selectedCellData = null;
 			restoreOriginalColumnWidths();
 			return;
 		}
@@ -109,6 +118,8 @@
 		}
 
 		selectedCell = { rowId, columnId };
+
+		selectedCellData = cellValue;
 
 		if (tableInstance && cellValue !== null && cellValue !== undefined) {
 			const contentLength = String(cellValue).length;
@@ -150,11 +161,7 @@
 			if (!row) return null;
 
 			const cellValue = row.getValue(selectedCell.columnId);
-			return cellValue === null || cellValue === undefined
-				? 'NULL'
-				: typeof cellValue === 'object'
-					? JSON.stringify(cellValue, null, 2)
-					: String(cellValue);
+			return CellFormatter.formatCellForCopy(cellValue);
 		} catch (error) {
 			console.warn('Failed to get cell value:', error);
 			return null;
@@ -176,6 +183,7 @@
 
 		if (event.key === 'Escape') {
 			selectedCell = null;
+			selectedCellData = null;
 			restoreOriginalColumnWidths();
 			return;
 		}
@@ -261,6 +269,7 @@
 
 <svelte:window on:keydown={handleKeydown} onmousemove={handleWindowMouseMove} />
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
 	class="relative flex h-full flex-col"
 	tabindex="0"
@@ -284,7 +293,7 @@
 					class="w-full border-collapse text-xs"
 					style="width: {tableInstance.getCenterTotalSize()}px"
 				>
-					<thead class="bg-muted/90 border-border sticky top-0 z-10 border-b">
+					<thead class="bg-accent border-border sticky top-0 z-10 border-b shadow-sm">
 						{#each tableInstance.getHeaderGroups() as headerGroup}
 							<tr>
 								{#each headerGroup.headers as header}
@@ -333,52 +342,53 @@
 						{/each}
 					</thead>
 					<tbody>
-						{#each tableInstance.getPaginationRowModel().rows as row (row.id)}
-							<tr class="border-border/30 hover:bg-muted/20 border-b transition-colors">
+						{#each tableInstance.getPaginationRowModel().rows as row, index (row.id)}
+							<tr
+								class="border-border/40 hover:bg-muted/50 group border-b transition-colors {index %
+									2 ===
+								0
+									? 'bg-background'
+									: 'bg-card/30'}"
+							>
 								{#each row.getVisibleCells() as cell (cell.column.id)}
 									{@const cellValue = cell.getValue()}
 									{@const columnWidth = cell.column.getSize()}
-									{@const isObject = typeof cellValue === 'object' && cellValue !== null}
 									{@const isSelected = selectedCell
 										? selectedCell.rowId === row.id && selectedCell.columnId === cell.column.id
 										: false}
+									{@const cellType = CellFormatter.getCellType(cellValue)}
+									{@const displayValue = CellFormatter.formatCellDisplay(cellValue)}
 									<td
-										class="border-border/20 border-r px-0 py-0 align-top text-xs transition-colors {isSelected
-											? 'bg-blue-100 ring-1 ring-blue-400 dark:bg-blue-900/30'
+										class="border-border/30 border-r px-0 py-0 align-top text-xs transition-colors {isSelected
+											? 'bg-primary/10 ring-primary/40 ring-1'
 											: ''}"
 										style="width: {columnWidth}px"
 										role="gridcell"
 										aria-selected={isSelected}
 									>
 										<button
-											class="hover:bg-accent/30 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:ring-blue-400 focus:outline-none"
-											title={cellValue !== null && cellValue !== undefined
-												? isObject
-													? '{ .. }'
-													: String(cellValue)
-												: undefined}
+											class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
+											title={CellFormatter.formatCellTitle(cellValue)}
 											onclick={(event) => handleCellClick(cell, row.id, event)}
 										>
-											{#if cellValue === null || cellValue === undefined}
-												<span class="cell-content text-muted-foreground text-xs italic">NULL</span>
-											{:else if typeof cellValue === 'boolean'}
-												<span class="cell-content text-foreground"
-													>{cellValue ? 'true' : 'false'}</span
+											{#if cellType === 'null'}
+												<span class="cell-content text-muted-foreground text-xs italic"
+													>{displayValue}</span
 												>
-											{:else if typeof cellValue === 'number'}
-												<span class="cell-content text-foreground font-mono"
-													>{cellValue.toLocaleString()}</span
-												>
-											{:else if isObject}
-												<div class="cell-content">
-													<JsonViewer json={cellValue} depth={2} />
+											{:else if cellType === 'boolean'}
+												<span class="cell-content text-foreground">{displayValue}</span>
+											{:else if cellType === 'number'}
+												<span class="cell-content text-foreground font-mono">{displayValue}</span>
+											{:else if cellType === 'object'}
+												<div class="cell-content cursor-pointer">
+													<span class="font-mono text-xs">{displayValue}</span>
 												</div>
 											{:else}
 												<div
 													class="cell-content text-foreground {isSelected ? '' : 'truncate'}"
 													style="max-width: {isSelected ? 'none' : columnWidth - 16 + 'px'}"
 												>
-													{String(cellValue || '')}
+													{displayValue}
 												</div>
 											{/if}
 										</button>

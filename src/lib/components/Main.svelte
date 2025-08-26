@@ -422,7 +422,12 @@
 	async function createNewScript() {
 		try {
 			const name = generateScriptName();
-			const content = '';
+			const content = `-- Welcome to PgPad!
+-- Keyboard shortcuts:
+--   Ctrl+Enter: Run selected text (or current line if nothing selected)
+--   Ctrl+R: Run entire script
+
+SELECT 1 as test;`;
 			// New scripts get negative IDs
 			const tempId = nextTempId--;
 

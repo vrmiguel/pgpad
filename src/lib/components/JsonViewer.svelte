@@ -256,7 +256,7 @@
 			monospace;
 		font-size: 11px;
 		line-height: 1.4;
-		max-height: 150px;
+		height: 100%;
 		max-width: 100%;
 		overflow-y: auto;
 		overflow-x: hidden; /* no horizontal scrolling */
@@ -268,7 +268,7 @@
 	}
 
 	.json-content {
-		padding: 4px;
+		padding: 2px;
 		color: hsl(var(--foreground));
 		min-width: 0; /* allow content to shrink */
 	}

@@ -113,9 +113,9 @@
 
 		switch (status) {
 			case 'modified':
-				return { icon: Circle, class: 'h-2 w-2 flex-shrink-0 fill-orange-500 text-orange-500' };
+				return { icon: Circle, class: 'h-1.5 w-1.5 flex-shrink-0 fill-amber-500 text-amber-500' };
 			case 'error':
-				return { icon: Circle, class: 'h-2 w-2 flex-shrink-0 fill-red-500 text-red-500' };
+				return { icon: Circle, class: 'h-1.5 w-1.5 flex-shrink-0 fill-red-500 text-red-500' };
 			default:
 				return null;
 		}
@@ -123,27 +123,26 @@
 </script>
 
 <div
-	class="flex items-center overflow-hidden border-b border-gray-300 dark:border-gray-600 {variant ===
-	'seamless'
+	class="border-border/50 flex items-center overflow-hidden border-b {variant === 'seamless'
 		? 'bg-transparent'
-		: 'bg-slate-50 dark:bg-slate-800'}"
+		: 'bg-background'}"
 >
 	<!-- Tab bar -->
 	<div class="flex flex-1 overflow-x-auto">
 		{#each tabs as tab (tab.id)}
 			{@const statusIndicator = getStatusIndicator(tab)}
 			<div
-				class="group flex {maxTabWidth} relative min-w-0 items-center {activeTabId === tab.id
-					? 'z-10 mx-0.5 mt-1 rounded-t-lg border border-b-0 border-gray-300 bg-white shadow-md dark:border-gray-600 dark:bg-gray-900'
-					: 'mx-0.5 bg-transparent hover:bg-white/20 dark:hover:bg-gray-700/40'}"
+				class="group relative flex {maxTabWidth} min-w-0 items-center {activeTabId === tab.id
+					? 'bg-card border-border border-x shadow-lg'
+					: 'hover:bg-muted/60 bg-transparent'}"
 			>
 				<!-- Tab content area (clickable) -->
 				<button
 					type="button"
-					class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm transition-all duration-150 {activeTabId ===
+					class="relative flex min-w-0 flex-1 items-center gap-2 px-4 py-3 text-sm transition-all duration-200 {activeTabId ===
 					tab.id
-						? 'rounded-t-lg font-semibold text-blue-600 dark:text-blue-400'
-						: 'text-muted-foreground hover:text-foreground hover:bg-white/20 dark:hover:bg-gray-700/40'}"
+						? 'text-foreground font-medium'
+						: 'text-muted-foreground hover:text-foreground'}"
 					onclick={() => handleTabClick(tab.id)}
 					ondblclick={() => startEditingName(tab.id, tab.name)}
 				>
@@ -173,12 +172,22 @@
 				{#if showCloseButton && onTabClose}
 					<button
 						type="button"
-						class="mr-2 flex-shrink-0 rounded p-0.5 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+						class="hover:bg-destructive/10 hover:text-destructive mr-2 flex-shrink-0 rounded p-1 opacity-0 transition-all duration-200 group-hover:opacity-100 {activeTabId ===
+						tab.id
+							? 'text-muted-foreground'
+							: ''}"
 						onclick={(e) => handleTabClose(e, tab.id)}
 						title={closeTabLabel}
 					>
-						<X class="h-3 w-3" />
+						<X class="h-3.5 w-3.5" />
 					</button>
+				{/if}
+
+				<!-- Active tab indicator - spans entire tab width -->
+				{#if activeTabId === tab.id}
+					<div
+						class="absolute right-0 bottom-0 left-0 h-1 bg-blue-500 transition-all duration-200"
+					></div>
 				{/if}
 			</div>
 		{/each}

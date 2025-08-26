@@ -2,6 +2,7 @@
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import QueryResultsTable from './QueryResultsTable.svelte';
+	import JsonInspector from './JsonInspector.svelte';
 	import StatementExecutor from './StatementExecutor.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import {
@@ -44,6 +45,7 @@
 SELECT 1 as test;`);
 
 	let queryHistory = $state<QueryHistoryEntry[]>([]);
+	let selectedCellData = $state<any | null>(null);
 
 	interface QueryResultTab {
 		id: string;
@@ -405,7 +407,7 @@ SELECT 1 as test;`);
 						{getTabStatus}
 						closeTabLabel="Close result tab"
 						maxTabWidth="max-w-64"
-						variant="seamless"
+						variant="default"
 					/>
 				</div>
 
@@ -485,55 +487,61 @@ SELECT 1 as test;`);
 					{:else if activeResultTabId}
 						{@const activeTab = resultTabs.find((t) => t.id === activeResultTabId)}
 						{#if activeTab}
-							<CardContent
-								class="flex h-full min-h-0 flex-1 flex-col overflow-hidden {activeTab.columns &&
-								activeTab.rows &&
-								activeTab.rows.length > 0
-									? 'p-0'
-									: 'px-6'}"
-							>
-								{#if activeTab.error}
-									<!-- Error state -->
-									<div class="flex h-full flex-1 items-center justify-center">
-										<div class="text-center">
-											<div class="text-sm text-red-600">❌ {activeTab.error}</div>
+							<!-- Results content - single table with optional inspector overlay -->
+							{#if activeTab.columns && activeTab.rows && activeTab.rows.length > 0}
+								<div class="relative flex min-h-0 flex-1">
+									<!-- Always render the table in the same location -->
+									<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
+										<QueryResultsTable
+											data={activeTab.rows}
+											columns={activeTab.columns}
+											bind:selectedCellData
+										/>
+									</CardContent>
+
+									<JsonInspector {selectedCellData} onClose={() => (selectedCellData = null)} />
+								</div>
+							{:else}
+								<!-- Non-results states -->
+								<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-6">
+									{#if activeTab.error}
+										<!-- Error state -->
+										<div class="flex h-full flex-1 items-center justify-center">
+											<div class="text-center">
+												<div class="text-sm text-red-600">❌ {activeTab.error}</div>
+											</div>
 										</div>
-									</div>
-								{:else if activeTab.queryReturnsResults}
-									<!-- Modification query result -->
-									<div class="flex h-full flex-1 items-center justify-center">
-										<div class="text-center">
-											{#if activeTab.status === 'running'}
-												<div class="text-muted-foreground text-sm">
-													Executing modification query...
-												</div>
-											{:else if activeTab.status === 'completed'}
-												<div class="text-sm font-medium text-green-600">
-													✓ {activeTab.affectedRows || 0} rows affected
-												</div>
-											{/if}
+									{:else if activeTab.queryReturnsResults}
+										<!-- Modification query result -->
+										<div class="flex h-full flex-1 items-center justify-center">
+											<div class="text-center">
+												{#if activeTab.status === 'running'}
+													<div class="text-muted-foreground text-sm">
+														Executing modification query...
+													</div>
+												{:else if activeTab.status === 'completed'}
+													<div class="text-sm font-medium text-green-600">
+														✓ {activeTab.affectedRows || 0} rows affected
+													</div>
+												{/if}
+											</div>
 										</div>
-									</div>
-								{:else if activeTab.status === 'running'}
-									<!-- Loading state for SELECT queries -->
-									<div class="flex h-full flex-1 items-center justify-center">
-										<div class="text-center">
-											<div class="text-muted-foreground text-sm">Loading results...</div>
+									{:else if activeTab.status === 'running'}
+										<!-- Loading state for SELECT queries -->
+										<div class="flex h-full flex-1 items-center justify-center">
+											<div class="text-center">
+												<div class="text-muted-foreground text-sm">Loading results...</div>
+											</div>
 										</div>
-									</div>
-								{:else if activeTab.columns && activeTab.rows}
-									<!-- SELECT query results -->
-									{#if activeTab.rows.length > 0}
-										<QueryResultsTable data={activeTab.rows} columns={activeTab.columns} />
-									{:else}
+									{:else if activeTab.rows && activeTab.rows.length === 0}
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
 												<div class="text-muted-foreground text-sm">No rows returned.</div>
 											</div>
 										</div>
 									{/if}
-								{/if}
-							</CardContent>
+								</CardContent>
+							{/if}
 						{/if}
 					{:else}
 						<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-6 pt-0">
