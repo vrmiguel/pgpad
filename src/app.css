@@ -322,6 +322,17 @@
 	.focus-ring {
 		@apply focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none;
 	}
+
+	/* Titlebar Surface */
+	.titlebar-surface {
+		background: var(--glass-bg);
+		border-color: var(--sidebar-border);
+	}
+
+	.dark .titlebar-surface {
+		background-color: rgb(2, 6, 11);
+		border-color: var(--sidebar-border);
+	}
 }
 
 @keyframes fadeIn {
