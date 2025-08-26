@@ -20,7 +20,7 @@
 	onclick={toggleTheme}
 	title={$theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
 >
-	{#if $theme === 'light'}
+	{#if $theme === 'dark'}
 		<Sun class="h-4 w-4" />
 	{:else}
 		<Moon class="h-4 w-4" />
