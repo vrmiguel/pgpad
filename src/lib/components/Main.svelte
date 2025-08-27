@@ -103,7 +103,6 @@
 		}
 	}
 
-	// Actually save the session data
 	async function saveSessionNow() {
 		try {
 			await Commands.saveSessionState(
@@ -117,7 +116,7 @@
 					activeScriptId,
 					unsavedChanges: Object.fromEntries(
 						Array.from(scriptContents.entries()).filter(([id, content]) => {
-							if (newScripts.has(id)) return false; // Skip temp scripts
+							if (newScripts.has(id)) return false;
 							const original = scripts.find((s) => s.id === id);
 							return original && content !== original.query_text;
 						})
@@ -181,13 +180,11 @@
 				scriptContents.set(parseInt(idStr), content);
 			}
 
-			// Reopen tabs
 			for (const id of saved.openScriptIds ?? []) {
 				const script = scripts.find((s) => s.id === id);
 				if (script) openScript(script);
 			}
 
-			// Focus active script
 			if (saved.activeScriptId != null) {
 				const script = scripts.find((s) => s.id === saved.activeScriptId);
 				if (script) switchToTab(script.id);
