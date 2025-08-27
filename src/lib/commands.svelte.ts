@@ -259,4 +259,12 @@ export class Commands {
 	static async closeWindow(): Promise<void> {
 		await invoke('close_window');
 	}
+
+	static async saveSessionState(sessionData: string): Promise<void> {
+		return await invoke('save_session_state', { sessionData });
+	}
+
+	static async getSessionState(): Promise<string | null> {
+		return await invoke('get_session_state');
+	}
 }

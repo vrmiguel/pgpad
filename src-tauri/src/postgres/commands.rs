@@ -599,3 +599,18 @@ pub async fn delete_script(id: i64, state: tauri::State<'_, AppState>) -> Result
     state.storage.delete_saved_query(id)?;
     Ok(())
 }
+
+#[tauri::command]
+pub async fn save_session_state(
+    session_data: &str,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    state.storage.set_setting("session_state", session_data)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_session_state(state: tauri::State<'_, AppState>) -> Result<Option<String>, Error> {
+    let session_data = state.storage.get_setting("session_state")?;
+    Ok(session_data)
+}
