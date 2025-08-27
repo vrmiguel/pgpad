@@ -380,8 +380,8 @@ SELECT 1 as test;`);
 	<ResizablePaneGroup direction="vertical" class="flex-1">
 		<!-- SQL Editor Pane -->
 		<ResizablePane defaultSize={60} minSize={30} maxSize={80}>
-			<div class="h-full p-1 pb-0.5">
-				<Card class="flex h-full flex-col gap-0 overflow-hidden py-0">
+			<div class="h-full px-1 pt-1">
+				<Card class="flex h-full flex-col gap-0 overflow-hidden rounded-b-none py-0">
 					<CardContent class="min-h-0 flex-1 p-0">
 						<div bind:this={editorContainer} class="h-full w-full"></div>
 					</CardContent>
