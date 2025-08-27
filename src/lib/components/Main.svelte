@@ -5,35 +5,35 @@
 	import ScriptTabs from './ScriptTabs.svelte';
 	import AppSidebar from './AppSidebar.svelte';
 	import {
-		Commands,
-		type ConnectionInfo,
-		type ConnectionConfig,
-		type Script,
-		type DatabaseSchema
+	Commands,
+	type ConnectionInfo,
+	type ConnectionConfig,
+	type Script,
+	type DatabaseSchema
 	} from '$lib/commands.svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import { listen } from '@tauri-apps/api/event';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	interface Props {
-		currentConnection?: {
-			name: string;
-			connected: boolean;
-		} | null;
-		isConnecting?: boolean;
-		selectedConnection?: string | null;
-		hasUnsavedChanges?: boolean;
-		runQueryCallback?: (() => void) | null;
-		saveScriptCallback?: (() => void) | null;
+	currentConnection?: {
+	name: string;
+	connected: boolean;
+	} | null;
+	isConnecting?: boolean;
+	selectedConnection?: string | null;
+	hasUnsavedChanges?: boolean;
+	runQueryCallback?: (() => void) | null;
+	saveScriptCallback?: (() => void) | null;
 	}
 
 	let {
-		currentConnection = $bindable(),
-		isConnecting = $bindable(),
-		selectedConnection = $bindable(),
-		hasUnsavedChanges = $bindable(),
-		runQueryCallback = $bindable(),
-		saveScriptCallback = $bindable()
+	currentConnection = $bindable(),
+	isConnecting = $bindable(),
+	selectedConnection = $bindable(),
+	hasUnsavedChanges = $bindable(),
+	runQueryCallback = $bindable(),
+	saveScriptCallback = $bindable()
 	}: Props = $props();
 
 	let showConnectionForm = $state(false);
@@ -65,23 +65,157 @@
 	let unlistenDisconnect: (() => void) | null = null;
 
 	if (selectedConnection === undefined) {
-		selectedConnection = null;
+	selectedConnection = null;
 	}
 
 	$effect(() => {
-		if (hasUnsavedChanges !== undefined) {
-			hasUnsavedChanges = activeScriptId !== null && unsavedChanges.has(activeScriptId);
-		}
+	if (hasUnsavedChanges !== undefined) {
+	hasUnsavedChanges = activeScriptId !== null && unsavedChanges.has(activeScriptId);
+	}
 	});
 
 	if (runQueryCallback !== undefined) {
-		runQueryCallback = () => sqlEditorRef?.handleExecuteQuery();
+	runQueryCallback = () => sqlEditorRef?.handleExecuteQuery();
 	}
 	if (saveScriptCallback !== undefined) {
-		saveScriptCallback = saveCurrentScript;
+	saveScriptCallback = saveCurrentScript;
 	}
 	let isConnectionsAccordionOpen = $state(true);
 	let isScriptsAccordionOpen = $state(false);
+
+	// session (localStorage)
+	type TempScriptSnapshot = {
+	id: number;
+	name: string;
+	description: string | null;
+	query_text: string;
+	connection_id: string | null;
+	tags: string | null;
+	created_at: number;
+	updated_at: number;
+	favorite: boolean;
+	content?: string; // current content
+	};
+
+	// saved state
+	type SessionState = {
+	selectedConnection: string | null;
+	isSidebarCollapsed: boolean;
+	isConnectionsAccordionOpen: boolean;
+	isScriptsAccordionOpen: boolean;
+	isItemsAccordionOpen: boolean;
+	openScriptIds: number[];
+	activeScriptId: number | null;
+	tempScripts: TempScriptSnapshot[];
+	nextTempId: number;
+	};
+
+	const SESSION_KEY = 'pgpad:session:v1';
+	let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// save debounce
+	function scheduleSaveSession() {
+	if (_saveTimer) clearTimeout(_saveTimer);
+	_saveTimer = setTimeout(saveSessionNow, 300);
+	}
+
+	// save now
+	function saveSessionNow() {
+	const tempScripts: TempScriptSnapshot[] = Array.from(newScripts)
+	.map((id) => {
+	const s = scripts.find((x) => x.id === id);
+	if (!s) return null as any;
+	return {
+	id: s.id,
+	name: s.name,
+	description: s.description,
+	query_text: s.query_text,
+	connection_id: s.connection_id,
+	tags: s.tags,
+	created_at: s.created_at,
+	updated_at: s.updated_at,
+	favorite: s.favorite,
+	content: scriptContents.get(id) ?? s.query_text
+	};
+	})
+	.filter(Boolean);
+
+	const state: SessionState = {
+	selectedConnection: selectedConnection ?? null,
+	isSidebarCollapsed,
+	isConnectionsAccordionOpen,
+	isScriptsAccordionOpen,
+	isItemsAccordionOpen,
+	openScriptIds: openScripts.map((s) => s.id),
+	activeScriptId,
+	tempScripts,
+	nextTempId
+	};
+
+	try {
+	localStorage.setItem(SESSION_KEY, JSON.stringify(state));
+	} catch (e) {
+	console.error('Failed to save session:', e);
+	}
+	}
+
+	// restore
+	async function restoreSession(): Promise<boolean> {
+	try {
+	const raw = localStorage.getItem(SESSION_KEY);
+	if (!raw) return false;
+
+	const state: SessionState = JSON.parse(raw);
+
+	// ui
+	isSidebarCollapsed = state.isSidebarCollapsed ?? isSidebarCollapsed;
+	isConnectionsAccordionOpen = state.isConnectionsAccordionOpen ?? isConnectionsAccordionOpen;
+	isScriptsAccordionOpen = state.isScriptsAccordionOpen ?? isScriptsAccordionOpen;
+	isItemsAccordionOpen = state.isItemsAccordionOpen ?? isItemsAccordionOpen;
+	selectedConnection = state.selectedConnection ?? null;
+
+	// temp id sequence
+	if (typeof state.nextTempId === 'number') {
+	nextTempId = Math.min(nextTempId, state.nextTempId);
+	}
+
+	// temp scripts
+	for (const ts of state.tempScripts ?? []) {
+	if (!scripts.find((s) => s.id === ts.id)) {
+	scripts.push({
+	id: ts.id,
+	name: ts.name,
+	description: ts.description,
+	query_text: ts.query_text,
+	connection_id: ts.connection_id,
+	tags: ts.tags,
+	created_at: ts.created_at,
+	updated_at: ts.updated_at,
+	favorite: ts.favorite
+	});
+	}
+	newScripts.add(ts.id);
+	scriptContents.set(ts.id, ts.content ?? ts.query_text);
+	}
+
+	// reopen tabs (order)
+	for (const id of state.openScriptIds ?? []) {
+	const s = scripts.find((x) => x.id === id);
+	if (s) openScript(s);
+	}
+
+	// focus active
+	if (state.activeScriptId != null) {
+	const s = scripts.find((x) => x.id === state.activeScriptId);
+	if (s) switchToTab(s.id);
+	}
+
+	return (state.openScriptIds?.length ?? 0) > 0;
+	} catch (e) {
+	console.error('Failed to restore session:', e);
+	return false;
+	}
+	}
 
 	// Auto-collapse if resized below 12%
 	const COLLAPSE_THRESHOLD = 12;
@@ -89,261 +223,267 @@
 	const EXPAND_THRESHOLD = 10;
 
 	$effect(() => {
-		const connId = selectedConnection;
-		const allConnections = connections;
-		const connecting = establishingConnections;
+	const connId = selectedConnection;
+	const allConnections = connections;
+	const connecting = establishingConnections;
 
-		if (connId) {
-			const connection = allConnections.find((c) => c.id === connId);
-			if (connection) {
-				currentConnection = {
-					name: connection.name,
-					connected: connection.connected
-				};
-				isConnecting = connecting.has(connection.id);
-			}
-		} else {
-			currentConnection = null;
-			isConnecting = false;
-		}
+	if (connId) {
+	const connection = allConnections.find((c) => c.id === connId);
+	if (connection) {
+	currentConnection = {
+	name: connection.name,
+	connected: connection.connected
+	};
+	isConnecting = connecting.has(connection.id);
+	}
+	} else {
+	currentConnection = null;
+	isConnecting = false;
+	}
 	});
 
 	$effect(() => {
-		const connId = selectedConnection;
-		const allConnections = connections;
+	const connId = selectedConnection;
+	const allConnections = connections;
 
-		if (connId) {
-			const connection = allConnections.find((c) => c.id === connId);
-			if (connection?.connected) {
-				loadDatabaseSchemaIfNeeded(connId);
-			} else {
-				databaseSchema = null;
-				lastLoadedSchemaConnectionId = null;
-			}
-		} else {
-			databaseSchema = null;
-			lastLoadedSchemaConnectionId = null;
-		}
+	if (connId) {
+	const connection = allConnections.find((c) => c.id === connId);
+	if (connection?.connected) {
+	loadDatabaseSchemaIfNeeded(connId);
+	} else {
+	databaseSchema = null;
+	lastLoadedSchemaConnectionId = null;
+	}
+	} else {
+	databaseSchema = null;
+	lastLoadedSchemaConnectionId = null;
+	}
 	});
 
 	// Track unsaved changes for active script
 	$effect(() => {
-		if (activeScriptId !== null && currentEditorContent !== undefined) {
-			const savedContent = scripts.find((s) => s.id === activeScriptId)?.query_text || '';
-			const isNewScript = newScripts.has(activeScriptId);
+	if (activeScriptId !== null && currentEditorContent !== undefined) {
+	const savedContent = scripts.find((s) => s.id === activeScriptId)?.query_text || '';
+	const isNewScript = newScripts.has(activeScriptId);
 
-			// For new scripts, only show unsaved changes if there's actual content
-			// For existing scripts, show unsaved changes if content differs from saved version
-			const shouldShowUnsaved = isNewScript
-				? currentEditorContent.length > 0
-				: currentEditorContent !== savedContent;
+	// For new scripts, only show unsaved changes if there's actual content
+	// For existing scripts, show unsaved changes if content differs from saved version
+	const shouldShowUnsaved = isNewScript
+	? currentEditorContent.length > 0
+	: currentEditorContent !== savedContent;
 
-			if (shouldShowUnsaved) {
-				if (!unsavedChanges.has(activeScriptId)) {
-					unsavedChanges.add(activeScriptId);
-				}
-			} else {
-				if (unsavedChanges.has(activeScriptId)) {
-					unsavedChanges.delete(activeScriptId);
-				}
-			}
-		}
+	if (shouldShowUnsaved) {
+	if (!unsavedChanges.has(activeScriptId)) {
+	unsavedChanges.add(activeScriptId);
+	}
+	} else {
+	if (unsavedChanges.has(activeScriptId)) {
+	unsavedChanges.delete(activeScriptId);
+	}
+	}
+	}
 	});
 
 	$effect(() => {
-		if (activeScriptId !== null) {
-			const content =
-				scriptContents.get(activeScriptId) ||
-				scripts.find((s) => s.id === activeScriptId)?.query_text ||
-				'';
-			currentEditorContent = content;
-		} else {
-			currentEditorContent = '';
-		}
+	if (activeScriptId !== null) {
+	const content =
+	scriptContents.get(activeScriptId) ||
+	scripts.find((s) => s.id === activeScriptId)?.query_text ||
+	'';
+	currentEditorContent = content;
+	} else {
+	currentEditorContent = '';
+	}
 	});
 
 	function handleEditorContentChange(newContent: string) {
-		currentEditorContent = newContent;
-		if (activeScriptId !== null) {
-			scriptContents.set(activeScriptId, newContent);
-		}
+	currentEditorContent = newContent;
+	if (activeScriptId !== null) {
+	scriptContents.set(activeScriptId, newContent);
+	}
+	scheduleSaveSession();
 	}
 
 	function handlePaneResize(sizes: number[]) {
-		const now = Date.now();
-		lastResizeTime = now;
+	const now = Date.now();
+	lastResizeTime = now;
 
-		// Some 'debounce' logic because the cursor was getting stuck for some reason
-		setTimeout(() => {
-			if (now === lastResizeTime && sizes.length >= 2) {
-				const sidebarSize = sizes[0];
+	// Some 'debounce' logic because the cursor was getting stuck for some reason
+	setTimeout(() => {
+	if (now === lastResizeTime && sizes.length >= 2) {
+	const sidebarSize = sizes[0];
 
-				if (!isSidebarCollapsed && sidebarSize < COLLAPSE_THRESHOLD) {
-					isSidebarCollapsed = true;
-				} else if (isSidebarCollapsed && sidebarSize > EXPAND_THRESHOLD) {
-					isSidebarCollapsed = false;
-				}
-			}
-		}, 150);
+	if (!isSidebarCollapsed && sidebarSize < COLLAPSE_THRESHOLD) {
+	isSidebarCollapsed = true;
+	} else if (isSidebarCollapsed && sidebarSize > EXPAND_THRESHOLD) {
+	isSidebarCollapsed = false;
+	}
+	scheduleSaveSession();
+	}
+	}, 150);
 	}
 
 	function openScript(script: Script) {
-		// Add to open scripts if not already open
-		if (!openScripts.find((s) => s.id === script.id)) {
-			openScripts.push(script);
-		}
+	// Add to open scripts if not already open
+	if (!openScripts.find((s) => s.id === script.id)) {
+	openScripts.push(script);
+	}
 
-		// Set as active and initialize content
-		activeScriptId = script.id;
-		scriptContents.set(script.id, script.query_text);
+	// Set as active and initialize content
+	activeScriptId = script.id;
+	scriptContents.set(script.id, script.query_text);
 
-		// Update the editor content
-		if (sqlEditorRef) {
-			sqlEditorRef.setContent(script.query_text);
-		}
+	// Update the editor content
+	if (sqlEditorRef) {
+	sqlEditorRef.setContent(script.query_text);
+	}
+
+	scheduleSaveSession();
 	}
 
 	function switchToTab(scriptId: number) {
-		// Save current script content before switching
-		if (activeScriptId !== null) {
-			scriptContents.set(activeScriptId, currentEditorContent);
-		}
+	// Save current script content before switching
+	if (activeScriptId !== null) {
+	scriptContents.set(activeScriptId, currentEditorContent);
+	}
 
-		activeScriptId = scriptId;
-		const script = scripts.find((s) => s.id === scriptId);
-		if (script) {
-			const content = scriptContents.get(scriptId) || script.query_text;
-			if (sqlEditorRef) {
-				sqlEditorRef.setContent(content);
-			}
-		}
+	activeScriptId = scriptId;
+	const script = scripts.find((s) => s.id === scriptId);
+	if (script) {
+	const content = scriptContents.get(scriptId) || script.query_text;
+	if (sqlEditorRef) {
+	sqlEditorRef.setContent(content);
+	}
+	}
+	scheduleSaveSession();
 	}
 
 	function closeTab(scriptId: number) {
-		openScripts = openScripts.filter((s) => s.id !== scriptId);
+	openScripts = openScripts.filter((s) => s.id !== scriptId);
 
-		scriptContents.delete(scriptId);
-		unsavedChanges.delete(scriptId);
-		newScripts.delete(scriptId);
+	scriptContents.delete(scriptId);
+	unsavedChanges.delete(scriptId);
+	newScripts.delete(scriptId);
 
-		// if closing the active tab, switch to another or clear active
-		if (activeScriptId === scriptId) {
-			if (openScripts.length > 0) {
-				// Switch to the last remaining tab
-				const lastScript = openScripts[openScripts.length - 1];
-				switchToTab(lastScript.id);
-			} else {
-				// no more open tabs left
-				activeScriptId = null;
-				if (sqlEditorRef) {
-					sqlEditorRef.setContent('');
-				}
-			}
-		}
+	// if closing the active tab, switch to another or clear active
+	if (activeScriptId === scriptId) {
+	if (openScripts.length > 0) {
+	// Switch to the last remaining tab
+	const lastScript = openScripts[openScripts.length - 1];
+	switchToTab(lastScript.id);
+	} else {
+	// no more open tabs left
+	activeScriptId = null;
+	if (sqlEditorRef) {
+	sqlEditorRef.setContent('');
+	}
+	}
+	}
+	scheduleSaveSession();
 	}
 
 	function selectScript(script: Script) {
-		openScript(script);
+	openScript(script);
 	}
 
 	async function loadQueryFromHistory(historyQuery: string) {
-		const name = generateScriptName();
-		const tempId = nextTempId--;
+	const name = generateScriptName();
+	const tempId = nextTempId--;
 
-		const newScript: Script = {
-			id: tempId,
-			name,
-			description: null,
-			query_text: historyQuery,
-			connection_id: null,
-			tags: null,
-			created_at: Date.now() / 1000,
-			updated_at: Date.now() / 1000,
-			favorite: false
-		};
+	const newScript: Script = {
+	id: tempId,
+	name,
+	description: null,
+	query_text: historyQuery,
+	connection_id: null,
+	tags: null,
+	created_at: Date.now() / 1000,
+	updated_at: Date.now() / 1000,
+	favorite: false
+	};
 
-		scripts.push(newScript);
-		// Mark as new/unsaved
-		newScripts.add(tempId);
-		openScript(newScript);
+	scripts.push(newScript);
+	// Mark as new/unsaved
+	newScripts.add(tempId);
+	openScript(newScript);
 	}
 
 	onMount(async () => {
-		try {
-			await Commands.initializeConnections();
-			await loadConnections();
-			await loadScripts();
+	try {
+	await Commands.initializeConnections();
+	await loadConnections();
+	await loadScripts();
 
-			unlistenDisconnect = await listen('end-of-connection', (event) => {
-				const connectionId = event.payload as string;
-				handleConnectionDisconnect(connectionId);
-			});
+	unlistenDisconnect = await listen('end-of-connection', (event) => {
+	const connectionId = event.payload as string;
+	handleConnectionDisconnect(connectionId);
+	});
 
-			// Create a new script on startup if no scripts are open
-			if (openScripts.length === 0) {
-				// Reuse "Untitled Script" on startup
-				const existingUntitledScript = scripts.find((s) => s.name === 'Untitled Script');
+	// Tries to restore previous session
+	const restored = await restoreSession();
+	if (!restored && openScripts.length === 0) {
+	const existingUntitledScript = scripts.find((s) => s.name === 'Untitled Script');
+	if (existingUntitledScript) {
+	openScript(existingUntitledScript);
+	} else {
+	await createNewScript();
+	}
+	}
 
-				if (existingUntitledScript) {
-					openScript(existingUntitledScript);
-				} else {
-					await createNewScript();
-				}
-			}
-		} catch (error) {
-			console.error(`Failed to initialize connections: ${JSON.stringify(error)}`);
-		}
+	} catch (error) {
+	console.error(`Failed to initialize connections: ${JSON.stringify(error)}`);
+	}
 	});
 
 	onDestroy(() => {
-		if (unlistenDisconnect) {
-			unlistenDisconnect();
-		}
+	if (unlistenDisconnect) {
+	unlistenDisconnect();
+	}
+	saveSessionNow();
 	});
 
 	// Handle saving with Ctrl+S
 	function handleKeydown(event: KeyboardEvent) {
-		if ((event.ctrlKey || event.metaKey) && event.key === 's') {
-			event.preventDefault();
-			saveCurrentScript();
-		}
+	if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+	event.preventDefault();
+	saveCurrentScript();
+	}
 	}
 
 	async function loadConnections() {
-		try {
-			connections = await Commands.getConnections();
-		} catch (error) {
-			console.error('Failed to load connections:', error);
-		}
+	try {
+	connections = await Commands.getConnections();
+	} catch (error) {
+	console.error('Failed to load connections:', error);
+	}
 	}
 
 	function handleConnectionDisconnect(connectionId: string) {
-		console.log('Connection disconnected:', connectionId);
+	console.log('Connection disconnected:', connectionId);
 
-		connections = connections.map((conn) =>
-			conn.id === connectionId ? { ...conn, connected: false } : conn
-		);
+	connections = connections.map((conn) =>
+	conn.id === connectionId ? { ...conn, connected: false } : conn
+	);
 
-		if (selectedConnection === connectionId) {
-			databaseSchema = null;
-			lastLoadedSchemaConnectionId = null;
-		}
-
-		establishingConnections.delete(connectionId);
+	if (selectedConnection === connectionId) {
+	databaseSchema = null;
+	lastLoadedSchemaConnectionId = null;
 	}
 
+	establishingConnections.delete(connectionId);
+	}
+
+	// receives a ConnectionConfig from <ConnectionForm />
 	async function handleConnectionSubmit(config: ConnectionConfig) {
 		try {
-			if (editingConnection) {
-				const updatedConnection = await Commands.updateConnection(editingConnection!.id, config);
-				const index = connections.findIndex((c) => c.id === editingConnection!.id);
-				if (index !== -1) {
-					connections[index] = updatedConnection;
-				}
-			} else {
-				const newConnection = await Commands.addConnection(config);
-				connections.push(newConnection);
-			}
+		if (editingConnection) {
+			const updated = await Commands.updateConnection(editingConnection.id, config);
+			const i = connections.findIndex(c => c.id === editingConnection.id);
+			if (i !== -1) connections[i] = updated;
+		} else {
+			const created = await Commands.addConnection(config);
+			connections.push(created);
+		}
 			showConnectionForm = false;
 			editingConnection = null;
 		} catch (error) {
@@ -351,29 +491,40 @@
 		}
 	}
 
+	async function addConnection(config: ConnectionConfig) {
+		try {
+			const newConnection = await Commands.addConnection(config);
+			connections.push(newConnection);
+			showConnectionForm = false;
+		} catch (error) {
+			console.error('Failed to add connection:', error);
+		}
+	}
+
 	function selectConnection(connectionId: string) {
 		selectedConnection = connectionId;
+		scheduleSaveSession();
 	}
 
 	async function connectToDatabase(connectionId: string) {
-		establishingConnections.add(connectionId);
+			establishingConnections.add(connectionId);
 
-		try {
-			const success = await Commands.connectToDatabase(connectionId);
-			if (success) {
-				// Update the connection status
-				await loadConnections();
-				// Load schema after successful connection
-				if (selectedConnection === connectionId) {
-					await loadDatabaseSchema();
+			try {
+				const success = await Commands.connectToDatabase(connectionId);
+				if (success) {
+					// Update the connection status
+					await loadConnections();
+					// Load schema after successful connection
+					if (selectedConnection === connectionId) {
+						await loadDatabaseSchema();
+					}
 				}
+			} catch (error) {
+				console.error('Failed to connect:', error);
+			} finally {
+				establishingConnections.delete(connectionId);
 			}
-		} catch (error) {
-			console.error('Failed to connect:', error);
-		} finally {
-			establishingConnections.delete(connectionId);
 		}
-	}
 
 	async function loadDatabaseSchemaIfNeeded(connectionId: string) {
 		// Don't reload if already loaded for this connection or currently loading
@@ -484,6 +635,7 @@ SELECT 1 as test;`;
 			// Mark as new/unsaved
 			newScripts.add(tempId);
 			openScript(newScript);
+			scheduleSaveSession();
 		} catch (error) {
 			console.error('Failed to create new script:', error);
 		}
@@ -559,6 +711,7 @@ SELECT 1 as test;`;
 					scripts[scriptIndex] = { ...currentScript };
 				}
 			}
+			scheduleSaveSession();
 		} catch (error) {
 			console.error('Failed to save script:', error);
 		}
@@ -612,6 +765,7 @@ SELECT 1 as test;`;
 					newScripts.delete(script.id);
 				}
 			}
+			scheduleSaveSession();
 		} catch (error) {
 			console.error('Failed to delete script:', error);
 		}
@@ -653,6 +807,7 @@ SELECT 1 as test;`;
 					updated_at: Date.now() / 1000
 				};
 			}
+			scheduleSaveSession();
 		} catch (error) {
 			console.error('Failed to rename script:', error);
 		}
