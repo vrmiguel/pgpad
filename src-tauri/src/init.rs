@@ -36,6 +36,7 @@ pub fn build_window(app: &tauri::App) -> tauri::Result<()> {
        use tauri::{utils::config::WindowEffectsConfig, window::{Effect, Color}, LogicalPosition};
         window_builder = window_builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .decorations(true)
             .effects(WindowEffectsConfig {
                 effects: vec![Effect::WindowBackground],
                 state: None,

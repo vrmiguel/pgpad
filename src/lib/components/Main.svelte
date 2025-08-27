@@ -640,7 +640,6 @@ SELECT 1 as test;`;
 				{scripts}
 				{activeScriptId}
 				{unsavedChanges}
-				{newScripts}
 				{databaseSchema}
 				{loadingSchema}
 				bind:isSidebarCollapsed
@@ -659,7 +658,7 @@ SELECT 1 as test;`;
 
 		<ResizableHandle />
 
-		<!-- Main Editor Pane - always in same position -->
+		<!-- Main Editor Pane -->
 		<ResizablePane defaultSize={isSidebarCollapsed ? 96 : 75}>
 			<div class="flex h-full flex-col bg-white dark:bg-gray-900">
 				<!-- Editor and Results - same component instance always -->
@@ -692,7 +691,6 @@ SELECT 1 as test;`;
 	</ResizablePaneGroup>
 </div>
 
-<!-- Connection Form Modal -->
 {#if showConnectionForm}
 	<div
 		class="bg-background/80 animate-fade-in fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm"

@@ -17,7 +17,6 @@
 	interface Props {
 		data: PgRow[];
 		columns: string[];
-		table?: unknown;
 		globalFilter?: string;
 		selectedCellData?: any | null;
 	}
@@ -25,7 +24,6 @@
 	let {
 		data,
 		columns,
-		table = $bindable(),
 		globalFilter = $bindable(''),
 		selectedCellData = $bindable(null)
 	}: Props = $props();
@@ -68,22 +66,18 @@
 		enableColumnResizing: true
 	};
 
-	const tableInstance = createSvelteTable(options);
+	const table = createSvelteTable(options);
 
 	$effect(() => {
-		if (tableInstance && tableInstance.state.globalFilter !== globalFilter) {
-			tableInstance.state.globalFilter = globalFilter;
+		if (table && table.state.globalFilter !== globalFilter) {
+			table.state.globalFilter = globalFilter;
 		}
 	});
 
 	$effect(() => {
-		if (tableInstance && globalFilter !== tableInstance.state.globalFilter) {
-			globalFilter = tableInstance.state.globalFilter;
+		if (table && globalFilter !== table.state.globalFilter) {
+			globalFilter = table.state.globalFilter;
 		}
-	});
-
-	$effect(() => {
-		table = tableInstance;
 	});
 
 	$effect(() => {
@@ -95,7 +89,7 @@
 	});
 
 	function handleWindowMouseMove(event: MouseEvent) {
-		if (!tableContainer || !tableInstance.getState().columnSizingInfo.isResizingColumn) return;
+		if (!tableContainer || !table.getState().columnSizingInfo.isResizingColumn) return;
 
 		const containerRect = tableContainer.getBoundingClientRect();
 		resizePreviewX = event.clientX - containerRect.left + tableContainer.scrollLeft;
@@ -113,7 +107,7 @@
 			return;
 		}
 
-		if (tableInstance && !originalColumnWidths.has(columnId)) {
+		if (table && !originalColumnWidths.has(columnId)) {
 			originalColumnWidths.set(columnId, cell.column.getSize());
 		}
 
@@ -121,7 +115,7 @@
 
 		selectedCellData = cellValue;
 
-		if (tableInstance && cellValue !== null && cellValue !== undefined) {
+		if (table && cellValue !== null && cellValue !== undefined) {
 			const contentLength = String(cellValue).length;
 			const minWidth = Math.max(
 				COLUMN_RESIZE.MIN_WIDTH,
@@ -130,7 +124,7 @@
 					COLUMN_RESIZE.MAX_WIDTH
 				)
 			);
-			tableInstance.setColumnSizing((prev) => ({
+			table.setColumnSizing((prev) => ({
 				...prev,
 				[columnId]: minWidth
 			}));
@@ -138,14 +132,14 @@
 	}
 
 	function restoreOriginalColumnWidths() {
-		if (!tableInstance || originalColumnWidths.size === 0) return;
+		if (!table || originalColumnWidths.size === 0) return;
 
 		const sizingUpdates: Record<string, number> = {};
 		originalColumnWidths.forEach((originalWidth, columnId) => {
 			sizingUpdates[columnId] = originalWidth;
 		});
 
-		tableInstance.setColumnSizing((prev) => ({
+		table.setColumnSizing((prev) => ({
 			...prev,
 			...sizingUpdates
 		}));
@@ -157,7 +151,7 @@
 		if (!selectedCell) return null;
 
 		try {
-			const row = tableInstance?.getRow(selectedCell.rowId);
+			const row = table.getRow(selectedCell.rowId);
 			if (!row) return null;
 
 			const cellValue = row.getValue(selectedCell.columnId);
@@ -204,15 +198,15 @@
 	}
 
 	function navigateCell(direction: string) {
-		if (!selectedCell || !tableInstance) return;
+		if (!selectedCell || !table) return;
 
-		const row = tableInstance.getRow(selectedCell.rowId);
-		const column = tableInstance.getColumn(selectedCell.columnId);
+		const row = table.getRow(selectedCell.rowId);
+		const column = table.getColumn(selectedCell.columnId);
 
 		if (row === undefined || column === undefined) return;
 
-		const rows = tableInstance.getPaginationRowModel().rows;
-		const columns = tableInstance.getVisibleLeafColumns();
+		const rows = table.getPaginationRowModel().rows;
+		const columns = table.getVisibleLeafColumns();
 
 		const currentRowIndex = row.index;
 		const currentColumnIndex = column.getIndex();
@@ -278,7 +272,7 @@
 	onblur={() => (hasFocus = false)}
 >
 	<!-- Resize preview line -->
-	{#if tableInstance && tableInstance.getState().columnSizingInfo.isResizingColumn}
+	{#if table.getState().columnSizingInfo.isResizingColumn}
 		<div
 			class="pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 bg-blue-500 opacity-75"
 			style="left: {resizePreviewX}px"
@@ -288,156 +282,143 @@
 	<!-- Table content -->
 	<div class="flex-1 overflow-hidden" bind:this={tableContainer}>
 		<div class="h-full overflow-auto">
-			{#if tableInstance}
-				<table
-					class="w-full border-collapse text-xs"
-					style="width: {tableInstance.getCenterTotalSize()}px"
-				>
-					<thead class="bg-accent border-border sticky top-0 z-10 border-b shadow-sm">
-						{#each tableInstance.getHeaderGroups() as headerGroup}
-							<tr>
-								{#each headerGroup.headers as header}
-									<th
-										class="text-foreground bg-muted/95 border-border/40 relative border-r px-2 py-1 text-left align-middle text-xs font-medium"
-										style="width: {header.getSize()}px"
-									>
-										{#if !header.isPlaceholder}
-											<div class="flex items-center justify-between">
-												<Button
-													variant="ghost"
-													size="sm"
-													class="hover:bg-accent/30 -ml-1 h-6 flex-1 justify-start p-1 text-xs font-medium"
-													onclick={() =>
-														header.column.toggleSorting(header.column.getIsSorted() === 'asc')}
-												>
-													<FlexRender
-														content={header.column.columnDef.header}
-														context={header.getContext()}
-													/>
-													{#if header.column.getIsSorted() === 'asc'}
-														<ChevronUp class="text-muted-foreground ml-1 h-3 w-3" />
-													{:else if header.column.getIsSorted() === 'desc'}
-														<ChevronDown class="text-muted-foreground ml-1 h-3 w-3" />
-													{:else}
-														<ChevronsUpDown class="text-muted-foreground/40 ml-1 h-3 w-3" />
-													{/if}
-												</Button>
-												{#if header.column.getCanResize()}
-													<button
-														class="absolute top-0 right-0 h-full w-1 cursor-col-resize border-none bg-transparent transition-colors select-none hover:bg-blue-400 focus:bg-blue-400 focus:outline-none active:bg-blue-500 {tableInstance.getState()
-															.columnSizingInfo.isResizingColumn === header.column.id
-															? 'bg-blue-500'
-															: ''}"
-														onmousedown={header.getResizeHandler()}
-														ontouchstart={header.getResizeHandler()}
-														type="button"
-														aria-label="Resize column"
-													></button>
+			<table class="w-full border-collapse text-xs" style="width: {table.getCenterTotalSize()}px">
+				<thead class="bg-accent border-border sticky top-0 z-10 border-b shadow-sm">
+					{#each table.getHeaderGroups() as headerGroup}
+						<tr>
+							{#each headerGroup.headers as header}
+								<th
+									class="text-foreground bg-muted/95 border-border/40 relative border-r px-2 py-1 text-left align-middle text-xs font-medium"
+									style="width: {header.getSize()}px"
+								>
+									{#if !header.isPlaceholder}
+										<div class="flex items-center justify-between">
+											<Button
+												variant="ghost"
+												size="sm"
+												class="hover:bg-accent/30 -ml-1 h-6 flex-1 justify-start p-1 text-xs font-medium"
+												onclick={() =>
+													header.column.toggleSorting(header.column.getIsSorted() === 'asc')}
+											>
+												<FlexRender
+													content={header.column.columnDef.header}
+													context={header.getContext()}
+												/>
+												{#if header.column.getIsSorted() === 'asc'}
+													<ChevronUp class="text-muted-foreground ml-1 h-3 w-3" />
+												{:else if header.column.getIsSorted() === 'desc'}
+													<ChevronDown class="text-muted-foreground ml-1 h-3 w-3" />
+												{:else}
+													<ChevronsUpDown class="text-muted-foreground/40 ml-1 h-3 w-3" />
 												{/if}
+											</Button>
+											{#if header.column.getCanResize()}
+												<button
+													class="absolute top-0 right-0 h-full w-1 cursor-col-resize border-none bg-transparent transition-colors select-none hover:bg-blue-400 focus:bg-blue-400 focus:outline-none active:bg-blue-500 {table.getState()
+														.columnSizingInfo.isResizingColumn === header.column.id
+														? 'bg-blue-500'
+														: ''}"
+													onmousedown={header.getResizeHandler()}
+													ontouchstart={header.getResizeHandler()}
+													type="button"
+													aria-label="Resize column"
+												></button>
+											{/if}
+										</div>
+									{/if}
+								</th>
+							{/each}
+						</tr>
+					{/each}
+				</thead>
+				<tbody>
+					{#each table.getPaginationRowModel().rows as row, index (row.id)}
+						<tr
+							class="border-border/40 hover:bg-muted/50 group border-b transition-colors {index %
+								2 ===
+							0
+								? 'bg-background'
+								: 'bg-card/30'}"
+						>
+							{#each row.getVisibleCells() as cell (cell.column.id)}
+								{@const cellValue = cell.getValue()}
+								{@const columnWidth = cell.column.getSize()}
+								{@const isSelected = selectedCell
+									? selectedCell.rowId === row.id && selectedCell.columnId === cell.column.id
+									: false}
+								{@const cellType = CellFormatter.getCellType(cellValue)}
+								{@const displayValue = CellFormatter.formatCellDisplay(cellValue)}
+								<td
+									class="border-border/30 border-r px-0 py-0 align-top text-xs transition-colors {isSelected
+										? 'bg-primary/10 ring-primary/40 ring-1'
+										: ''}"
+									style="width: {columnWidth}px"
+									role="gridcell"
+									aria-selected={isSelected}
+								>
+									<button
+										class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
+										title={CellFormatter.formatCellTitle(cellValue)}
+										onclick={(event) => handleCellClick(cell, row.id, event)}
+									>
+										{#if cellType === 'null'}
+											<span class="cell-content text-muted-foreground text-xs italic"
+												>{displayValue}</span
+											>
+										{:else if cellType === 'boolean'}
+											<span class="cell-content text-foreground">{displayValue}</span>
+										{:else if cellType === 'number'}
+											<span class="cell-content text-foreground font-mono">{displayValue}</span>
+										{:else if cellType === 'object'}
+											<div class="cell-content cursor-pointer">
+												<span class="font-mono text-xs">{displayValue}</span>
+											</div>
+										{:else}
+											<div
+												class="cell-content text-foreground {isSelected ? '' : 'truncate'}"
+												style="max-width: {isSelected ? 'none' : columnWidth - 16 + 'px'}"
+											>
+												{displayValue}
 											</div>
 										{/if}
-									</th>
-								{/each}
-							</tr>
-						{/each}
-					</thead>
-					<tbody>
-						{#each tableInstance.getPaginationRowModel().rows as row, index (row.id)}
-							<tr
-								class="border-border/40 hover:bg-muted/50 group border-b transition-colors {index %
-									2 ===
-								0
-									? 'bg-background'
-									: 'bg-card/30'}"
-							>
-								{#each row.getVisibleCells() as cell (cell.column.id)}
-									{@const cellValue = cell.getValue()}
-									{@const columnWidth = cell.column.getSize()}
-									{@const isSelected = selectedCell
-										? selectedCell.rowId === row.id && selectedCell.columnId === cell.column.id
-										: false}
-									{@const cellType = CellFormatter.getCellType(cellValue)}
-									{@const displayValue = CellFormatter.formatCellDisplay(cellValue)}
-									<td
-										class="border-border/30 border-r px-0 py-0 align-top text-xs transition-colors {isSelected
-											? 'bg-primary/10 ring-primary/40 ring-1'
-											: ''}"
-										style="width: {columnWidth}px"
-										role="gridcell"
-										aria-selected={isSelected}
-									>
-										<button
-											class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
-											title={CellFormatter.formatCellTitle(cellValue)}
-											onclick={(event) => handleCellClick(cell, row.id, event)}
-										>
-											{#if cellType === 'null'}
-												<span class="cell-content text-muted-foreground text-xs italic"
-													>{displayValue}</span
-												>
-											{:else if cellType === 'boolean'}
-												<span class="cell-content text-foreground">{displayValue}</span>
-											{:else if cellType === 'number'}
-												<span class="cell-content text-foreground font-mono">{displayValue}</span>
-											{:else if cellType === 'object'}
-												<div class="cell-content cursor-pointer">
-													<span class="font-mono text-xs">{displayValue}</span>
-												</div>
-											{:else}
-												<div
-													class="cell-content text-foreground {isSelected ? '' : 'truncate'}"
-													style="max-width: {isSelected ? 'none' : columnWidth - 16 + 'px'}"
-												>
-													{displayValue}
-												</div>
-											{/if}
-										</button>
-									</td>
-								{/each}
-							</tr>
-						{:else}
-							<tr>
-								<td
-									colspan={columns.length}
-									class="h-24 text-center text-muted-foreground border-r border-border/20"
-								>
-									<div class="flex flex-col items-center gap-2">
-										<div class="w-8 h-8 rounded bg-muted/20 flex items-center justify-center">
-											<Search class="w-4 h-4 text-muted-foreground/50" />
-										</div>
-										<div>
-											<p class="text-xs font-medium">No results found</p>
-											<p class="text-xs text-muted-foreground/70">
-												Try adjusting your search terms
-											</p>
-										</div>
-									</div>
+									</button>
 								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{:else}
-				<div class="text-muted-foreground flex h-full items-center justify-center">
-					<div class="text-center">
-						<div class="text-sm">Initializing table...</div>
-					</div>
-				</div>
-			{/if}
+							{/each}
+						</tr>
+					{:else}
+						<tr>
+							<td
+								colspan={columns.length}
+								class="h-24 text-center text-muted-foreground border-r border-border/20"
+							>
+								<div class="flex flex-col items-center gap-2">
+									<div class="w-8 h-8 rounded bg-muted/20 flex items-center justify-center">
+										<Search class="w-4 h-4 text-muted-foreground/50" />
+									</div>
+									<div>
+										<p class="text-xs font-medium">No results found</p>
+										<p class="text-xs text-muted-foreground/70">Try adjusting your search terms</p>
+									</div>
+								</div>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
 		</div>
 	</div>
 
 	<!-- Pagination at bottom -->
-	{#if tableInstance && tableInstance.getPageCount() > 1}
+	{#if table.getPageCount() > 1}
+		{@const currentPage = table.getState().pagination.pageIndex}
+		{@const totalPages = table.getPageCount()}
 		<div class="border-border/30 bg-muted/20 flex flex-shrink-0 items-center border-t px-3 py-2">
 			<!-- Compact left section -->
 			<div class="text-muted-foreground flex items-center gap-2 text-xs">
-				<span
-					>Page {tableInstance.getState().pagination.pageIndex + 1} of {tableInstance.getPageCount()}</span
-				>
+				<span>Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</span>
 				<span>•</span>
 				<select
-					bind:value={tableInstance.state.pagination.pageSize}
+					bind:value={table.state.pagination.pageSize}
 					class="border-border bg-background focus:ring-ring h-6 w-12 rounded border text-xs focus:ring-1"
 				>
 					{#each [25, 50, 100, 200] as pageSize}
@@ -455,77 +436,72 @@
 				<Button
 					variant="ghost"
 					size="sm"
-					onclick={() => tableInstance?.previousPage()}
-					disabled={!tableInstance?.getCanPreviousPage()}
+					onclick={() => table.previousPage()}
+					disabled={!table.getCanPreviousPage()}
 					class="h-6 w-6 p-0"
 				>
 					<ChevronLeft class="h-3 w-3" />
 				</Button>
 
-				{#if tableInstance}
-					{@const currentPage = tableInstance.getState().pagination.pageIndex}
-					{@const totalPages = tableInstance.getPageCount()}
-
-					{#if currentPage > 1}
-						<Button
-							variant="ghost"
-							size="sm"
-							onclick={() => tableInstance?.setPageIndex(0)}
-							class="h-6 px-2 text-xs"
-						>
-							1
-						</Button>
-						{#if currentPage > 2}
-							<span class="text-muted-foreground text-xs">...</span>
-						{/if}
-					{/if}
-
-					{#if currentPage > 0}
-						<Button
-							variant="ghost"
-							size="sm"
-							onclick={() => tableInstance?.previousPage()}
-							class="h-6 px-2 text-xs"
-						>
-							{currentPage}
-						</Button>
-					{/if}
-
-					<Button variant="default" size="sm" class="h-6 px-2 text-xs">
-						{currentPage + 1}
+				{#if currentPage > 1}
+					<Button
+						variant="ghost"
+						size="sm"
+						onclick={() => table.setPageIndex(0)}
+						class="h-6 px-2 text-xs"
+					>
+						1
 					</Button>
-
-					{#if currentPage < totalPages - 1}
-						<Button
-							variant="ghost"
-							size="sm"
-							onclick={() => tableInstance?.nextPage()}
-							class="h-6 px-2 text-xs"
-						>
-							{currentPage + 2}
-						</Button>
+					{#if currentPage > 2}
+						<span class="text-muted-foreground text-xs">...</span>
 					{/if}
+				{/if}
 
-					{#if currentPage < totalPages - 2}
-						{#if currentPage < totalPages - 3}
-							<span class="text-muted-foreground text-xs">...</span>
-						{/if}
-						<Button
-							variant="ghost"
-							size="sm"
-							onclick={() => tableInstance?.setPageIndex(totalPages - 1)}
-							class="h-6 px-2 text-xs"
-						>
-							{totalPages}
-						</Button>
+				{#if currentPage > 0}
+					<Button
+						variant="ghost"
+						size="sm"
+						onclick={() => table.previousPage()}
+						class="h-6 px-2 text-xs"
+					>
+						{currentPage}
+					</Button>
+				{/if}
+
+				<Button variant="default" size="sm" class="h-6 px-2 text-xs">
+					{currentPage + 1}
+				</Button>
+
+				{#if currentPage < totalPages - 1}
+					<Button
+						variant="ghost"
+						size="sm"
+						onclick={() => table.nextPage()}
+						class="h-6 px-2 text-xs"
+					>
+						{currentPage + 2}
+					</Button>
+				{/if}
+
+				{#if currentPage < totalPages - 2}
+					{#if currentPage < totalPages - 3}
+						<span class="text-muted-foreground text-xs">...</span>
 					{/if}
+					<Button
+						variant="ghost"
+						size="sm"
+						onclick={() => table.setPageIndex(totalPages - 1)}
+						class="h-6 px-2 text-xs"
+					>
+						{totalPages}
+					</Button>
 				{/if}
 
 				<Button
 					variant="ghost"
 					size="sm"
-					onclick={() => tableInstance?.nextPage()}
-					disabled={!tableInstance?.getCanNextPage()}
+					onclick={() => table.nextPage()}
+					disabled={!table.getCanNextPage()}
 					class="h-6 w-6 p-0"
 				>
 					<ChevronRight class="h-3 w-3" />

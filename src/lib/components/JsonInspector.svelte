@@ -13,7 +13,7 @@
 	let windowElement = $state<HTMLDivElement>();
 	let isDragging = $state(false);
 	let dragOffset = { x: 0, y: 0 };
-	let windowSize = { width: 450, height: 'auto' };
+	let windowSize = { width: 450, height: 400 };
 	let animationFrameId: number | null = null;
 
 	const initialPosition = { x: 120, y: 80 };
@@ -22,7 +22,7 @@
 		if (!jsonValueToDisplay) return;
 
 		try {
-			const jsonString = JSON.stringify(jsonValueToDisplay, null, 2);
+			const jsonString = JSON.stringify(jsonValueToDisplay(), null, 2);
 			await navigator.clipboard.writeText(jsonString);
 			copySuccess = true;
 			setTimeout(() => (copySuccess = false), 2000);
@@ -95,7 +95,7 @@
 	class="border-border/60 glass-card fixed rounded-xl border shadow-2xl backdrop-blur-xl select-none"
 	class:cursor-move={isDragging}
 	class:animate-fade-in={isJsonValue()}
-	style="left: 0; top: 0; transform: translate({initialPosition.x}px, {initialPosition.y}px); width: {windowSize.width}px; max-width: 80vw; z-index: 1000; display: {isJsonValue()
+	style="left: 0; top: 0; transform: translate({initialPosition.x}px, {initialPosition.y}px); width: {windowSize.width}px; height: {windowSize.height}px; max-width: 80vw; z-index: 1000; display: {isJsonValue()
 		? 'block'
 		: 'none'};"
 	onmousedown={handleMouseDown}
@@ -135,10 +135,7 @@
 		</div>
 	</div>
 
-	<div
-		class="bg-card/50 overflow-auto rounded-b-xl backdrop-blur-sm"
-		style="max-height: 500px; min-height: 100px;"
-	>
+	<div class="bg-card/50 flex-1 overflow-auto rounded-b-xl backdrop-blur-sm">
 		<div class="p-2">
 			<JsonViewer json={jsonValueToDisplay()} depth={3} />
 		</div>
@@ -177,6 +174,10 @@
 
 	.glass-card {
 		will-change: transform;
+		resize: both;
+		overflow: hidden;
+		min-width: 300px;
+		min-height: 200px;
 	}
 
 	.cursor-move {

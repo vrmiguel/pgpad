@@ -207,7 +207,7 @@
 				</div>
 			{/if}
 		{:else}
-			<!-- Inline value (stays on same line as key) -->
+			<!-- Inline value -->
 			<span class="json-inline-property">
 				{#if item.key !== null && typeof item.key === 'string'}
 					<span class="json-key">"{item.key}"</span>
