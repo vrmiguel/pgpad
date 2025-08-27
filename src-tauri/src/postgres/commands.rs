@@ -47,6 +47,37 @@ pub async fn add_connection(
 }
 
 #[tauri::command]
+pub async fn update_connection(
+    conn_id: Uuid,
+    config: ConnectionConfig,
+    state: tauri::State<'_, AppState>,
+) -> Result<ConnectionInfo, Error> {
+    let mut updated_info = ConnectionInfo {
+        id: conn_id,
+        name: config.name,
+        connection_string: config.connection_string,
+        connected: false,
+    };
+
+    if let Some(mut connection_entry) = state.connections.get_mut(&conn_id) {
+        let connection = connection_entry.value_mut();
+
+        // Connstring changed, we'll need to reconnect
+        if connection.info.connection_string != updated_info.connection_string {
+            connection.client = None;
+            connection.info.connected = false;
+        }
+
+        updated_info.connected = connection.info.connected;
+        connection.info = updated_info.clone();
+    }
+
+    state.storage.update_connection(&updated_info)?;
+
+    Ok(updated_info)
+}
+
+#[tauri::command]
 pub async fn connect_to_database(
     connection_id: Uuid,
     state: tauri::State<'_, AppState>,

@@ -42,8 +42,9 @@
 </script>
 
 <div
-  class="titlebar-surface border-sidebar-border flex h-12 items-center border-b select-none"
-  data-tauri-drag-region
+	class="border-sidebar-border flex h-12 items-center border-b select-none"
+	style="background-color: var(--titlebar-bg);"
+	data-tauri-drag-region
 >
 	{#if isMacOS}
 		<div class="flex flex-1 items-center justify-center gap-3 pr-4 pl-20" data-tauri-drag-region>

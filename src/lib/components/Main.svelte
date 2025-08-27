@@ -37,6 +37,7 @@
 	}: Props = $props();
 
 	let showConnectionForm = $state(false);
+	let editingConnection = $state<ConnectionInfo | null>(null);
 	let connections = $state<ConnectionInfo[]>([]);
 	let sqlEditorRef = $state<SqlEditor>();
 	let establishingConnections = new SvelteSet<string>();
@@ -331,13 +332,22 @@
 		establishingConnections.delete(connectionId);
 	}
 
-	async function addConnection(config: ConnectionConfig) {
+	async function handleConnectionSubmit(config: ConnectionConfig) {
 		try {
-			const newConnection = await Commands.addConnection(config);
-			connections.push(newConnection);
+			if (editingConnection) {
+				const updatedConnection = await Commands.updateConnection(editingConnection!.id, config);
+				const index = connections.findIndex((c) => c.id === editingConnection!.id);
+				if (index !== -1) {
+					connections[index] = updatedConnection;
+				}
+			} else {
+				const newConnection = await Commands.addConnection(config);
+				connections.push(newConnection);
+			}
 			showConnectionForm = false;
+			editingConnection = null;
 		} catch (error) {
-			console.error('Failed to add connection:', error);
+			console.error('Failed to save connection:', error);
 		}
 	}
 
@@ -404,6 +414,33 @@
 
 	function handleTableClick(tableName: string, schema: string) {
 		sqlEditorRef?.handleTableBrowse(tableName, schema);
+	}
+
+	function editConnection(connection: ConnectionInfo) {
+		editingConnection = connection;
+		showConnectionForm = true;
+	}
+
+	async function deleteConnection(connectionId: string) {
+		try {
+			await Commands.removeConnection(connectionId);
+			await loadConnections();
+			// If the deleted connection was selected, clear the selection
+			if (selectedConnection === connectionId) {
+				selectedConnection = null;
+			}
+		} catch (error) {
+			console.error('Failed to delete connection:', error);
+		}
+	}
+
+	async function disconnectConnection(connectionId: string) {
+		try {
+			await Commands.disconnectFromDatabase(connectionId);
+			await loadConnections();
+		} catch (error) {
+			console.error('Failed to disconnect:', error);
+		}
 	}
 
 	async function loadScripts() {
@@ -648,7 +685,13 @@ SELECT 1 as test;`;
 				bind:isItemsAccordionOpen
 				onSelectConnection={selectConnection}
 				onConnectToDatabase={connectToDatabase}
-				onShowConnectionForm={() => (showConnectionForm = true)}
+				onShowConnectionForm={() => {
+					editingConnection = null;
+					showConnectionForm = true;
+				}}
+				onEditConnection={editConnection}
+				onDeleteConnection={deleteConnection}
+				onDisconnectConnection={disconnectConnection}
 				onSelectScript={selectScript}
 				onCreateNewScript={createNewScript}
 				onDeleteScript={deleteScript}
@@ -698,7 +741,14 @@ SELECT 1 as test;`;
 		<div
 			class="glass-card hover-lift mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl p-8 shadow-xl"
 		>
-			<ConnectionForm onSubmit={addConnection} onCancel={() => (showConnectionForm = false)} />
+			<ConnectionForm
+				onSubmit={handleConnectionSubmit}
+				onCancel={() => {
+					showConnectionForm = false;
+					editingConnection = null;
+				}}
+				{editingConnection}
+			/>
 		</div>
 	</div>
 {/if}

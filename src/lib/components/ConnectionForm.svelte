@@ -2,20 +2,27 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Cable, X, CheckCircle, AlertCircle, Info } from '@lucide/svelte';
-	import { Commands, type ConnectionConfig } from '$lib/commands.svelte';
+	import { Commands, type ConnectionConfig, type ConnectionInfo } from '$lib/commands.svelte';
 
 	interface Props {
 		onSubmit: (connection: ConnectionConfig) => void;
 		onCancel: () => void;
+		editingConnection?: ConnectionInfo | null;
 	}
 
-	let { onSubmit, onCancel }: Props = $props();
+	let { onSubmit, onCancel, editingConnection = null }: Props = $props();
 
-	let connectionString = $state('postgresql://username:password@localhost:5432/database');
-	let connectionName = $state('');
+	let connectionString = $state(
+		editingConnection?.connection_string || 'postgresql://username:password@localhost:5432/database'
+	);
+	let connectionName = $state(editingConnection?.name || '');
 	let errors = $state<Record<string, string>>({});
 	let isTestingConnection = $state(false);
 	let testResult = $state<'success' | 'error' | null>(null);
+
+	const isEditing = $derived(editingConnection !== null);
+	const modalTitle = $derived(isEditing ? 'Edit Connection' : 'Add Connection');
+	const submitButtonText = $derived(isEditing ? 'Update Connection' : 'Add Connection');
 
 	function validateForm(): boolean {
 		errors = {};
@@ -72,7 +79,7 @@
 			<div class="bg-primary/10 border-primary/20 rounded-lg border p-2">
 				<Cable class="text-primary h-5 w-5" />
 			</div>
-			<h2 class="text-foreground text-xl font-bold">Add Connection</h2>
+			<h2 class="text-foreground text-xl font-bold">{modalTitle}</h2>
 		</div>
 		<Button type="button" variant="ghost" size="icon-sm" onclick={onCancel} class="hover:shadow-md">
 			<X class="h-4 w-4" />
@@ -179,7 +186,7 @@
 		</Button>
 		<Button type="submit" class="gap-2 shadow-md hover:shadow-lg">
 			<Cable class="h-4 w-4" />
-			Add Connection
+			{submitButtonText}
 		</Button>
 	</div>
 </form>

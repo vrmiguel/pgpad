@@ -33,7 +33,7 @@ pub fn build_window(app: &tauri::App) -> tauri::Result<()> {
 
     #[cfg(target_os = "macos")]
     {
-       use tauri::{utils::config::WindowEffectsConfig, window::{Effect, Color}, LogicalPosition};
+        use tauri::{utils::config::WindowEffectsConfig, window::Effect, LogicalPosition};
         window_builder = window_builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .decorations(true)
@@ -41,7 +41,7 @@ pub fn build_window(app: &tauri::App) -> tauri::Result<()> {
                 effects: vec![Effect::WindowBackground],
                 state: None,
                 radius: Some(12.0),
-                color: Some(Color(2, 6, 16, 255)),
+                color: None,
             })
             .traffic_light_position(tauri::Position::Logical(LogicalPosition::new(16.0, 23.0)))
             .hidden_title(true);

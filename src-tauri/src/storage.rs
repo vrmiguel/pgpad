@@ -162,6 +162,34 @@ impl Storage {
         Ok(())
     }
 
+    pub fn update_connection(&self, connection: &ConnectionInfo) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        let conn = self.conn.lock().unwrap();
+
+        let updated_rows = conn
+            .execute(
+                "UPDATE connections 
+             SET name = ?2, connection_string = ?3, updated_at = ?4
+             WHERE id = ?1",
+                (
+                    &connection.id.to_string(),
+                    &connection.name,
+                    &connection.connection_string,
+                    now,
+                ),
+            )
+            .context("Failed to update connection")?;
+
+        if updated_rows == 0 {
+            return Err(crate::Error::Any(anyhow::anyhow!(
+                "Connection not found: {}",
+                connection.id
+            )));
+        }
+
+        Ok(())
+    }
+
     pub fn get_connections(&self) -> Result<Vec<ConnectionInfo>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn

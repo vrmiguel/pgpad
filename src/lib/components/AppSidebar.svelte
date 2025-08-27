@@ -5,10 +5,15 @@
 		ChevronLeft,
 		ChevronRight,
 		FileJson,
-		TableProperties
+		TableProperties,
+		Edit,
+		Trash2,
+		Settings,
+		Unplug
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Accordion, AccordionItem, AccordionContent } from '$lib/components/ui/accordion';
+	import { ContextMenu } from 'bits-ui';
 	import DatabaseSchemaItems from './DatabaseSchemaItems.svelte';
 	import Logo from './Logo.svelte';
 	import type { ConnectionInfo, Script, DatabaseSchema } from '$lib/commands.svelte';
@@ -34,6 +39,9 @@
 		onSelectConnection?: (connectionId: string) => void;
 		onConnectToDatabase?: (connectionId: string) => void;
 		onShowConnectionForm?: () => void;
+		onEditConnection?: (connection: ConnectionInfo) => void;
+		onDeleteConnection?: (connectionId: string) => void;
+		onDisconnectConnection?: (connectionId: string) => void;
 		onSelectScript?: (script: Script) => void;
 		onCreateNewScript?: () => void;
 		onDeleteScript?: (script: Script) => void;
@@ -59,6 +67,9 @@
 		onSelectConnection,
 		onConnectToDatabase,
 		onShowConnectionForm,
+		onEditConnection,
+		onDeleteConnection,
+		onDisconnectConnection,
 		onSelectScript,
 		onCreateNewScript,
 		onDeleteScript,
@@ -96,6 +107,18 @@
 
 	function handleTableClick(tableName: string, schema: string) {
 		onTableClick?.(tableName, schema);
+	}
+
+	function editConnection(connection: ConnectionInfo) {
+		onEditConnection?.(connection);
+	}
+
+	function deleteConnection(connectionId: string) {
+		onDeleteConnection?.(connectionId);
+	}
+
+	function disconnectConnection(connectionId: string) {
+		onDisconnectConnection?.(connectionId);
 	}
 </script>
 
@@ -223,40 +246,87 @@
 									</div>
 								{:else}
 									{#each connections as connection (connection.id)}
-										<Button
-											variant="ghost"
-											class="h-auto w-full justify-start rounded-lg p-2.5 transition-all duration-200 hover:bg-black/5 dark:hover:bg-white/5 {selectedConnection ===
-											connection.id
-												? 'border border-blue-200/50 bg-blue-50 dark:border-blue-800/50 dark:bg-blue-950/30'
-												: 'border border-transparent'}"
-											onclick={() => selectConnection(connection.id)}
-											ondblclick={() => connectToDatabase(connection.id)}
-										>
-											<div class="flex w-full items-center gap-2.5">
-												<div class="flex-shrink-0">
-													{#if connection.connected}
-														<div class="h-2 w-2 rounded-full bg-green-500 shadow-sm"></div>
-													{:else if establishingConnections.has(connection.id)}
-														<div
-															class="h-2 w-2 animate-pulse rounded-full bg-amber-500 shadow-sm"
-														></div>
-													{:else}
-														<div class="h-2 w-2 rounded-full bg-gray-400"></div>
-													{/if}
-												</div>
+										<ContextMenu.Root>
+											<ContextMenu.Trigger class="w-full">
+												<Button
+													variant="ghost"
+													class="h-auto w-full justify-start rounded-lg p-2.5 transition-all duration-200 hover:bg-black/5 dark:hover:bg-white/5 {selectedConnection ===
+													connection.id
+														? 'border border-blue-200/50 bg-blue-50 dark:border-blue-800/50 dark:bg-blue-950/30'
+														: 'border border-transparent'}"
+													onclick={() => selectConnection(connection.id)}
+													ondblclick={() => connectToDatabase(connection.id)}
+												>
+													<div class="flex w-full items-center gap-2.5">
+														<div class="flex-shrink-0">
+															{#if connection.connected}
+																<div class="h-2 w-2 rounded-full bg-green-500 shadow-sm"></div>
+															{:else if establishingConnections.has(connection.id)}
+																<div
+																	class="h-2 w-2 animate-pulse rounded-full bg-amber-500 shadow-sm"
+																></div>
+															{:else}
+																<div class="h-2 w-2 rounded-full bg-gray-400"></div>
+															{/if}
+														</div>
 
-												<div class="min-w-0 flex-1 text-left">
-													<div class="text-foreground mb-0.5 truncate text-sm font-medium">
-														{connection.name}
+														<div class="min-w-0 flex-1 text-left">
+															<div class="text-foreground mb-0.5 truncate text-sm font-medium">
+																{connection.name}
+															</div>
+															<div class="text-muted-foreground truncate font-mono text-xs">
+																{connection.connection_string
+																	.replace(/^postgresql?:\/\/[^@]*@/, '')
+																	.replace(/\/[^?]*/, '')}
+															</div>
+														</div>
 													</div>
-													<div class="text-muted-foreground truncate font-mono text-xs">
-														{connection.connection_string
-															.replace(/^postgresql?:\/\/[^@]*@/, '')
-															.replace(/\/[^?]*/, '')}
-													</div>
-												</div>
-											</div>
-										</Button>
+												</Button>
+											</ContextMenu.Trigger>
+
+											<ContextMenu.Portal>
+												<ContextMenu.Content
+													class="bg-popover text-popover-foreground z-[1000] max-w-64 min-w-48 overflow-hidden rounded-lg border p-2 shadow-lg backdrop-blur-sm"
+													style="box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.05);"
+												>
+													<ContextMenu.Item
+														class="hover:bg-accent hover:text-accent-foreground relative flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all outline-none select-none"
+														onclick={() => editConnection(connection)}
+													>
+														<Edit class="text-muted-foreground h-4 w-4" />
+														<span>Edit Connection</span>
+													</ContextMenu.Item>
+
+													{#if connection.connected}
+														<ContextMenu.Item
+															class="hover:bg-accent hover:text-accent-foreground relative flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all outline-none select-none"
+															onclick={() => disconnectConnection(connection.id)}
+														>
+															<Unplug class="text-muted-foreground h-4 w-4" />
+															<span>Disconnect</span>
+														</ContextMenu.Item>
+													{:else}
+														<ContextMenu.Item
+															class="hover:bg-accent hover:text-accent-foreground relative flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all outline-none select-none"
+															onclick={() => connectToDatabase(connection.id)}
+														>
+															<Cable class="text-muted-foreground h-4 w-4" />
+															<span>Connect</span>
+														</ContextMenu.Item>
+													{/if}
+
+													<ContextMenu.Separator class="bg-border my-2 h-px" />
+
+													<ContextMenu.Item
+														class="text-error hover:bg-error/10 hover:text-error relative flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all outline-none select-none"
+														onclick={() => deleteConnection(connection.id)}
+													>
+														<Trash2 class="h-4 w-4" />
+														<span>Delete Connection</span>
+													</ContextMenu.Item>
+												</ContextMenu.Content>
+											</ContextMenu.Portal>
+										</ContextMenu.Root>
 									{/each}
 								{/if}
 							</div>

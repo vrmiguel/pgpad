@@ -33,53 +33,53 @@ export interface QueryResult {
 
 export type QueryStreamEvent =
 	| {
-			event: 'statementStart';
-			data: {
-				statementIndex: number;
-				totalStatements: number;
-				statement: string;
-				returnsValues: boolean;
-			};
-	  }
+		event: 'statementStart';
+		data: {
+			statementIndex: number;
+			totalStatements: number;
+			statement: string;
+			returnsValues: boolean;
+		};
+	}
 	| {
-			event: 'resultStart';
-			data: {
-				statementIndex: number;
-				columns: string[];
-			};
-	  }
+		event: 'resultStart';
+		data: {
+			statementIndex: number;
+			columns: string[];
+		};
+	}
 	| {
-			event: 'resultBatch';
-			data: {
-				statementIndex: number;
-				rows: PgValue[][];
-			};
-	  }
+		event: 'resultBatch';
+		data: {
+			statementIndex: number;
+			rows: PgValue[][];
+		};
+	}
 	| {
-			event: 'statementComplete';
-			data: {
-				statementIndex: number;
-				affectedRows: number;
-			};
-	  }
+		event: 'statementComplete';
+		data: {
+			statementIndex: number;
+			affectedRows: number;
+		};
+	}
 	| {
-			event: 'statementFinish';
-			data: {
-				statementIndex: number;
-			};
-	  }
+		event: 'statementFinish';
+		data: {
+			statementIndex: number;
+		};
+	}
 	| {
-			event: 'allFinished';
-			data: {};
-	  }
+		event: 'allFinished';
+		data: {};
+	}
 	| {
-			event: 'statementError';
-			data: {
-				statementIndex: number;
-				statement: string;
-				error: string;
-			};
-	  };
+		event: 'statementError';
+		data: {
+			statementIndex: number;
+			statement: string;
+			error: string;
+		};
+	};
 
 // UI-facing result type that includes success/error state
 export interface QueryResultUI {
@@ -171,6 +171,10 @@ export class Commands {
 
 	static async removeConnection(connectionId: string): Promise<void> {
 		return await invoke('remove_connection', { connectionId });
+	}
+
+	static async updateConnection(connectionId: string, config: ConnectionConfig): Promise<ConnectionInfo> {
+		return await invoke('update_connection', { connectionId, config });
 	}
 
 	static async initializeConnections(): Promise<void> {

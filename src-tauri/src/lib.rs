@@ -70,6 +70,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             postgres::commands::test_connection,
             postgres::commands::add_connection,
+            postgres::commands::update_connection,
             postgres::commands::connect_to_database,
             postgres::commands::disconnect_from_database,
             postgres::commands::execute_query_stream,
