@@ -4,7 +4,7 @@ use tauri::{Emitter, EventTarget, Manager};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::{postgres::connect::ConnectionCheck, AppState};
+use crate::{database::postgres::connect::ConnectionCheck, AppState};
 
 type ConnectionId = Uuid;
 

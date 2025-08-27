@@ -1,4 +1,4 @@
-use crate::{error::Error, postgres::Certificates};
+use crate::{database::Certificates, error::Error};
 
 use anyhow::Context;
 use tauri::async_runtime::JoinHandle;

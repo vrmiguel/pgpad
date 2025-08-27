@@ -177,7 +177,7 @@
 			}
 
 			for (const [idStr, content] of Object.entries(saved.unsavedChanges ?? {})) {
-				scriptContents.set(parseInt(idStr), content);
+				scriptContents.set(parseInt(idStr), content as string);
 			}
 
 			for (const id of saved.openScriptIds ?? []) {

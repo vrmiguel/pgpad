@@ -1,6 +1,6 @@
+mod database;
 mod error;
 mod init;
-mod postgres;
 mod storage;
 mod window;
 
@@ -9,7 +9,7 @@ use tauri::Manager;
 use uuid::Uuid;
 
 use crate::{
-    postgres::{types::DatabaseConnection, ConnectionMonitor},
+    database::{types::DatabaseConnection, ConnectionMonitor},
     storage::Storage,
 };
 pub use error::{Error, Result};
@@ -46,7 +46,7 @@ pub fn run() {
             std::process::exit(1);
         }
     };
-    let certificates = postgres::Certificates::new();
+    let certificates = database::Certificates::new();
 
     tauri::Builder::default()
         .manage(app_state)
@@ -68,24 +68,24 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            postgres::commands::test_connection,
-            postgres::commands::add_connection,
-            postgres::commands::update_connection,
-            postgres::commands::connect_to_database,
-            postgres::commands::disconnect_from_database,
-            postgres::commands::execute_query_stream,
-            postgres::commands::get_connections,
-            postgres::commands::remove_connection,
-            postgres::commands::initialize_connections,
-            postgres::commands::save_query_to_history,
-            postgres::commands::get_query_history,
-            postgres::commands::get_database_schema,
-            postgres::commands::save_script,
-            postgres::commands::update_script,
-            postgres::commands::get_scripts,
-            postgres::commands::delete_script,
-            postgres::commands::save_session_state,
-            postgres::commands::get_session_state,
+            database::commands::test_connection,
+            database::commands::add_connection,
+            database::commands::update_connection,
+            database::commands::connect_to_database,
+            database::commands::disconnect_from_database,
+            database::commands::execute_query_stream,
+            database::commands::get_connections,
+            database::commands::remove_connection,
+            database::commands::initialize_connections,
+            database::commands::save_query_to_history,
+            database::commands::get_query_history,
+            database::commands::get_database_schema,
+            database::commands::save_script,
+            database::commands::update_script,
+            database::commands::get_scripts,
+            database::commands::delete_script,
+            database::commands::save_session_state,
+            database::commands::get_session_state,
             window::commands::minimize_window,
             window::commands::maximize_window,
             window::commands::close_window,

@@ -15,7 +15,7 @@ mod record;
 use null::NullChecker;
 use record::PgRecord;
 
-use crate::postgres::row_writer::{bytes::PgBytes, interval::PgInterval};
+use crate::database::postgres::row_writer::{bytes::PgBytes, interval::PgInterval};
 
 /// A somewhat efficient way of converting the raw Postgres query results into a JSON string.
 ///
@@ -314,7 +314,7 @@ mod tests {
     use pgtemp::PgTempDB;
     use serde_json::Value;
 
-    use crate::postgres::row_writer::RowWriter;
+    use crate::database::postgres::row_writer::RowWriter;
 
     #[tokio::test]
     async fn test_row_writer() {

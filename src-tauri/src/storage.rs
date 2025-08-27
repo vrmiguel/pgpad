@@ -6,7 +6,7 @@ use rusqlite::{types::Type, Connection};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{postgres::types::ConnectionInfo, Result};
+use crate::{database::types::ConnectionInfo, Result};
 
 struct Migrator {
     migrations: &'static [&'static str],

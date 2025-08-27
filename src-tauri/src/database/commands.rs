@@ -7,17 +7,17 @@ use tokio_postgres::{types::ToSql, Client};
 use uuid::Uuid;
 
 use crate::{
-    error::Error,
-    postgres::{
-        connect::connect,
-        query::parse_statements,
-        row_writer::RowWriter,
+    database::{
+        postgres::connect::connect,
+        postgres::parser::parse_statements,
+        postgres::row_writer::RowWriter,
         types::{
             ColumnInfo, ConnectionConfig, ConnectionInfo, DatabaseConnection, DatabaseSchema,
             QueryStreamEvent, TableInfo,
         },
         Certificates, ConnectionMonitor,
     },
+    error::Error,
     storage::{QueryHistoryEntry, SavedQuery},
     AppState,
 };
