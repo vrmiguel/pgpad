@@ -279,7 +279,6 @@
 }
 
 @layer utilities {
-
 	/* Modern Glass Effects */
 	.glass-card {
 		background: var(--glass-bg);
@@ -326,8 +325,6 @@
 	.focus-ring {
 		@apply focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none;
 	}
-
-
 }
 
 @keyframes fadeIn {

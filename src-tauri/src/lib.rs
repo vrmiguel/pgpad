@@ -84,6 +84,8 @@ pub fn run() {
             postgres::commands::update_script,
             postgres::commands::get_scripts,
             postgres::commands::delete_script,
+            postgres::commands::save_session_state,
+            postgres::commands::get_session_state,
             window::commands::minimize_window,
             window::commands::maximize_window,
             window::commands::close_window,

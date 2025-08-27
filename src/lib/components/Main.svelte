@@ -83,6 +83,120 @@
 	let isConnectionsAccordionOpen = $state(true);
 	let isScriptsAccordionOpen = $state(false);
 
+	// TODO(vini): turn into an $effect that updates with its dependencies
+	let shouldSaveSession = false;
+	let sessionSaveTimer: ReturnType<typeof setInterval> | null = null;
+
+	function markSessionDirty() {
+		shouldSaveSession = true;
+	}
+
+	async function checkAndSaveSession() {
+		if (shouldSaveSession) {
+			shouldSaveSession = false;
+			try {
+				await saveSessionNow();
+			} catch (e) {
+				shouldSaveSession = true;
+				console.error('Failed to save session:', e);
+			}
+		}
+	}
+
+	async function saveSessionNow() {
+		try {
+			await Commands.saveSessionState(
+				JSON.stringify({
+					selectedConnection,
+					isSidebarCollapsed,
+					isConnectionsAccordionOpen,
+					isScriptsAccordionOpen,
+					isItemsAccordionOpen,
+					openScriptIds: openScripts.map((s) => s.id),
+					activeScriptId,
+					unsavedChanges: Object.fromEntries(
+						Array.from(scriptContents.entries()).filter(([id, content]) => {
+							if (newScripts.has(id)) return false;
+							const original = scripts.find((s) => s.id === id);
+							return original && content !== original.query_text;
+						})
+					),
+					tempScripts: Array.from(newScripts)
+						.map((id) => {
+							const script = scripts.find((s) => s.id === id);
+							return script
+								? {
+										id: script.id,
+										name: script.name,
+										content: scriptContents.get(id) ?? script.query_text
+									}
+								: null;
+						})
+						.filter(Boolean),
+					nextTempId
+				})
+			);
+		} catch (e) {
+			console.error('Failed to save session:', e);
+		}
+	}
+
+	async function restoreSession(): Promise<boolean> {
+		try {
+			const raw = await Commands.getSessionState();
+			if (!raw) return false;
+
+			const saved = JSON.parse(raw);
+
+			if (saved.selectedConnection !== undefined) selectedConnection = saved.selectedConnection;
+			if (saved.isSidebarCollapsed !== undefined) isSidebarCollapsed = saved.isSidebarCollapsed;
+			if (saved.isConnectionsAccordionOpen !== undefined)
+				isConnectionsAccordionOpen = saved.isConnectionsAccordionOpen;
+			if (saved.isScriptsAccordionOpen !== undefined)
+				isScriptsAccordionOpen = saved.isScriptsAccordionOpen;
+			if (saved.isItemsAccordionOpen !== undefined)
+				isItemsAccordionOpen = saved.isItemsAccordionOpen;
+			if (saved.nextTempId !== undefined) nextTempId = Math.min(nextTempId, saved.nextTempId);
+
+			for (const temp of saved.tempScripts ?? []) {
+				if (!scripts.find((s) => s.id === temp.id)) {
+					scripts.push({
+						id: temp.id,
+						name: temp.name,
+						description: null,
+						query_text: temp.content,
+						connection_id: null,
+						tags: null,
+						created_at: Date.now() / 1000,
+						updated_at: Date.now() / 1000,
+						favorite: false
+					});
+				}
+				newScripts.add(temp.id);
+				scriptContents.set(temp.id, temp.content);
+			}
+
+			for (const [idStr, content] of Object.entries(saved.unsavedChanges ?? {})) {
+				scriptContents.set(parseInt(idStr), content);
+			}
+
+			for (const id of saved.openScriptIds ?? []) {
+				const script = scripts.find((s) => s.id === id);
+				if (script) openScript(script);
+			}
+
+			if (saved.activeScriptId != null) {
+				const script = scripts.find((s) => s.id === saved.activeScriptId);
+				if (script) switchToTab(script.id);
+			}
+
+			return (saved.openScriptIds?.length ?? 0) > 0;
+		} catch (e) {
+			console.error('Failed to restore session:', e);
+			return false;
+		}
+	}
+
 	// Auto-collapse if resized below 12%
 	const COLLAPSE_THRESHOLD = 12;
 	// Auto-expand if resized above 10%
@@ -183,6 +297,7 @@
 				} else if (isSidebarCollapsed && sidebarSize > EXPAND_THRESHOLD) {
 					isSidebarCollapsed = false;
 				}
+				markSessionDirty();
 			}
 		}, 150);
 	}
@@ -201,6 +316,8 @@
 		if (sqlEditorRef) {
 			sqlEditorRef.setContent(script.query_text);
 		}
+
+		markSessionDirty();
 	}
 
 	function switchToTab(scriptId: number) {
@@ -217,6 +334,7 @@
 				sqlEditorRef.setContent(content);
 			}
 		}
+		markSessionDirty();
 	}
 
 	function closeTab(scriptId: number) {
@@ -240,6 +358,7 @@
 				}
 			}
 		}
+		markSessionDirty();
 	}
 
 	function selectScript(script: Script) {
@@ -279,11 +398,15 @@
 				handleConnectionDisconnect(connectionId);
 			});
 
-			// Create a new script on startup if no scripts are open
-			if (openScripts.length === 0) {
-				// Reuse "Untitled Script" on startup
-				const existingUntitledScript = scripts.find((s) => s.name === 'Untitled Script');
+			// checks if we should auto-save the sesssion, every 20 secs
+			sessionSaveTimer = setInterval(() => {
+				checkAndSaveSession().catch(console.error);
+			}, 20000);
 
+			const restored = await restoreSession();
+			// If we restored a session and still no scripts were loaded
+			if (!restored && openScripts.length === 0) {
+				const existingUntitledScript = scripts.find((s) => s.name === 'Untitled Script');
 				if (existingUntitledScript) {
 					openScript(existingUntitledScript);
 				} else {
@@ -299,6 +422,12 @@
 		if (unlistenDisconnect) {
 			unlistenDisconnect();
 		}
+
+		if (sessionSaveTimer) {
+			clearInterval(sessionSaveTimer);
+		}
+
+		checkAndSaveSession().catch(console.error);
 	});
 
 	// Handle saving with Ctrl+S
@@ -332,17 +461,16 @@
 		establishingConnections.delete(connectionId);
 	}
 
+	// receives a ConnectionConfig from <ConnectionForm />
 	async function handleConnectionSubmit(config: ConnectionConfig) {
 		try {
 			if (editingConnection) {
-				const updatedConnection = await Commands.updateConnection(editingConnection!.id, config);
-				const index = connections.findIndex((c) => c.id === editingConnection!.id);
-				if (index !== -1) {
-					connections[index] = updatedConnection;
-				}
+				const updated = await Commands.updateConnection(editingConnection.id, config);
+				const i = connections.findIndex((c) => c.id === editingConnection!.id);
+				if (i !== -1) connections[i] = updated;
 			} else {
-				const newConnection = await Commands.addConnection(config);
-				connections.push(newConnection);
+				const created = await Commands.addConnection(config);
+				connections.push(created);
 			}
 			showConnectionForm = false;
 			editingConnection = null;
@@ -351,8 +479,19 @@
 		}
 	}
 
+	async function addConnection(config: ConnectionConfig) {
+		try {
+			const newConnection = await Commands.addConnection(config);
+			connections.push(newConnection);
+			showConnectionForm = false;
+		} catch (error) {
+			console.error('Failed to add connection:', error);
+		}
+	}
+
 	function selectConnection(connectionId: string) {
 		selectedConnection = connectionId;
+		markSessionDirty();
 	}
 
 	async function connectToDatabase(connectionId: string) {
@@ -484,6 +623,7 @@ SELECT 1 as test;`;
 			// Mark as new/unsaved
 			newScripts.add(tempId);
 			openScript(newScript);
+			markSessionDirty();
 		} catch (error) {
 			console.error('Failed to create new script:', error);
 		}
@@ -559,6 +699,7 @@ SELECT 1 as test;`;
 					scripts[scriptIndex] = { ...currentScript };
 				}
 			}
+			markSessionDirty();
 		} catch (error) {
 			console.error('Failed to save script:', error);
 		}
@@ -612,6 +753,7 @@ SELECT 1 as test;`;
 					newScripts.delete(script.id);
 				}
 			}
+			markSessionDirty();
 		} catch (error) {
 			console.error('Failed to delete script:', error);
 		}
@@ -653,6 +795,7 @@ SELECT 1 as test;`;
 					updated_at: Date.now() / 1000
 				};
 			}
+			markSessionDirty();
 		} catch (error) {
 			console.error('Failed to rename script:', error);
 		}
