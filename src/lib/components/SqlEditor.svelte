@@ -131,8 +131,8 @@ SELECT 1 as test;`);
 			return;
 		}
 
-		const query =
-			schema === 'public'
+		const query = 
+			!schema || schema === 'public'
 				? `SELECT * FROM "${tableName}" LIMIT 1000`
 				: `SELECT * FROM "${schema}"."${tableName}" LIMIT 1000`;
 
@@ -157,7 +157,7 @@ SELECT 1 as test;`);
 		let tabName = generateTabTitle(statement);
 		if (currentTableBrowse) {
 			const tableDisplayName =
-				currentTableBrowse.schema === 'public'
+				!currentTableBrowse.schema || currentTableBrowse.schema === 'public'
 					? currentTableBrowse.tableName
 					: `${currentTableBrowse.schema}.${currentTableBrowse.tableName}`;
 			tabName = `📋 ${tableDisplayName}`;

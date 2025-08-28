@@ -1,7 +1,15 @@
+CREATE TABLE database_types (
+    id INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);
+
+INSERT INTO database_types (id, name) VALUES (1, 'postgres'), (2, 'sqlite');
+
 CREATE TABLE connections (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    connection_string TEXT NOT NULL,
+    connection_data TEXT NOT NULL,
+    database_type_id INTEGER NOT NULL DEFAULT 1 REFERENCES database_types(id),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     last_connected_at INTEGER,

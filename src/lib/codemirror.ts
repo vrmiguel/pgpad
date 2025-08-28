@@ -156,7 +156,7 @@ function generateSchemaCompletions(schema: DatabaseSchema | null): any[] {
 	const completions: any[] = [];
 
 	for (const table of schema.tables) {
-		const tableName = table.schema === 'public' ? table.name : `${table.schema}.${table.name}`;
+		const tableName = !table.schema || table.schema === 'public' ? table.name : `${table.schema}.${table.name}`;
 		completions.push({
 			label: tableName,
 			type: 'class',
@@ -176,7 +176,7 @@ function generateSchemaCompletions(schema: DatabaseSchema | null): any[] {
 
 	// Add qualified column completions (table.column)
 	for (const table of schema.tables) {
-		const tableName = table.schema === 'public' ? table.name : `${table.schema}.${table.name}`;
+		const tableName = !table.schema || table.schema === 'public' ? table.name : `${table.schema}.${table.name}`;
 		for (const column of table.columns) {
 			completions.push({
 				label: `${tableName}.${column.name}`,

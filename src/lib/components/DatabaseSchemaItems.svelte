@@ -58,7 +58,7 @@
 							{table.name}
 						</div>
 						<div class="text-muted-foreground/80 truncate text-xs">
-							{table.schema !== 'public' ? `${table.schema}.${table.name}` : table.name} • {table
+							{table.schema && table.schema !== 'public' ? `${table.schema}.${table.name}` : table.name} • {table
 								.columns.length} columns
 						</div>
 					</div>

@@ -8,8 +8,8 @@ use anyhow::ensure;
 use tauri::async_runtime::{spawn, spawn_blocking};
 use tokio::sync::OnceCell;
 
-pub const RDS_CERTIFICATES: &str = include_str!("../../../certs/aws-rds-global-bundle.pem");
-pub const AZURE_CERTIFICATES: &str = include_str!("../../../certs/azure-baltimore-root.pem");
+pub const RDS_CERTIFICATES: &str = include_str!("../../../../certs/aws-rds-global-bundle.pem");
+pub const AZURE_CERTIFICATES: &str = include_str!("../../../../certs/azure-baltimore-root.pem");
 
 pub struct Certificates {
     pub certs: Arc<OnceCell<Arc<rustls::RootCertStore>>>,

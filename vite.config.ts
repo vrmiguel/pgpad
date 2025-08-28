@@ -2,11 +2,18 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import { defineConfig } from 'vite';
+import Icons from 'unplugin-icons/vite';
 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
-	plugins: [svelte({ compilerOptions: { runes: true } }), tailwindcss()],
+	plugins: [
+		svelte({ compilerOptions: { runes: true } }),
+		tailwindcss(),
+		Icons({
+			compiler: 'svelte'
+		})
+	],
 	resolve: {
 		alias: {
 			$lib: path.resolve('./src/lib')

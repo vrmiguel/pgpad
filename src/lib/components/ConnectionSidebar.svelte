@@ -2,15 +2,10 @@
 	import { Cable, AlertTriangle, Loader2 } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 
-	interface Connection {
-		id: string;
-		name: string;
-		connection_string: string;
-		connected: boolean;
-	}
+	import type { ConnectionInfo } from '$lib/commands.svelte';
 
 	interface Props {
-		connections: Connection[];
+		connections: ConnectionInfo[];
 		selectedConnection: string | null;
 		establishingConnections: Set<string>;
 		onSelect: (connectionId: string) => void;
@@ -67,12 +62,24 @@
 									{connection.name}
 								</div>
 								<div class="text-muted-foreground/80 mb-1 truncate text-xs">
-									{connection.connection_string
-										.replace(/^postgresql?:\/\/[^@]*@/, '')
-										.replace(/\/[^?]*/, '')}
+									{#if 'Postgres' in connection.database_type}
+										{connection.database_type.Postgres.connection_string
+											.replace(/^postgresql?:\/\/[^@]*@/, '')
+											.replace(/\/[^?]*/, '')}
+									{:else if 'SQLite' in connection.database_type}
+										{connection.database_type.SQLite.db_path}
+									{/if}
 								</div>
 								<div class="text-muted-foreground/60 mb-2 truncate text-xs">
-									{connection.connection_string.split('/').pop()?.split('?')[0] || 'database'}
+									{#if 'Postgres' in connection.database_type}
+										{connection.database_type.Postgres.connection_string
+											.split('/')
+											.pop()
+											?.split('?')[0] || 'database'}
+									{:else if 'SQLite' in connection.database_type}
+										{connection.database_type.SQLite.db_path.split('/').pop() ||
+											connection.database_type.SQLite.db_path}
+									{/if}
 								</div>
 								{#if !connection.connected}
 									<div class="mt-2 flex items-center gap-2">

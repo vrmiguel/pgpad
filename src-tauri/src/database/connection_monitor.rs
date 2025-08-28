@@ -4,7 +4,7 @@ use tauri::{Emitter, EventTarget, Manager};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::{postgres::connect::ConnectionCheck, AppState};
+use crate::{database::postgres::connect::ConnectionCheck, AppState};
 
 type ConnectionId = Uuid;
 
@@ -44,8 +44,14 @@ impl ConnectionMonitor {
             log::error!("Connection {connection_id} not found!");
             return;
         };
-        connection.info.connected = false;
-        connection.client = None;
+        connection.connected = false;
+        match &mut connection.database {
+            crate::database::types::Database::Postgres { client, .. } => *client = None,
+            crate::database::types::Database::SQLite {
+                connection: sqlite_conn,
+                ..
+            } => *sqlite_conn = None,
+        }
     }
 
     fn notify_disconnect(&self, connection_id: Uuid) {
