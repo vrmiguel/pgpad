@@ -11,6 +11,8 @@
 		Settings,
 		Unplug
 	} from '@lucide/svelte';
+	import IconCibPostgresql from '~icons/cib/postgresql';
+	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
 	import { Button } from '$lib/components/ui/button';
 	import { Accordion, AccordionItem, AccordionContent } from '$lib/components/ui/accordion';
 	import { ContextMenu } from 'bits-ui';
@@ -258,7 +260,8 @@
 													ondblclick={() => connectToDatabase(connection.id)}
 												>
 													<div class="flex w-full items-center gap-2.5">
-														<div class="flex-shrink-0">
+														<div class="flex-shrink-0 flex items-center gap-2">
+															<!-- Connection status dot -->
 															{#if connection.connected}
 																<div class="h-2 w-2 rounded-full bg-green-500 shadow-sm"></div>
 															{:else if establishingConnections.has(connection.id)}
@@ -267,6 +270,12 @@
 																></div>
 															{:else}
 																<div class="h-2 w-2 rounded-full bg-gray-400"></div>
+															{/if}
+															
+															{#if 'Postgres' in connection.database_type}
+																<IconCibPostgresql class="h-4 w-4" />
+															{:else if 'SQLite' in connection.database_type}
+																<IconSimpleIconsSqlite class="h-4 w-4" />
 															{/if}
 														</div>
 
