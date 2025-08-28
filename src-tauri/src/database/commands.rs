@@ -363,12 +363,13 @@ pub async fn get_database_schema(
         Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
             "Postgres connection not active"
         ))),
-        Database::SQLite { .. } => {
-            // TODO: Implement SQLite schema introspection
-            Err(Error::Any(anyhow::anyhow!(
-                "SQLite schema introspection not yet implemented"
-            )))
-        }
+        Database::SQLite {
+            connection: Some(conn),
+            ..
+        } => sqlite::schema::get_database_schema(Arc::clone(conn)).await,
+        Database::SQLite {
+            connection: None, ..
+        } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
     }
 }
 
