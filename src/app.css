@@ -258,7 +258,6 @@
 		@apply font-semibold tracking-tight;
 	}
 
-	/* Modern Scrollbars */
 	::-webkit-scrollbar {
 		width: 8px;
 		height: 8px;
@@ -269,12 +268,27 @@
 	}
 
 	::-webkit-scrollbar-thumb {
-		background: var(--muted-foreground);
+		background: transparent;
 		border-radius: 4px;
+		transition: background 0.2s ease;
 	}
 
-	::-webkit-scrollbar-thumb:hover {
+	*:hover::-webkit-scrollbar-thumb {
+		background: var(--muted-foreground);
+	}
+
+	*:hover::-webkit-scrollbar-thumb:hover {
 		background: var(--accent-foreground);
+	}
+
+	.scrollable-container {
+		scrollbar-width: thin;
+		scrollbar-color: transparent transparent;
+		transition: scrollbar-color 0.2s ease;
+	}
+
+	.scrollable-container:hover {
+		scrollbar-color: var(--muted-foreground) transparent;
 	}
 }
 
