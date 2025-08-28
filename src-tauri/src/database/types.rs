@@ -1,45 +1,91 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectionConfig {
-    pub name: String,
-    pub connection_string: String,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionInfo {
     pub id: Uuid,
     pub name: String,
-    pub connection_string: String,
     pub connected: bool,
+    pub database_type: DatabaseInfo,
 }
 
-#[derive(Debug)]
-pub enum Client {
-    Postgres(tokio_postgres::Client),
-    Sqlite(Mutex<rusqlite::Connection>),
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DatabaseInfo {
+    Postgres { connection_string: String },
+    SQLite { db_path: String },
 }
-
-impl From<tokio_postgres::Client> for Client {
-    fn from(client: tokio_postgres::Client) -> Self {
-        Client::Postgres(client)
-    }
-}
-
-impl From<rusqlite::Connection> for Client {
-    fn from(connection: rusqlite::Connection) -> Self {
-        Client::Sqlite(Mutex::new(connection))
-    }
-}
-
 
 #[derive(Debug)]
 pub struct DatabaseConnection {
-    pub info: ConnectionInfo,
-    pub client: Option<Client>,
+    pub id: Uuid,
+    pub name: String,
+    pub connected: bool,
+    pub database: Database,
+}
+
+#[derive(Debug)]
+pub enum Database {
+    Postgres {
+        connection_string: String,
+        client: Option<tokio_postgres::Client>,
+    },
+    SQLite {
+        db_path: String,
+        connection: Option<Arc<Mutex<rusqlite::Connection>>>,
+    },
+}
+
+impl DatabaseConnection {
+    pub fn to_connection_info(&self) -> ConnectionInfo {
+        ConnectionInfo {
+            id: self.id,
+            name: self.name.clone(),
+            connected: self.connected,
+            database_type: match &self.database {
+                Database::Postgres { connection_string, .. } => {
+                    DatabaseInfo::Postgres {
+                        connection_string: connection_string.clone(),
+                    }
+                }
+                Database::SQLite { db_path, .. } => {
+                    DatabaseInfo::SQLite {
+                        db_path: db_path.clone(),
+                    }
+                }
+            },
+        }
+    }
+
+    pub fn new(id: Uuid, name: String, database_info: DatabaseInfo) -> Self {
+        let database = match database_info {
+            DatabaseInfo::Postgres { connection_string } => Database::Postgres {
+                connection_string,
+                client: None,
+            },
+            DatabaseInfo::SQLite { db_path } => Database::SQLite {
+                db_path,
+                connection: None,
+            },
+        };
+
+        Self {
+            id,
+            name,
+            connected: false,
+            database,
+        }
+    }
+
+    pub fn is_client_connected(&self) -> bool {
+        match &self.database {
+            Database::Postgres { client, .. } => client.is_some(),
+            Database::SQLite { connection, .. } => connection.is_some(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

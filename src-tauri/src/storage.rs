@@ -6,6 +6,10 @@ use rusqlite::{types::Type, Connection};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+// Gotta match the IDs in the DB
+const DB_TYPE_POSTGRES: i32 = 1;
+const DB_TYPE_SQLITE: i32 = 2;
+
 use crate::{database::types::ConnectionInfo, Result};
 
 struct Migrator {
@@ -16,7 +20,6 @@ impl Migrator {
     fn new() -> Self {
         Self {
             migrations: &[
-                // Migration 1: initial schema
                 include_str!("../migrations/001.sql"),
             ],
         }
@@ -53,7 +56,7 @@ impl Migrator {
             }
 
             tx.execute_batch(migration)
-                .with_context(|| format!("Failed to execute migration {}", migration_version))?;
+                .map_err(|err| anyhow::anyhow!("Failed to execute migration {migration_version}: {err}"))?;
 
             tx.pragma_update(None, "user_version", migration_version)
                 .with_context(|| format!("Failed to update version to {}", migration_version))?;
@@ -144,15 +147,25 @@ impl Storage {
         let now = chrono::Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
 
+        let (db_type_id, connection_data) = match &connection.database_type {
+            crate::database::types::DatabaseInfo::Postgres { connection_string } => {
+                (DB_TYPE_POSTGRES, connection_string.as_str())
+            },
+            crate::database::types::DatabaseInfo::SQLite { db_path } => {
+                (DB_TYPE_SQLITE, db_path.as_str())
+            },
+        };
+
         conn.execute(
             "INSERT OR REPLACE INTO connections 
-             (id, name, connection_string, created_at, updated_at, sort_order) 
-             VALUES (?1, ?2, ?3, ?4, ?5, 
+             (id, name, connection_data, database_type_id, created_at, updated_at, sort_order) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 
                 (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM connections))",
             (
                 &connection.id.to_string(),
                 &connection.name,
-                &connection.connection_string,
+                connection_data,
+                db_type_id,
                 now,
                 now,
             ),
@@ -166,15 +179,25 @@ impl Storage {
         let now = chrono::Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
 
+        let (db_type_id, connection_data) = match &connection.database_type {
+            crate::database::types::DatabaseInfo::Postgres { connection_string } => {
+                (DB_TYPE_POSTGRES, connection_string.as_str())
+            },
+            crate::database::types::DatabaseInfo::SQLite { db_path } => {
+                (DB_TYPE_SQLITE, db_path.as_str())
+            },
+        };
+
         let updated_rows = conn
             .execute(
                 "UPDATE connections 
-             SET name = ?2, connection_string = ?3, updated_at = ?4
+             SET name = ?2, connection_data = ?3, database_type_id = ?4, updated_at = ?5
              WHERE id = ?1",
                 (
                     &connection.id.to_string(),
                     &connection.name,
-                    &connection.connection_string,
+                    connection_data,
+                    db_type_id,
                     now,
                 ),
             )
@@ -194,12 +217,31 @@ impl Storage {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, connection_string FROM connections ORDER BY sort_order, name",
+                "SELECT c.id, c.name, c.connection_data, 
+                        COALESCE(dt.name, 'postgres') as db_type
+                 FROM connections c
+                 LEFT JOIN database_types dt ON c.database_type_id = dt.id
+                 ORDER BY c.sort_order, c.name",
             )
             .context("Failed to prepare statement")?;
 
         let rows = stmt
             .query_map([], |row| {
+                let connection_data: String = row.get(2)?;
+                let db_type: String = row.get(3)?;
+                
+                let database_type = match db_type.as_str() {
+                    "postgres" => crate::database::types::DatabaseInfo::Postgres {
+                        connection_string: connection_data,
+                    },
+                    "sqlite" => crate::database::types::DatabaseInfo::SQLite {
+                        db_path: connection_data,
+                    },
+                    _ => crate::database::types::DatabaseInfo::Postgres {
+                        connection_string: connection_data, // Default to postgres for unknown types
+                    },
+                };
+
                 Ok(ConnectionInfo {
                     id: {
                         let id: String = row.get(0)?;
@@ -208,7 +250,7 @@ impl Storage {
                         })?
                     },
                     name: row.get(1)?,
-                    connection_string: row.get(2)?,
+                    database_type,
                     connected: false,
                 })
             })

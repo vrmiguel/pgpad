@@ -275,9 +275,13 @@
 																{connection.name}
 															</div>
 															<div class="text-muted-foreground truncate font-mono text-xs">
-																{connection.connection_string
-																	.replace(/^postgresql?:\/\/[^@]*@/, '')
-																	.replace(/\/[^?]*/, '')}
+																{#if 'Postgres' in connection.database_type}
+																	{connection.database_type.Postgres.connection_string
+																		.replace(/^postgresql?:\/\/[^@]*@/, '')
+																		.replace(/\/[^?]*/, '')}
+																{:else if 'SQLite' in connection.database_type}
+																	{connection.database_type.SQLite.db_path.split('/').pop() || connection.database_type.SQLite.db_path}
+																{/if}
 															</div>
 														</div>
 													</div>

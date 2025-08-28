@@ -2,27 +2,33 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Cable, X, CheckCircle, AlertCircle, Info, Database, Server, FolderOpen } from '@lucide/svelte';
-	import { Commands, type ConnectionConfig, type ConnectionInfo } from '$lib/commands.svelte';
+	import { Commands, type DatabaseInfo, type ConnectionInfo } from '$lib/commands.svelte';
 	import { Tabs } from 'bits-ui';
 
 	interface Props {
-		onSubmit: (connection: ConnectionConfig) => void;
+		onSubmit: (name: string, databaseInfo: DatabaseInfo) => void;
 		onCancel: () => void;
 		editingConnection?: ConnectionInfo | null;
 	}
 
 	let { onSubmit, onCancel, editingConnection = null }: Props = $props();
 
-	let connectionString = $state(
-		editingConnection?.connection_string || 'postgresql://username:password@localhost:5432/database'
-	);
+	// Initialize form fields based on editing connection
 	let connectionName = $state(editingConnection?.name || '');
-	// For now, assume all existing connections are Postgres since SQLite support is new
-	// TODO: Update this when ConnectionInfo includes database type
-	let databaseType = $state<'postgres' | 'sqlite'>(
-		editingConnection ? 'postgres' : 'postgres'
-	);
-	let sqliteFilePath = $state<string>('');
+	
+	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
+	let connectionString = $state('postgresql://username:password@localhost:5432/database');
+	let sqliteFilePath = $state('');
+	
+	if (editingConnection) {
+		if ('Postgres' in editingConnection.database_type) {
+			databaseType = 'postgres';
+			connectionString = editingConnection.database_type.Postgres.connection_string;
+		} else if ('SQLite' in editingConnection.database_type) {
+			databaseType = 'sqlite';
+			sqliteFilePath = editingConnection.database_type.SQLite.db_path;
+		}
+	}
 	let errors = $state<Record<string, string>>({});
 	let isTestingConnection = $state(false);
 	let testResult = $state<'success' | 'error' | null>(null);
@@ -78,13 +84,12 @@
 		isTestingConnection = true;
 		testResult = null;
 
-		const config: ConnectionConfig = {
-			name: connectionName.trim(),
-			connection_string: connectionString.trim()
-		};
+		const databaseInfo: DatabaseInfo = databaseType === 'postgres' 
+			? { Postgres: { connection_string: connectionString.trim() } }
+			: { SQLite: { db_path: sqliteFilePath.trim() } };
 
 		try {
-			const success = await Commands.testConnection(config);
+			const success = await Commands.testConnection(databaseInfo);
 			testResult = success ? 'success' : 'error';
 		} catch (error) {
 			console.error('Connection test failed:', error);
@@ -98,13 +103,11 @@
 		e.preventDefault();
 
 		if (validateForm()) {
-			const config: ConnectionConfig = {
-				name: connectionName.trim(),
-				connection_string: databaseType === 'postgres' 
-					? connectionString.trim() 
-					: sqliteFilePath.trim()
-			};
-			onSubmit(config);
+			const databaseInfo: DatabaseInfo = databaseType === 'postgres' 
+				? { Postgres: { connection_string: connectionString.trim() } }
+				: { SQLite: { db_path: sqliteFilePath.trim() } };
+			
+			onSubmit(connectionName.trim(), databaseInfo);
 		}
 	}
 </script>

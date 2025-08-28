@@ -8,7 +8,7 @@ use crate::{
     database::{
         postgres::{self, connect::connect},
         types::{
-            Client, ColumnInfo, ConnectionConfig, ConnectionInfo, DatabaseConnection, DatabaseSchema, QueryStreamEvent, TableInfo
+            ColumnInfo, ConnectionInfo, DatabaseConnection, DatabaseInfo, DatabaseSchema, Database, QueryStreamEvent, TableInfo
         },
         Certificates, ConnectionMonitor,
     },
@@ -19,23 +19,15 @@ use crate::{
 
 #[tauri::command]
 pub async fn add_connection(
-    config: ConnectionConfig,
+    name: String,
+    database_info: DatabaseInfo,
     state: tauri::State<'_, AppState>,
 ) -> Result<ConnectionInfo, Error> {
     let id = Uuid::new_v4();
-    let info = ConnectionInfo {
-        id: id.clone(),
-        name: config.name.clone(),
-        connection_string: config.connection_string.clone(),
-        connected: false,
-    };
+    let connection = DatabaseConnection::new(id, name, database_info);
+    let info = connection.to_connection_info();
 
     state.storage.save_connection(&info)?;
-
-    let connection = DatabaseConnection {
-        info: info.clone(),
-        client: None,
-    };
     state.connections.insert(id, connection);
 
     Ok(info)
@@ -44,28 +36,43 @@ pub async fn add_connection(
 #[tauri::command]
 pub async fn update_connection(
     conn_id: Uuid,
-    config: ConnectionConfig,
+    name: String,
+    database_info: DatabaseInfo,
     state: tauri::State<'_, AppState>,
 ) -> Result<ConnectionInfo, Error> {
-    let mut updated_info = ConnectionInfo {
-        id: conn_id,
-        name: config.name,
-        connection_string: config.connection_string,
-        connected: false,
-    };
-
     if let Some(mut connection_entry) = state.connections.get_mut(&conn_id) {
         let connection = connection_entry.value_mut();
+        
+        let config_changed = match (&connection.database, &database_info) {
+            (Database::Postgres { connection_string: old, .. }, DatabaseInfo::Postgres { connection_string: new }) => old != new,
+            (Database::SQLite { db_path: old, .. }, DatabaseInfo::SQLite { db_path: new }) => old != new,
+            _ => true,
+        };
 
-        // Connstring changed, we'll need to reconnect
-        if connection.info.connection_string != updated_info.connection_string {
-            connection.client = None;
-            connection.info.connected = false;
+        if config_changed {
+            match &mut connection.database {
+                Database::Postgres { client, .. } => *client = None,
+                Database::SQLite { connection: conn, .. } => *conn = None,
+            }
+            connection.connected = false;
         }
 
-        updated_info.connected = connection.info.connected;
-        connection.info = updated_info.clone();
+        connection.name = name;
+        connection.database = match database_info {
+            DatabaseInfo::Postgres { connection_string } => Database::Postgres {
+                connection_string,
+                client: None,
+            },
+            DatabaseInfo::SQLite { db_path } => Database::SQLite {
+                db_path,
+                connection: None,
+            },
+        };
     }
+
+    let updated_info = state.connections.get(&conn_id)
+        .map(|conn| conn.to_connection_info())
+        .with_context(|| format!("Connection not found: {}", conn_id))?;
 
     state.storage.update_connection(&updated_info)?;
 
@@ -82,11 +89,12 @@ pub async fn connect_to_database(
     if !state.connections.contains_key(&connection_id) {
         let stored_connections = state.storage.get_connections()?;
         if let Some(stored_connection) = stored_connections.iter().find(|c| c.id == connection_id) {
-            let connection = DatabaseConnection {
-                info: stored_connection.clone(),
-                client: None,
-            };
-            state.connections.insert(connection_id.clone(), connection);
+            let connection = DatabaseConnection::new(
+                stored_connection.id,
+                stored_connection.name.clone(),
+                stored_connection.database_type.clone()
+            );
+            state.connections.insert(connection_id, connection);
         }
     }
 
@@ -97,22 +105,31 @@ pub async fn connect_to_database(
 
     let connection = connection_entry.value_mut();
 
-    match connect(&connection.info.connection_string, &certificates).await {
-        Ok((client, conn_check)) => {
-            connection.client = Some(client.into());
-            connection.info.connected = true;
+    match &mut connection.database {
+        Database::Postgres { connection_string, client } => {
+            match connect(connection_string, &certificates).await {
+                Ok((pg_client, conn_check)) => {
+                    *client = Some(pg_client);
+                    connection.connected = true;
 
-            if let Err(e) = state.storage.update_last_connected(&connection_id) {
-                log::warn!("Failed to update last connected timestamp: {}", e);
+                    if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                        log::warn!("Failed to update last connected timestamp: {}", e);
+                    }
+
+                    monitor.add_connection(connection_id, conn_check).await;
+
+                    Ok(true)
+                }
+                Err(e) => {
+                    log::error!("Failed to connect to Postgres: {}", e);
+                    connection.connected = false;
+                    Ok(false)
+                }
             }
-
-            monitor.add_connection(connection_id, conn_check).await;
-
-            Ok(true)
         }
-        Err(e) => {
-            log::error!("Failed to connect: {}", e);
-            connection.info.connected = false;
+        Database::SQLite { db_path, connection: _sqlite_conn } => {
+            log::warn!("SQLite connection not yet implemented for path: {}", db_path);
+            connection.connected = false;
             Ok(false)
         }
     }
@@ -128,8 +145,12 @@ pub async fn disconnect_from_database(
         .get_mut(&connection_id)
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value_mut();
-    connection.client = None;
-    connection.info.connected = false;
+    
+    match &mut connection.database {
+        Database::Postgres { client, .. } => *client = None,
+        Database::SQLite { connection: sqlite_conn, .. } => *sqlite_conn = None,
+    }
+    connection.connected = false;
     Ok(())
 }
 
@@ -147,16 +168,21 @@ pub async fn execute_query_stream(
 
     let connection = connection_entry.value();
 
-    let client = connection
-        .client
-        .as_ref()
-        .with_context(|| format!("Connection not found: {}", connection_id))?;
-
-    let Client::Postgres(client) = client else {
-        unimplemented!("SQLite");
-    };
-
-    postgres::execute::execute_query(client, query, &channel).await?;
+    match &connection.database {
+        Database::Postgres { client: Some(client), .. } => {
+            postgres::execute::execute_query(client, query, &channel).await?;
+        }
+        Database::Postgres { client: None, .. } => {
+            return Err(Error::Any(anyhow::anyhow!("Postgres connection not active")));
+        }
+        Database::SQLite { connection: Some(_sqlite_conn), .. } => {
+            // TODO: Implement SQLite query execution
+            return Err(Error::Any(anyhow::anyhow!("SQLite query execution not yet implemented")));
+        }
+        Database::SQLite { connection: None, .. } => {
+            return Err(Error::Any(anyhow::anyhow!("SQLite connection not active")));
+        }
+    }
     
     Ok(())
 }
@@ -171,7 +197,7 @@ pub async fn get_connections(
 
     for connection in &mut stored_connections {
         if let Some(runtime_connection) = state.connections.get(&connection.id) {
-            connection.connected = runtime_connection.info.connected;
+            connection.connected = runtime_connection.connected;
         } else {
             connection.connected = false;
         }
@@ -194,14 +220,24 @@ pub async fn remove_connection(
 
 #[tauri::command]
 pub async fn test_connection(
-    config: ConnectionConfig,
+    database_info: DatabaseInfo,
     certificates: tauri::State<'_, Certificates>,
 ) -> Result<bool, Error> {
-    log::info!("Testing connection: {}", config.connection_string);
-    match connect(&config.connection_string, &certificates).await {
-        Ok(_) => Ok(true),
-        Err(e) => {
-            log::error!("Connection test failed: {}", e);
+    match database_info {
+        DatabaseInfo::Postgres { connection_string } => {
+            log::info!("Testing Postgres connection: {}", connection_string);
+            match connect(&connection_string, &certificates).await {
+                Ok(_) => Ok(true),
+                Err(e) => {
+                    log::error!("Postgres connection test failed: {}", e);
+                    Ok(false)
+                }
+            }
+        }
+        DatabaseInfo::SQLite { db_path } => {
+            log::info!("Testing SQLite connection: {}", db_path);
+            // TODO: Implement SQLite connection testing
+            log::warn!("SQLite connection testing not yet implemented");
             Ok(false)
         }
     }
@@ -248,13 +284,14 @@ pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result
     let stored_connections = state.storage.get_connections()?;
 
     for stored_connection in stored_connections {
-        let connection = DatabaseConnection {
-            info: stored_connection,
-            client: None,
-        };
+        let connection = DatabaseConnection::new(
+            stored_connection.id,
+            stored_connection.name,
+            stored_connection.database_type
+        );
         state
             .connections
-            .insert(connection.info.id, connection);
+            .insert(connection.id, connection);
     }
 
     log::info!(
@@ -276,13 +313,15 @@ pub async fn get_database_schema(
 
     let connection = connection_entry.value();
 
-    let client = connection
-        .client
-        .as_ref()
-        .with_context(|| format!("Connection not active: {}", connection_id))?;
-
-    let Client::Postgres(client) = client else {
-        unimplemented!("SQLite");
+    let client = match &connection.database {
+        Database::Postgres { client: Some(client), .. } => client,
+        Database::Postgres { client: None, .. } => {
+            return Err(Error::Any(anyhow::anyhow!("Postgres connection not active")));
+        }
+        Database::SQLite { .. } => {
+            // TODO: Implement SQLite schema introspection
+            return Err(Error::Any(anyhow::anyhow!("SQLite schema introspection not yet implemented")));
+        }
     };
 
     let schema_query = r#"

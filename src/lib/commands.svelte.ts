@@ -12,16 +12,15 @@ export const preventDefault = <T extends Event>(fn: (e: T) => void): ((e: T) => 
 	};
 };
 
-export interface ConnectionConfig {
-	name: string;
-	connection_string: string;
-}
+export type DatabaseInfo = 
+	| { Postgres: { connection_string: string } }
+	| { SQLite: { db_path: string } };
 
 export interface ConnectionInfo {
 	id: string;
 	name: string;
-	connection_string: string;
 	connected: boolean;
+	database_type: DatabaseInfo;
 }
 
 export interface QueryResult {
@@ -134,12 +133,12 @@ export interface Script {
 }
 
 export class Commands {
-	static async testConnection(config: ConnectionConfig): Promise<boolean> {
-		return await invoke('test_connection', { config });
+	static async testConnection(databaseInfo: DatabaseInfo): Promise<boolean> {
+		return await invoke('test_connection', { databaseInfo });
 	}
 
-	static async addConnection(config: ConnectionConfig): Promise<ConnectionInfo> {
-		return await invoke('add_connection', { config });
+	static async addConnection(name: string, databaseInfo: DatabaseInfo): Promise<ConnectionInfo> {
+		return await invoke('add_connection', { name, databaseInfo });
 	}
 
 	static async connectToDatabase(connectionId: string): Promise<boolean> {
@@ -175,9 +174,10 @@ export class Commands {
 
 	static async updateConnection(
 		connectionId: string,
-		config: ConnectionConfig
+		name: string,
+		databaseInfo: DatabaseInfo
 	): Promise<ConnectionInfo> {
-		return await invoke('update_connection', { connectionId, config });
+		return await invoke('update_connection', { connId: connectionId, name, databaseInfo });
 	}
 
 	static async initializeConnections(): Promise<void> {

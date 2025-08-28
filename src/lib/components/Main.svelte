@@ -7,7 +7,7 @@
 	import {
 		Commands,
 		type ConnectionInfo,
-		type ConnectionConfig,
+		type DatabaseInfo,
 		type Script,
 		type DatabaseSchema
 	} from '$lib/commands.svelte';
@@ -461,31 +461,20 @@
 		establishingConnections.delete(connectionId);
 	}
 
-	// receives a ConnectionConfig from <ConnectionForm />
-	async function handleConnectionSubmit(config: ConnectionConfig) {
+	async function handleConnectionSubmit(name: string, databaseInfo: DatabaseInfo) {
 		try {
 			if (editingConnection) {
-				const updated = await Commands.updateConnection(editingConnection.id, config);
+				const updated = await Commands.updateConnection(editingConnection.id, name, databaseInfo);
 				const i = connections.findIndex((c) => c.id === editingConnection!.id);
 				if (i !== -1) connections[i] = updated;
 			} else {
-				const created = await Commands.addConnection(config);
+				const created = await Commands.addConnection(name, databaseInfo);
 				connections.push(created);
 			}
 			showConnectionForm = false;
 			editingConnection = null;
 		} catch (error) {
 			console.error('Failed to save connection:', error);
-		}
-	}
-
-	async function addConnection(config: ConnectionConfig) {
-		try {
-			const newConnection = await Commands.addConnection(config);
-			connections.push(newConnection);
-			showConnectionForm = false;
-		} catch (error) {
-			console.error('Failed to add connection:', error);
 		}
 	}
 
