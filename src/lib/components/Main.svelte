@@ -882,7 +882,7 @@ SELECT 1 as test;`;
 		class="bg-background/80 animate-fade-in fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm"
 	>
 		<div
-			class="glass-card hover-lift mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl p-8 shadow-xl"
+			class="glass-card hover-lift mx-4 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl p-6 shadow-xl"
 		>
 			<ConnectionForm
 				onSubmit={handleConnectionSubmit}

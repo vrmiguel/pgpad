@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
-use tokio_postgres::Client;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +16,25 @@ pub struct ConnectionInfo {
     pub connection_string: String,
     pub connected: bool,
 }
+
+#[derive(Debug)]
+pub enum Client {
+    Postgres(tokio_postgres::Client),
+    Sqlite(Mutex<rusqlite::Connection>),
+}
+
+impl From<tokio_postgres::Client> for Client {
+    fn from(client: tokio_postgres::Client) -> Self {
+        Client::Postgres(client)
+    }
+}
+
+impl From<rusqlite::Connection> for Client {
+    fn from(connection: rusqlite::Connection) -> Self {
+        Client::Sqlite(Mutex::new(connection))
+    }
+}
+
 
 #[derive(Debug)]
 pub struct DatabaseConnection {

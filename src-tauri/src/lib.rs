@@ -89,6 +89,7 @@ pub fn run() {
             window::commands::minimize_window,
             window::commands::maximize_window,
             window::commands::close_window,
+            window::commands::open_file_dialog,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -267,4 +267,8 @@ export class Commands {
 	static async getSessionState(): Promise<string | null> {
 		return await invoke('get_session_state');
 	}
+
+	static async openFileDialog(): Promise<string | null> {
+		return await invoke('open_file_dialog');
+	}
 }

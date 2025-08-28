@@ -5,6 +5,8 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub enum Error {
     #[error(transparent)]
     Any(#[from] anyhow::Error),
+    #[error(transparent)]
+    Tauri(#[from] tauri::Error),
 }
 
 #[derive(serde::Serialize)]
@@ -22,6 +24,7 @@ impl serde::Serialize for Error {
         let message = self.to_string();
         let name = match self {
             Self::Any(_) => ErrorName::Error(message),
+            Self::Tauri(_) => ErrorName::Error(message),
         };
         name.serialize(serializer)
     }
