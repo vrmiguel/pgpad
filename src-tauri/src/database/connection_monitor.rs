@@ -47,7 +47,10 @@ impl ConnectionMonitor {
         connection.connected = false;
         match &mut connection.database {
             crate::database::types::Database::Postgres { client, .. } => *client = None,
-            crate::database::types::Database::SQLite { connection: sqlite_conn, .. } => *sqlite_conn = None,
+            crate::database::types::Database::SQLite {
+                connection: sqlite_conn,
+                ..
+            } => *sqlite_conn = None,
         }
     }
 

@@ -1,9 +1,9 @@
+use std::sync::{Arc, Mutex};
+
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use uuid::Uuid;
 
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionInfo {
@@ -46,16 +46,14 @@ impl DatabaseConnection {
             name: self.name.clone(),
             connected: self.connected,
             database_type: match &self.database {
-                Database::Postgres { connection_string, .. } => {
-                    DatabaseInfo::Postgres {
-                        connection_string: connection_string.clone(),
-                    }
-                }
-                Database::SQLite { db_path, .. } => {
-                    DatabaseInfo::SQLite {
-                        db_path: db_path.clone(),
-                    }
-                }
+                Database::Postgres {
+                    connection_string, ..
+                } => DatabaseInfo::Postgres {
+                    connection_string: connection_string.clone(),
+                },
+                Database::SQLite { db_path, .. } => DatabaseInfo::SQLite {
+                    db_path: db_path.clone(),
+                },
             },
         }
     }
@@ -118,7 +116,7 @@ pub struct DatabaseSchema {
     tag = "event",
     content = "data"
 )]
-pub enum QueryStreamEvent<'a> {
+pub enum QueryStreamEvent {
     StatementStart {
         statement_index: usize,
         total_statements: usize,
@@ -129,7 +127,7 @@ pub enum QueryStreamEvent<'a> {
     /// For queries that return data
     ResultStart {
         statement_index: usize,
-        columns: Vec<&'a str>,
+        columns: Vec<String>,
     },
     ResultBatch {
         statement_index: usize,

@@ -1,7 +1,16 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Cable, X, CheckCircle, AlertCircle, Info, Database, Server, FolderOpen } from '@lucide/svelte';
+	import {
+		Cable,
+		X,
+		CheckCircle,
+		AlertCircle,
+		Info,
+		Database,
+		Server,
+		FolderOpen
+	} from '@lucide/svelte';
 	import { Commands, type DatabaseInfo, type ConnectionInfo } from '$lib/commands.svelte';
 	import { Tabs } from 'bits-ui';
 
@@ -15,11 +24,11 @@
 
 	// Initialize form fields based on editing connection
 	let connectionName = $state(editingConnection?.name || '');
-	
+
 	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
 	let connectionString = $state('postgresql://username:password@localhost:5432/database');
 	let sqliteFilePath = $state('');
-	
+
 	if (editingConnection) {
 		if ('Postgres' in editingConnection.database_type) {
 			databaseType = 'postgres';
@@ -76,17 +85,13 @@
 	async function testConnection() {
 		if (!validateForm()) return;
 
-		// For now, only allow testing PostgreSQL connections
-		if (databaseType !== 'postgres') {
-			return;
-		}
-
 		isTestingConnection = true;
 		testResult = null;
 
-		const databaseInfo: DatabaseInfo = databaseType === 'postgres' 
-			? { Postgres: { connection_string: connectionString.trim() } }
-			: { SQLite: { db_path: sqliteFilePath.trim() } };
+		const databaseInfo: DatabaseInfo =
+			databaseType === 'postgres'
+				? { Postgres: { connection_string: connectionString.trim() } }
+				: { SQLite: { db_path: sqliteFilePath.trim() } };
 
 		try {
 			const success = await Commands.testConnection(databaseInfo);
@@ -103,10 +108,11 @@
 		e.preventDefault();
 
 		if (validateForm()) {
-			const databaseInfo: DatabaseInfo = databaseType === 'postgres' 
-				? { Postgres: { connection_string: connectionString.trim() } }
-				: { SQLite: { db_path: sqliteFilePath.trim() } };
-			
+			const databaseInfo: DatabaseInfo =
+				databaseType === 'postgres'
+					? { Postgres: { connection_string: connectionString.trim() } }
+					: { SQLite: { db_path: sqliteFilePath.trim() } };
+
 			onSubmit(connectionName.trim(), databaseInfo);
 		}
 	}
@@ -149,27 +155,27 @@
 			<div class="text-foreground mb-2 block text-sm font-semibold">
 				Database Type <span class="text-error">*</span>
 			</div>
-			
+
 			<Tabs.Root bind:value={databaseType} class="w-full">
 				<Tabs.List class="bg-muted/20 grid w-full grid-cols-2 gap-1 rounded-lg p-1">
-					<Tabs.Trigger 
-						value="postgres" 
-						class="data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-lg data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200"
+					<Tabs.Trigger
+						value="postgres"
+						class="data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:shadow-lg"
 					>
 						<Server class="h-4 w-4" />
 						PostgreSQL
 					</Tabs.Trigger>
-					<Tabs.Trigger 
-						value="sqlite" 
-						class="data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-lg data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200"
+					<Tabs.Trigger
+						value="sqlite"
+						class="data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:shadow-lg"
 					>
 						<Database class="h-4 w-4" />
 						SQLite
 					</Tabs.Trigger>
 				</Tabs.List>
-				
+
 				<Tabs.Content value="postgres" class="mt-3">
-					<div class="rounded-xl border bg-card p-5 shadow-sm">
+					<div class="bg-card rounded-xl border p-5 shadow-sm">
 						<label for="connectionString" class="text-foreground mb-2 block text-sm font-semibold">
 							PostgreSQL Connection String <span class="text-error">*</span>
 						</label>
@@ -190,33 +196,34 @@
 						<div class="bg-primary/5 border-primary/20 mt-3 rounded-lg border p-3">
 							<div class="flex items-start gap-3">
 								<Info class="text-primary mt-0.5 h-4 w-4 flex-shrink-0" />
-								<div class="text-muted-foreground text-sm min-w-0 flex-1">
+								<div class="text-muted-foreground min-w-0 flex-1 text-sm">
 									<p class="text-foreground mb-2 font-medium">Connection String Format:</p>
 									<p class="mb-2">Use the following format for your PostgreSQL connection:</p>
-									<div class="bg-muted/50 rounded border p-2 font-mono text-xs overflow-x-auto">
+									<div class="bg-muted/50 overflow-x-auto rounded border p-2 font-mono text-xs">
 										<code class="whitespace-nowrap">
 											postgresql://username:password@host:port/database
 										</code>
 									</div>
 									<p class="mt-2 text-xs leading-relaxed">
-										Replace <span class="font-medium text-foreground">username</span>,
-										<span class="font-medium text-foreground">password</span>,
-										<span class="font-medium text-foreground">host</span>, 
-										<span class="font-medium text-foreground">port</span>, and
-										<span class="font-medium text-foreground">database</span> with your actual connection details.
+										Replace <span class="text-foreground font-medium">username</span>,
+										<span class="text-foreground font-medium">password</span>,
+										<span class="text-foreground font-medium">host</span>,
+										<span class="text-foreground font-medium">port</span>, and
+										<span class="text-foreground font-medium">database</span> with your actual connection
+										details.
 									</p>
 								</div>
 							</div>
 						</div>
 					</div>
 				</Tabs.Content>
-				
+
 				<Tabs.Content value="sqlite" class="mt-3">
-					<div class="rounded-xl border bg-card p-5 shadow-sm">
+					<div class="bg-card rounded-xl border p-5 shadow-sm">
 						<label for="sqliteFilePath" class="text-foreground mb-2 block text-sm font-semibold">
 							SQLite Database File <span class="text-error">*</span>
 						</label>
-						
+
 						<div class="flex gap-3">
 							<Input
 								id="sqliteFilePath"
@@ -237,7 +244,7 @@
 								Browse
 							</Button>
 						</div>
-						
+
 						{#if errors.sqliteFilePath}
 							<p class="text-error mt-2 flex items-center gap-2 text-sm">
 								<AlertCircle class="h-4 w-4" />
@@ -248,12 +255,18 @@
 						<div class="bg-primary/5 border-primary/20 mt-3 rounded-lg border p-3">
 							<div class="flex items-start gap-3">
 								<Info class="text-primary mt-0.5 h-4 w-4 flex-shrink-0" />
-								<div class="text-muted-foreground text-sm min-w-0 flex-1">
+								<div class="text-muted-foreground min-w-0 flex-1 text-sm">
 									<p class="text-foreground mb-2 font-medium">SQLite Database File:</p>
-									<p class="mb-2 leading-relaxed">Select an existing SQLite database file or choose a location to create a new one.</p>
+									<p class="mb-2 leading-relaxed">
+										Select an existing SQLite database file or choose a location to create a new
+										one.
+									</p>
 									<p class="text-xs leading-relaxed">
-										SQLite databases are single files with <span class="font-medium text-foreground">.db</span>, 
-										<span class="font-medium text-foreground">.sqlite</span>, or <span class="font-medium text-foreground">.sqlite3</span> extensions.
+										SQLite databases are single files with <span class="text-foreground font-medium"
+											>.db</span
+										>,
+										<span class="text-foreground font-medium">.sqlite</span>, or
+										<span class="text-foreground font-medium">.sqlite3</span> extensions.
 									</p>
 								</div>
 							</div>
@@ -269,7 +282,7 @@
 			type="button"
 			variant="outline"
 			onclick={testConnection}
-			disabled={isTestingConnection || databaseType !== 'postgres'}
+			disabled={isTestingConnection}
 			class="gap-2 shadow-sm hover:shadow-md"
 		>
 			{#if isTestingConnection}
@@ -303,10 +316,7 @@
 		<Button type="button" variant="ghost" onclick={onCancel} class="shadow-sm hover:shadow-md">
 			Cancel
 		</Button>
-		<Button 
-			type="submit" 
-			class="gap-2 shadow-md hover:shadow-lg"
-		>
+		<Button type="submit" class="gap-2 shadow-md hover:shadow-lg">
 			<Cable class="h-4 w-4" />
 			{submitButtonText}
 		</Button>

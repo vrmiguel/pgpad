@@ -72,9 +72,13 @@
 								</div>
 								<div class="text-muted-foreground/60 mb-2 truncate text-xs">
 									{#if 'Postgres' in connection.database_type}
-										{connection.database_type.Postgres.connection_string.split('/').pop()?.split('?')[0] || 'database'}
+										{connection.database_type.Postgres.connection_string
+											.split('/')
+											.pop()
+											?.split('?')[0] || 'database'}
 									{:else if 'SQLite' in connection.database_type}
-										{connection.database_type.SQLite.db_path.split('/').pop() || connection.database_type.SQLite.db_path}
+										{connection.database_type.SQLite.db_path.split('/').pop() ||
+											connection.database_type.SQLite.db_path}
 									{/if}
 								</div>
 								{#if !connection.connected}

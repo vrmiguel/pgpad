@@ -7,6 +7,8 @@ pub enum Error {
     Any(#[from] anyhow::Error),
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
+    #[error(transparent)]
+    Rusqlite(#[from] rusqlite::Error),
 }
 
 #[derive(serde::Serialize)]
@@ -25,6 +27,7 @@ impl serde::Serialize for Error {
         let name = match self {
             Self::Any(_) => ErrorName::Error(message),
             Self::Tauri(_) => ErrorName::Error(message),
+            Self::Rusqlite(_) => ErrorName::Error(message),
         };
         name.serialize(serializer)
     }

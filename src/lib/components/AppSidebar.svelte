@@ -280,7 +280,8 @@
 																		.replace(/^postgresql?:\/\/[^@]*@/, '')
 																		.replace(/\/[^?]*/, '')}
 																{:else if 'SQLite' in connection.database_type}
-																	{connection.database_type.SQLite.db_path.split('/').pop() || connection.database_type.SQLite.db_path}
+																	{connection.database_type.SQLite.db_path.split('/').pop() ||
+																		connection.database_type.SQLite.db_path}
 																{/if}
 															</div>
 														</div>

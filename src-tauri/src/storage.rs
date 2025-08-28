@@ -19,9 +19,7 @@ struct Migrator {
 impl Migrator {
     fn new() -> Self {
         Self {
-            migrations: &[
-                include_str!("../migrations/001.sql"),
-            ],
+            migrations: &[include_str!("../migrations/001.sql")],
         }
     }
 
@@ -55,8 +53,9 @@ impl Migrator {
                 continue;
             }
 
-            tx.execute_batch(migration)
-                .map_err(|err| anyhow::anyhow!("Failed to execute migration {migration_version}: {err}"))?;
+            tx.execute_batch(migration).map_err(|err| {
+                anyhow::anyhow!("Failed to execute migration {migration_version}: {err}")
+            })?;
 
             tx.pragma_update(None, "user_version", migration_version)
                 .with_context(|| format!("Failed to update version to {}", migration_version))?;
@@ -150,10 +149,10 @@ impl Storage {
         let (db_type_id, connection_data) = match &connection.database_type {
             crate::database::types::DatabaseInfo::Postgres { connection_string } => {
                 (DB_TYPE_POSTGRES, connection_string.as_str())
-            },
+            }
             crate::database::types::DatabaseInfo::SQLite { db_path } => {
                 (DB_TYPE_SQLITE, db_path.as_str())
-            },
+            }
         };
 
         conn.execute(
@@ -182,10 +181,10 @@ impl Storage {
         let (db_type_id, connection_data) = match &connection.database_type {
             crate::database::types::DatabaseInfo::Postgres { connection_string } => {
                 (DB_TYPE_POSTGRES, connection_string.as_str())
-            },
+            }
             crate::database::types::DatabaseInfo::SQLite { db_path } => {
                 (DB_TYPE_SQLITE, db_path.as_str())
-            },
+            }
         };
 
         let updated_rows = conn
@@ -229,7 +228,7 @@ impl Storage {
             .query_map([], |row| {
                 let connection_data: String = row.get(2)?;
                 let db_type: String = row.get(3)?;
-                
+
                 let database_type = match db_type.as_str() {
                     "postgres" => crate::database::types::DatabaseInfo::Postgres {
                         connection_string: connection_data,

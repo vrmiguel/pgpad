@@ -4,16 +4,16 @@ use tokio_postgres::{types::ToSql, Client};
 
 use crate::{
     database::{
-        postgres::{parser::parse_statements, row_writer::RowWriter}, 
-        types::QueryStreamEvent
-    }, 
-    Error
+        postgres::{parser::parse_statements, row_writer::RowWriter},
+        types::QueryStreamEvent,
+    },
+    Error,
 };
 
 pub async fn execute_query(
     client: &Client,
     query: &str,
-    channel: &Channel<QueryStreamEvent<'_>>,
+    channel: &Channel<QueryStreamEvent>,
 ) -> Result<(), Error> {
     let statements = parse_statements(query)?;
     let total_statements = statements.len();
@@ -52,7 +52,7 @@ async fn execute_query_with_results(
     client: &Client,
     query: &str,
     statement_index: usize,
-    channel: &Channel<QueryStreamEvent<'_>>,
+    channel: &Channel<QueryStreamEvent>,
 ) -> Result<(), Error> {
     let start = std::time::Instant::now();
     log::info!("Starting streaming query: {}", query);
@@ -79,8 +79,11 @@ async fn execute_query_with_results(
                     Ok(Some(row)) => {
                         // Send column info on first row
                         if !columns_sent {
-                            let columns: Vec<&str> =
-                                row.columns().iter().map(|col| col.name()).collect();
+                            let columns: Vec<String> = row
+                                .columns()
+                                .iter()
+                                .map(|col| col.name().to_string())
+                                .collect();
 
                             channel
                                 .send(QueryStreamEvent::ResultStart {
@@ -171,7 +174,7 @@ async fn execute_modification_query(
     client: &Client,
     query: &str,
     statement_index: usize,
-    channel: &Channel<QueryStreamEvent<'_>>,
+    channel: &Channel<QueryStreamEvent>,
 ) -> Result<(), Error> {
     log::info!("Executing modification query: {}", query);
 

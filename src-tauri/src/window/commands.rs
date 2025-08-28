@@ -37,11 +37,11 @@ pub async fn close_window(app: tauri::AppHandle) -> Result<(), Error> {
 #[tauri::command]
 pub async fn open_file_dialog(app: tauri::AppHandle) -> Result<Option<String>, Error> {
     log::info!("Opening file dialog");
-    
+
     // rfd recommends running the dialog on the main thread, for compatibility reasons.
     let dialog_future = {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        
+
         app.run_on_main_thread(move || {
             let dialog = AsyncFileDialog::new();
             let handle = dialog.pick_file();
@@ -50,14 +50,16 @@ pub async fn open_file_dialog(app: tauri::AppHandle) -> Result<Option<String>, E
                 let _ = tx.send(result);
             });
         })?;
-        
+
         rx
     };
-    
-    let chosen_file = dialog_future.await.map_err(|_| anyhow::anyhow!("Failed to receive file dialog result"))?;
+
+    let chosen_file = dialog_future
+        .await
+        .map_err(|_| anyhow::anyhow!("Failed to receive file dialog result"))?;
     let chosen_path = chosen_file.map(|file| file.path().to_string_lossy().to_string());
-    
+
     log::info!("Chosen path: {:?}", chosen_path);
-    
+
     Ok(chosen_path)
 }
