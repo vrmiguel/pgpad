@@ -7,6 +7,7 @@ use crate::{
         postgres::{parser::parse_statements, row_writer::RowWriter},
         types::QueryStreamEvent,
     },
+    utils::serialize_as_json_array,
     Error,
 };
 
@@ -79,11 +80,8 @@ async fn execute_query_with_results(
                     Ok(Some(row)) => {
                         // Send column info on first row
                         if !columns_sent {
-                            let columns: Vec<String> = row
-                                .columns()
-                                .iter()
-                                .map(|col| col.name().to_string())
-                                .collect();
+                            let columns = row.columns().iter().map(|col| col.name());
+                            let columns = serialize_as_json_array(columns)?;
 
                             channel
                                 .send(QueryStreamEvent::ResultStart {

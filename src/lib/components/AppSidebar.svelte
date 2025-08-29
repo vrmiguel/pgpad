@@ -218,7 +218,7 @@
 			</div>
 		</div>
 
-		<div class="flex-1 overflow-y-auto p-4 scrollable-container">
+		<div class="scrollable-container flex-1 overflow-y-auto p-4">
 			<Accordion>
 				<!-- Connections accordion -->
 				<AccordionItem title="Connections" icon={Cable} bind:open={isConnectionsAccordionOpen}>
@@ -260,7 +260,7 @@
 													ondblclick={() => connectToDatabase(connection.id)}
 												>
 													<div class="flex w-full items-center gap-2.5">
-														<div class="flex-shrink-0 flex items-center gap-2">
+														<div class="flex flex-shrink-0 items-center gap-2">
 															<!-- Connection status dot -->
 															{#if connection.connected}
 																<div class="h-2 w-2 rounded-full bg-green-500 shadow-sm"></div>
@@ -271,7 +271,7 @@
 															{:else}
 																<div class="h-2 w-2 rounded-full bg-gray-400"></div>
 															{/if}
-															
+
 															{#if 'Postgres' in connection.database_type}
 																<IconCibPostgresql class="h-4 w-4" />
 															{:else if 'SQLite' in connection.database_type}

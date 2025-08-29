@@ -2,6 +2,7 @@ mod database;
 mod error;
 mod init;
 mod storage;
+mod utils;
 mod window;
 
 use dashmap::DashMap;

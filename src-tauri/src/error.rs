@@ -9,6 +9,10 @@ pub enum Error {
     Tauri(#[from] tauri::Error),
     #[error(transparent)]
     Rusqlite(#[from] rusqlite::Error),
+    #[error(transparent)]
+    Fmt(#[from] std::fmt::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
 }
 
 #[derive(serde::Serialize)]
@@ -24,11 +28,7 @@ impl serde::Serialize for Error {
         S: serde::ser::Serializer,
     {
         let message = self.to_string();
-        let name = match self {
-            Self::Any(_) => ErrorName::Error(message),
-            Self::Tauri(_) => ErrorName::Error(message),
-            Self::Rusqlite(_) => ErrorName::Error(message),
-        };
+        let name = ErrorName::Error(message);
         name.serialize(serializer)
     }
 }

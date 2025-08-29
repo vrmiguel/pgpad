@@ -281,7 +281,7 @@
 
 	<!-- Table content -->
 	<div class="flex-1 overflow-hidden" bind:this={tableContainer}>
-		<div class="h-full overflow-auto scrollable-container">
+		<div class="scrollable-container h-full overflow-auto">
 			<table class="w-full border-collapse text-xs" style="width: {table.getCenterTotalSize()}px">
 				<thead class="bg-accent border-border sticky top-0 z-10 border-b shadow-sm">
 					{#each table.getHeaderGroups() as headerGroup}

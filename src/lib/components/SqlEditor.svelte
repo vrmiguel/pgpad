@@ -131,7 +131,7 @@ SELECT 1 as test;`);
 			return;
 		}
 
-		const query = 
+		const query =
 			!schema || schema === 'public'
 				? `SELECT * FROM "${tableName}" LIMIT 1000`
 				: `SELECT * FROM "${schema}"."${tableName}" LIMIT 1000`;

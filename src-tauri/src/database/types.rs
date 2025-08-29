@@ -127,7 +127,8 @@ pub enum QueryStreamEvent {
     /// For queries that return data
     ResultStart {
         statement_index: usize,
-        columns: Vec<String>,
+        // Serialized Vec<String>, because I can't help myself
+        columns: Box<RawValue>,
     },
     ResultBatch {
         statement_index: usize,

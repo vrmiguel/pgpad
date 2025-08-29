@@ -5,8 +5,10 @@ use tauri::{async_runtime::spawn_blocking, ipc::Channel};
 
 use crate::{
     database::{
-        postgres::parser::parse_statements, sqlite::row_writer::RowWriter, types::QueryStreamEvent,
+        sqlite::{parser::parse_statements, row_writer::RowWriter},
+        types::QueryStreamEvent,
     },
+    utils::serialize_as_json_array,
     Error,
 };
 
@@ -67,12 +69,13 @@ fn execute_query_with_results(
 
     match client.prepare(query) {
         Ok(mut stmt) => {
-            let column_count = stmt.column_count();
-            let columns: Vec<String> = stmt
-                .column_names()
+            let columns = stmt.columns();
+            let column_names = columns.iter().map(|c| c.name());
+            let column_types: Vec<_> = columns
                 .iter()
-                .map(|col| col.to_string())
+                .map(|c| c.decl_type().map(ToString::to_string))
                 .collect();
+            let columns = serialize_as_json_array(column_names)?;
 
             match stmt.query([]) {
                 Ok(mut rows) => {
@@ -86,12 +89,12 @@ fn execute_query_with_results(
                     let mut total_rows = 0;
                     let mut batch_size = 50;
                     let max_batch_size = 500;
-                    let mut writer = RowWriter::new();
+                    let mut writer = RowWriter::new(column_types);
 
                     loop {
                         match rows.next() {
                             Ok(Some(row)) => {
-                                writer.add_row(row, column_count)?;
+                                writer.add_row(row)?;
                                 total_rows += 1;
 
                                 if writer.len() >= batch_size {
