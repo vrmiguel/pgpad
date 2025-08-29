@@ -1,7 +1,5 @@
 <script lang="ts">
-	import { FlexRender, createSvelteTable, createQueryColumns } from '$lib/components/ui/data-table';
 	import type { PgRow } from '$lib/commands.svelte';
-	import type { Cell } from '@tanstack/table-core';
 	import { Button } from '$lib/components/ui/button';
 	import { CellFormatter } from '$lib/utils/cell-formatter';
 
@@ -31,6 +29,9 @@
 	let resizePreviewX = $state(0);
 	let tableContainer: HTMLDivElement;
 	let hasFocus = $state(false);
+	let processedData = $state<PgRow[]>([]);
+	let sortCache = $state(new Map<string, any[]>());
+	let lastDataLength = $state(0);
 
 	const COLUMN_RESIZE = {
 		MIN_WIDTH: 150,
@@ -40,82 +41,194 @@
 	} as const;
 
 	let selectedCell = $state<{ rowId: string; columnId: string } | null>(null);
-	let originalColumnWidths = $state<Map<string, number>>(new Map());
 
-	const columnDefs = $derived(createQueryColumns(columns));
+	const tableState = $state({
+		pagination: {
+			pageIndex: 0,
+			pageSize: 50
+		},
+		columnSizing: {} as Record<string, number>,
+		globalFilter: globalFilter || '',
+		resizing: {
+			isResizing: false,
+			columnIndex: -1,
+			startX: 0,
+			startWidth: 0
+		},
+		sorting: [] as Array<{ columnIndex: number; desc: boolean }>
+	});
 
-	const options = {
-		get data() {
-			console.log('Data getter called, returning', data.length, 'rows');
-			return data;
-		},
-		get columns() {
-			console.log('Columns getter called, returning', columnDefs.length, 'columns');
-			return columnDefs;
-		},
-		initialState: {
-			pagination: {
-				pageIndex: 0,
-				pageSize: 50
-			},
-			globalFilter
-		},
-		enablePagination: true,
-		enableSorting: true,
-		enableFiltering: true,
-		enableColumnResizing: true
+	const defaultColumnWidth = 150;
+	const getColumnWidth = (columnIndex: number): number => {
+		return tableState.columnSizing[columnIndex] || defaultColumnWidth;
 	};
 
-	const table = createSvelteTable(options);
-
 	$effect(() => {
-		if (table && table.state.globalFilter !== globalFilter) {
-			table.state.globalFilter = globalFilter;
+		if (globalFilter !== tableState.globalFilter) {
+			tableState.globalFilter = globalFilter;
 		}
 	});
 
 	$effect(() => {
-		if (table && globalFilter !== table.state.globalFilter) {
-			globalFilter = table.state.globalFilter;
+		if (tableState.globalFilter !== globalFilter) {
+			globalFilter = tableState.globalFilter;
 		}
 	});
 
+	const getSortCacheKey = (sorting: Array<{ columnIndex: number; desc: boolean }>) => {
+		if (sorting.length === 0) return 'unsorted';
+		return sorting.map((s) => `${s.columnIndex}:${s.desc ? 'desc' : 'asc'}`).join(',');
+	};
+
 	$effect(() => {
-		// Reset selection and column widths when data changes
+		if (data.length !== lastDataLength) {
+			// TODO: update with changes?
+			sortCache.clear();
+			lastDataLength = data.length;
+		}
+
+		if (tableState.sorting.length === 0) {
+			processedData = data;
+			return;
+		}
+
+		const cacheKey = getSortCacheKey(tableState.sorting);
+
+		if (sortCache.has(cacheKey)) {
+			console.log(`Sort cache hit for ${cacheKey}`);
+			processedData = sortCache.get(cacheKey)!;
+			return;
+		}
+
+		// Check if we're sorting a column we already sorted before, in the opposite direction
+		if (tableState.sorting.length === 1) {
+			const currentSort = tableState.sorting[0];
+			const reverseKey = `${currentSort.columnIndex}:${currentSort.desc ? 'asc' : 'desc'}`;
+
+			if (sortCache.has(reverseKey)) {
+				console.log(
+					`Fast reverse sort for column ${currentSort.columnIndex}: ${reverseKey} → ${cacheKey}`
+				);
+				const reversedData = [...sortCache.get(reverseKey)!].reverse();
+				sortCache.set(cacheKey, reversedData);
+				processedData = reversedData;
+				return;
+			}
+		}
+
+		let sortedData = [...data];
+		sortedData.sort((a, b) => {
+			for (const sort of tableState.sorting) {
+				const aVal = a[sort.columnIndex];
+				const bVal = b[sort.columnIndex];
+
+				if (aVal == null && bVal == null) continue;
+				if (aVal == null) return sort.desc ? 1 : -1;
+				if (bVal == null) return sort.desc ? -1 : 1;
+
+				let result = 0;
+				if (typeof aVal === 'number' && typeof bVal === 'number') {
+					result = aVal - bVal;
+				} else {
+					result = String(aVal).localeCompare(String(bVal));
+				}
+
+				if (result !== 0) {
+					return sort.desc ? -result : result;
+				}
+			}
+			return 0;
+		});
+
+		console.log(`Full sort performed for: ${cacheKey} (${data.length} rows)`);
+		sortCache.set(cacheKey, sortedData);
+		processedData = sortedData;
+	});
+
+	const pageCount = $derived(() => {
+		const totalRows = processedData.length;
+		const pageSize = tableState.pagination.pageSize;
+		return Math.ceil(totalRows / pageSize);
+	});
+
+	const currentPageIndex = $derived(() => tableState.pagination.pageIndex);
+
+	const visibleRowData = $derived.by(() => {
+		const pageSize = tableState.pagination.pageSize;
+		const pageIndex = tableState.pagination.pageIndex;
+		const startIndex = pageIndex * pageSize;
+		const endIndex = startIndex + pageSize;
+
+		console.log(
+			'Calculating visible rows - page:',
+			pageIndex,
+			'startIndex:',
+			startIndex,
+			'endIndex:',
+			endIndex
+		);
+
+		return processedData.slice(startIndex, endIndex);
+	});
+
+	$effect(() => {
 		data;
 		selectedCell = null;
 		selectedCellData = null;
-		originalColumnWidths.clear();
+		tableState.columnSizing = {};
 	});
 
-	function handleWindowMouseMove(event: MouseEvent) {
-		if (!tableContainer || !table.getState().columnSizingInfo.isResizingColumn) return;
+	function startColumnResize(columnIndex: number, event: MouseEvent) {
+		event.preventDefault();
+		tableState.resizing.isResizing = true;
+		tableState.resizing.columnIndex = columnIndex;
+		tableState.resizing.startX = event.clientX;
+		tableState.resizing.startWidth = getColumnWidth(columnIndex);
 
-		const containerRect = tableContainer.getBoundingClientRect();
-		resizePreviewX = event.clientX - containerRect.left + tableContainer.scrollLeft;
+		document.addEventListener('mousemove', handleColumnResize);
+		document.addEventListener('mouseup', stopColumnResize);
 	}
 
-	function handleCellClick(cell: Cell<PgRow, unknown>, rowId: string, _: MouseEvent) {
-		const cellValue = cell.getValue();
-		const columnId = cell.column.id;
+	function handleColumnResize(event: MouseEvent) {
+		if (!tableState.resizing.isResizing) return;
 
+		const deltaX = event.clientX - tableState.resizing.startX;
+		const newWidth = Math.max(50, tableState.resizing.startWidth + deltaX); // Min width 50px
+
+		tableState.columnSizing[tableState.resizing.columnIndex] = newWidth;
+
+		// update resize handle line
+		if (tableContainer) {
+			const containerRect = tableContainer.getBoundingClientRect();
+			resizePreviewX = event.clientX - containerRect.left + tableContainer.scrollLeft;
+		}
+	}
+
+	function stopColumnResize() {
+		tableState.resizing.isResizing = false;
+		tableState.resizing.columnIndex = -1;
+
+		document.removeEventListener('mousemove', handleColumnResize);
+		document.removeEventListener('mouseup', stopColumnResize);
+	}
+
+	function handleWindowMouseMove(event: MouseEvent) {
+		if (!tableContainer || !tableState.resizing.isResizing) return;
+		handleColumnResize(event);
+	}
+
+	function handleSimpleCellClick(cellValue: any, rowId: string, columnId: string, _: MouseEvent) {
 		// Deselect when clicking the selected cell
 		if (selectedCell && selectedCell.rowId === rowId && selectedCell.columnId === columnId) {
 			selectedCell = null;
 			selectedCellData = null;
-			restoreOriginalColumnWidths();
 			return;
 		}
 
-		if (table && !originalColumnWidths.has(columnId)) {
-			originalColumnWidths.set(columnId, cell.column.getSize());
-		}
-
 		selectedCell = { rowId, columnId };
-
 		selectedCellData = cellValue;
 
-		if (table && cellValue !== null && cellValue !== undefined) {
+		if (cellValue !== null && cellValue !== undefined) {
 			const contentLength = String(cellValue).length;
 			const minWidth = Math.max(
 				COLUMN_RESIZE.MIN_WIDTH,
@@ -124,38 +237,22 @@
 					COLUMN_RESIZE.MAX_WIDTH
 				)
 			);
-			table.setColumnSizing((prev) => ({
-				...prev,
-				[columnId]: minWidth
-			}));
+			tableState.columnSizing[parseInt(columnId)] = minWidth;
 		}
-	}
-
-	function restoreOriginalColumnWidths() {
-		if (!table || originalColumnWidths.size === 0) return;
-
-		const sizingUpdates: Record<string, number> = {};
-		originalColumnWidths.forEach((originalWidth, columnId) => {
-			sizingUpdates[columnId] = originalWidth;
-		});
-
-		table.setColumnSizing((prev) => ({
-			...prev,
-			...sizingUpdates
-		}));
-
-		originalColumnWidths.clear();
 	}
 
 	function getCellValueForCopy(): string | null {
 		if (!selectedCell) return null;
 
 		try {
-			const row = table.getRow(selectedCell.rowId);
-			if (!row) return null;
+			const rowIndex = parseInt(selectedCell.rowId);
+			const colIndex = parseInt(selectedCell.columnId);
 
-			const cellValue = row.getValue(selectedCell.columnId);
-			return CellFormatter.formatCellForCopy(cellValue);
+			if (rowIndex >= 0 && rowIndex < data.length && colIndex >= 0 && colIndex < columns.length) {
+				const cellValue = data[rowIndex][colIndex];
+				return CellFormatter.formatCellForCopy(cellValue);
+			}
+			return null;
 		} catch (error) {
 			console.warn('Failed to get cell value:', error);
 			return null;
@@ -178,7 +275,6 @@
 		if (event.key === 'Escape') {
 			selectedCell = null;
 			selectedCellData = null;
-			restoreOriginalColumnWidths();
 			return;
 		}
 
@@ -197,51 +293,92 @@
 		}
 	}
 
+	const customNavigation = {
+		setPageIndex: (pageIndex: number) => {
+			tableState.pagination.pageIndex = Math.max(0, Math.min(pageIndex, pageCount() - 1));
+		},
+		nextPage: () => {
+			if (tableState.pagination.pageIndex < pageCount() - 1) {
+				tableState.pagination.pageIndex++;
+			}
+		},
+		previousPage: () => {
+			if (tableState.pagination.pageIndex > 0) {
+				tableState.pagination.pageIndex--;
+			}
+		},
+		canNextPage: () => tableState.pagination.pageIndex < pageCount() - 1,
+		canPreviousPage: () => tableState.pagination.pageIndex > 0
+	};
+
+	const customSorting = {
+		toggleSort: (columnIndex: number) => {
+			const existingSort = tableState.sorting.find((s) => s.columnIndex === columnIndex);
+
+			if (!existingSort) {
+				// start with ascending
+				tableState.sorting = [{ columnIndex, desc: false }];
+			} else if (!existingSort.desc) {
+				// change to descending
+				existingSort.desc = true;
+			} else {
+				// remove sorting
+				tableState.sorting = tableState.sorting.filter((s) => s.columnIndex !== columnIndex);
+			}
+
+			tableState.pagination.pageIndex = 0;
+		},
+
+		getSortDirection: (columnIndex: number): 'asc' | 'desc' | null => {
+			const sort = tableState.sorting.find((s) => s.columnIndex === columnIndex);
+			if (!sort) return null;
+			return sort.desc ? 'desc' : 'asc';
+		},
+
+		isSorted: (columnIndex: number): boolean => {
+			return tableState.sorting.some((s) => s.columnIndex === columnIndex);
+		}
+	};
+
 	function navigateCell(direction: string) {
-		if (!selectedCell || !table) return;
+		if (!selectedCell) return;
 
-		const row = table.getRow(selectedCell.rowId);
-		const column = table.getColumn(selectedCell.columnId);
+		const rowIndex = parseInt(selectedCell.rowId);
+		const colIndex = parseInt(selectedCell.columnId);
+		const pageSize = tableState.pagination.pageSize;
+		const pageIndex = tableState.pagination.pageIndex;
+		const startRowIndex = pageIndex * pageSize;
 
-		if (row === undefined || column === undefined) return;
-
-		const rows = table.getPaginationRowModel().rows;
-		const columns = table.getVisibleLeafColumns();
-
-		const currentRowIndex = row.index;
-		const currentColumnIndex = column.getIndex();
-
-		if (currentRowIndex === -1 || currentColumnIndex === -1) return;
-
-		let newRowIndex = currentRowIndex;
-		let newColumnIndex = currentColumnIndex;
+		let newRowIndex = rowIndex;
+		let newColIndex = colIndex;
 
 		switch (direction) {
 			case 'ArrowUp':
-				newRowIndex = Math.max(0, currentRowIndex - 1);
+				newRowIndex = Math.max(0, rowIndex - 1);
 				break;
 			case 'ArrowDown':
-				newRowIndex = Math.min(rows.length - 1, currentRowIndex + 1);
+				newRowIndex = Math.min(data.length - 1, rowIndex + 1);
 				break;
 			case 'ArrowLeft':
-				newColumnIndex = Math.max(0, currentColumnIndex - 1);
+				newColIndex = Math.max(0, colIndex - 1);
 				break;
 			case 'ArrowRight':
-				newColumnIndex = Math.min(columns.length - 1, currentColumnIndex + 1);
+				newColIndex = Math.min(columns.length - 1, colIndex + 1);
 				break;
 		}
 
-		if (newRowIndex !== currentRowIndex || newColumnIndex !== currentColumnIndex) {
-			const row = rows[newRowIndex];
-			const column = columns[newColumnIndex];
-			const cell = row.getVisibleCells().find((c) => c.column.id === column.id);
-
-			if (cell) {
-				const mockEvent = new MouseEvent('click');
-				handleCellClick(cell, row.id, mockEvent);
-				scrollCellIntoView(newRowIndex, newColumnIndex);
-			}
+		// Check if we need to change pages
+		const newPageIndex = Math.floor(newRowIndex / pageSize);
+		if (newPageIndex !== pageIndex) {
+			tableState.pagination.pageIndex = newPageIndex;
 		}
+
+		selectedCell = { rowId: String(newRowIndex), columnId: String(newColIndex) };
+		if (newRowIndex < data.length && newColIndex < columns.length) {
+			selectedCellData = data[newRowIndex][newColIndex];
+		}
+
+		setTimeout(() => scrollCellIntoView(newRowIndex - startRowIndex, newColIndex), 0);
 	}
 
 	function scrollCellIntoView(rowIndex: number, columnIndex: number) {
@@ -272,7 +409,7 @@
 	onblur={() => (hasFocus = false)}
 >
 	<!-- Resize preview line -->
-	{#if table.getState().columnSizingInfo.isResizingColumn}
+	{#if tableState.resizing.isResizing}
 		<div
 			class="pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 bg-blue-500 opacity-75"
 			style="left: {resizePreviewX}px"
@@ -282,57 +419,48 @@
 	<!-- Table content -->
 	<div class="flex-1 overflow-hidden" bind:this={tableContainer}>
 		<div class="scrollable-container h-full overflow-auto">
-			<table class="w-full border-collapse text-xs" style="width: {table.getCenterTotalSize()}px">
+			<table class="w-full border-collapse text-xs">
 				<thead class="bg-accent border-border sticky top-0 z-10 border-b shadow-sm">
-					{#each table.getHeaderGroups() as headerGroup}
-						<tr>
-							{#each headerGroup.headers as header}
-								<th
-									class="text-foreground bg-muted/95 border-border/40 relative border-r px-2 py-1 text-left align-middle text-xs font-medium"
-									style="width: {header.getSize()}px"
-								>
-									{#if !header.isPlaceholder}
-										<div class="flex items-center justify-between">
-											<Button
-												variant="ghost"
-												size="sm"
-												class="hover:bg-accent/30 -ml-1 h-6 flex-1 justify-start p-1 text-xs font-medium"
-												onclick={() =>
-													header.column.toggleSorting(header.column.getIsSorted() === 'asc')}
-											>
-												<FlexRender
-													content={header.column.columnDef.header}
-													context={header.getContext()}
-												/>
-												{#if header.column.getIsSorted() === 'asc'}
-													<ChevronUp class="text-muted-foreground ml-1 h-3 w-3" />
-												{:else if header.column.getIsSorted() === 'desc'}
-													<ChevronDown class="text-muted-foreground ml-1 h-3 w-3" />
-												{:else}
-													<ChevronsUpDown class="text-muted-foreground/40 ml-1 h-3 w-3" />
-												{/if}
-											</Button>
-											{#if header.column.getCanResize()}
-												<button
-													class="absolute top-0 right-0 h-full w-1 cursor-col-resize border-none bg-transparent transition-colors select-none hover:bg-blue-400 focus:bg-blue-400 focus:outline-none active:bg-blue-500 {table.getState()
-														.columnSizingInfo.isResizingColumn === header.column.id
-														? 'bg-blue-500'
-														: ''}"
-													onmousedown={header.getResizeHandler()}
-													ontouchstart={header.getResizeHandler()}
-													type="button"
-													aria-label="Resize column"
-												></button>
-											{/if}
-										</div>
-									{/if}
-								</th>
-							{/each}
-						</tr>
-					{/each}
+					<tr>
+						{#each columns as columnName, columnIndex}
+							{@const columnWidth = getColumnWidth(columnIndex)}
+							<th
+								class="text-foreground bg-muted/95 border-border/40 relative border-r px-2 py-1 text-left align-middle text-xs font-medium"
+								style="width: {columnWidth}px"
+							>
+								<div class="flex items-center justify-between">
+									<Button
+										variant="ghost"
+										size="sm"
+										class="hover:bg-accent/30 -ml-1 h-6 flex-1 justify-start p-1 text-xs font-medium"
+										onclick={() => customSorting.toggleSort(columnIndex)}
+									>
+										{columnName}
+										{#if customSorting.getSortDirection(columnIndex) === 'asc'}
+											<ChevronUp class="text-muted-foreground ml-1 h-3 w-3" />
+										{:else if customSorting.getSortDirection(columnIndex) === 'desc'}
+											<ChevronDown class="text-muted-foreground ml-1 h-3 w-3" />
+										{:else}
+											<ChevronsUpDown class="text-muted-foreground/40 ml-1 h-3 w-3" />
+										{/if}
+									</Button>
+									<!-- Column resize handle -->
+									<button
+										class="absolute top-0 right-0 h-full w-1 cursor-col-resize border-none bg-transparent transition-colors select-none hover:bg-blue-400 focus:bg-blue-400 focus:outline-none active:bg-blue-500 {tableState
+											.resizing.isResizing && tableState.resizing.columnIndex === columnIndex
+											? 'bg-blue-500'
+											: ''}"
+										onmousedown={(event) => startColumnResize(columnIndex, event)}
+										type="button"
+										aria-label="Resize column"
+									></button>
+								</div>
+							</th>
+						{/each}
+					</tr>
 				</thead>
 				<tbody>
-					{#each table.getPaginationRowModel().rows as row, index (row.id)}
+					{#each visibleRowData as rowData, index (currentPageIndex() * tableState.pagination.pageSize + index)}
 						<tr
 							class="border-border/40 hover:bg-muted/50 group border-b transition-colors {index %
 								2 ===
@@ -340,14 +468,17 @@
 								? 'bg-background'
 								: 'bg-card/30'}"
 						>
-							{#each row.getVisibleCells() as cell (cell.column.id)}
-								{@const cellValue = cell.getValue()}
-								{@const columnWidth = cell.column.getSize()}
+							{#each rowData as cellValue, colIndex (colIndex)}
+								{@const globalRowIndex =
+									currentPageIndex() * tableState.pagination.pageSize + index}
+								{@const columnId = String(colIndex)}
+								{@const rowId = String(globalRowIndex)}
 								{@const isSelected = selectedCell
-									? selectedCell.rowId === row.id && selectedCell.columnId === cell.column.id
+									? selectedCell.rowId === rowId && selectedCell.columnId === columnId
 									: false}
 								{@const cellType = CellFormatter.getCellType(cellValue)}
 								{@const displayValue = CellFormatter.formatCellDisplay(cellValue)}
+								{@const columnWidth = getColumnWidth(colIndex)}
 								<td
 									class="border-border/30 border-r px-0 py-0 align-top text-xs transition-colors {isSelected
 										? 'bg-primary/10 ring-primary/40 ring-1'
@@ -359,7 +490,7 @@
 									<button
 										class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
 										title={CellFormatter.formatCellTitle(cellValue)}
-										onclick={(event) => handleCellClick(cell, row.id, event)}
+										onclick={(event) => handleSimpleCellClick(cellValue, rowId, columnId, event)}
 									>
 										{#if cellType === 'null'}
 											<span class="cell-content text-muted-foreground text-xs italic"
@@ -408,17 +539,21 @@
 		</div>
 	</div>
 
-	<!-- Pagination at bottom -->
-	{#if table.getPageCount() > 1}
-		{@const currentPage = table.getState().pagination.pageIndex}
-		{@const totalPages = table.getPageCount()}
+	{console.log(
+		'Pagination render - pageCount:',
+		pageCount(),
+		'dataLength:',
+		data.length,
+		'pageSize:',
+		tableState.pagination.pageSize
+	)}
+	{#if pageCount() > 1}
 		<div class="border-border/30 bg-muted/20 flex flex-shrink-0 items-center border-t px-3 py-2">
-			<!-- Compact left section -->
 			<div class="text-muted-foreground flex items-center gap-2 text-xs">
-				<span>Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</span>
+				<span>Page {currentPageIndex() + 1} of {pageCount()}</span>
 				<span>•</span>
 				<select
-					bind:value={table.state.pagination.pageSize}
+					bind:value={tableState.pagination.pageSize}
 					class="border-border bg-background focus:ring-ring h-6 w-12 rounded border text-xs focus:ring-1"
 				>
 					{#each [25, 50, 100, 200] as pageSize}
@@ -428,80 +563,78 @@
 				<span>rows</span>
 			</div>
 
-			<!-- Spacer -->
 			<div class="flex-1"></div>
 
-			<!-- Compact navigation -->
 			<div class="flex items-center gap-1">
 				<Button
 					variant="ghost"
 					size="sm"
-					onclick={() => table.previousPage()}
-					disabled={!table.getCanPreviousPage()}
+					onclick={() => customNavigation.previousPage()}
+					disabled={!customNavigation.canPreviousPage()}
 					class="h-6 w-6 p-0"
 				>
 					<ChevronLeft class="h-3 w-3" />
 				</Button>
 
-				{#if currentPage > 1}
+				{#if currentPageIndex() > 1}
 					<Button
 						variant="ghost"
 						size="sm"
-						onclick={() => table.setPageIndex(0)}
+						onclick={() => customNavigation.setPageIndex(0)}
 						class="h-6 px-2 text-xs"
 					>
 						1
 					</Button>
-					{#if currentPage > 2}
+					{#if currentPageIndex() > 2}
 						<span class="text-muted-foreground text-xs">...</span>
 					{/if}
 				{/if}
 
-				{#if currentPage > 0}
+				{#if currentPageIndex() > 0}
 					<Button
 						variant="ghost"
 						size="sm"
-						onclick={() => table.previousPage()}
+						onclick={() => customNavigation.previousPage()}
 						class="h-6 px-2 text-xs"
 					>
-						{currentPage}
+						{currentPageIndex()}
 					</Button>
 				{/if}
 
 				<Button variant="default" size="sm" class="h-6 px-2 text-xs">
-					{currentPage + 1}
+					{currentPageIndex() + 1}
 				</Button>
 
-				{#if currentPage < totalPages - 1}
+				{#if currentPageIndex() < pageCount() - 1}
 					<Button
 						variant="ghost"
 						size="sm"
-						onclick={() => table.nextPage()}
+						onclick={() => customNavigation.nextPage()}
 						class="h-6 px-2 text-xs"
 					>
-						{currentPage + 2}
+						{currentPageIndex() + 2}
 					</Button>
 				{/if}
 
-				{#if currentPage < totalPages - 2}
-					{#if currentPage < totalPages - 3}
+				{#if currentPageIndex() < pageCount() - 2}
+					{#if currentPageIndex() < pageCount() - 3}
 						<span class="text-muted-foreground text-xs">...</span>
 					{/if}
 					<Button
 						variant="ghost"
 						size="sm"
-						onclick={() => table.setPageIndex(totalPages - 1)}
+						onclick={() => customNavigation.setPageIndex(pageCount() - 1)}
 						class="h-6 px-2 text-xs"
 					>
-						{totalPages}
+						{pageCount()}
 					</Button>
 				{/if}
 
 				<Button
 					variant="ghost"
 					size="sm"
-					onclick={() => table.nextPage()}
-					disabled={!table.getCanNextPage()}
+					onclick={() => customNavigation.nextPage()}
+					disabled={!customNavigation.canNextPage()}
 					class="h-6 w-6 p-0"
 				>
 					<ChevronRight class="h-3 w-3" />

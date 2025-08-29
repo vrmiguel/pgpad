@@ -216,7 +216,6 @@ SELECT 1 as test;`);
 		}
 	}
 
-	// Handle when a statement has an error
 	function handleStatementError(tabId: string, error: string) {
 		const tab = resultTabs.find((t) => t.id === tabId);
 		if (tab) {
@@ -224,23 +223,19 @@ SELECT 1 as test;`);
 			tab.error = error;
 		}
 
-		// Save to history
 		if (selectedConnection && tab) {
 			Commands.saveQueryToHistory(selectedConnection, tab.query, 0, 'error', 0, error);
 			loadQueryHistory();
 		}
 	}
 
-	// Handle tab updates from StatementExecutor
 	function handleTabUpdate(tabId: string, updates: Partial<QueryResultTab>) {
 		const tabIndex = resultTabs.findIndex((t) => t.id === tabId);
 		if (tabIndex !== -1) {
 			const tab = resultTabs[tabIndex];
 
-			// Handle row batching specially
 			if (updates.rows && tab.rows) {
-				// Append new rows to existing ones
-				tab.rows = [...tab.rows, ...updates.rows];
+				tab.rows.push(...updates.rows);
 			} else {
 				// Apply other updates
 				Object.assign(tab, updates);
@@ -307,7 +302,6 @@ SELECT 1 as test;`);
 		}
 	}
 
-	// Create combined tabs (results + history)
 	const allTabs = $derived(() => {
 		const tabs = [...resultTabs];
 		tabs.push({
@@ -320,7 +314,6 @@ SELECT 1 as test;`);
 		return tabs;
 	});
 
-	// Load database schema for editor completion
 	async function loadDatabaseSchema() {
 		if (!selectedConnection || !sqlEditor) return;
 
@@ -336,7 +329,6 @@ SELECT 1 as test;`);
 		}
 	}
 
-	// Effect to reload history when connection changes
 	$effect(() => {
 		if (selectedConnection) {
 			loadQueryHistory();
@@ -378,7 +370,6 @@ SELECT 1 as test;`);
 
 <div class="flex flex-1 flex-col">
 	<ResizablePaneGroup direction="vertical" class="flex-1">
-		<!-- SQL Editor Pane -->
 		<ResizablePane defaultSize={60} minSize={30} maxSize={80}>
 			<div class="h-full px-1 pt-1">
 				<Card class="flex h-full flex-col gap-0 overflow-hidden rounded-b-none py-0">
@@ -391,10 +382,8 @@ SELECT 1 as test;`);
 
 		<ResizableHandle />
 
-		<!-- Results & History Section Pane -->
 		<ResizablePane defaultSize={40} minSize={20}>
 			<div class="relative flex h-full flex-col px-1 pb-1">
-				<!-- Result Tabs -->
 				<div class="relative z-10">
 					<TabBar
 						tabs={allTabs()}
@@ -487,10 +476,8 @@ SELECT 1 as test;`);
 					{:else if activeResultTabId}
 						{@const activeTab = resultTabs.find((t) => t.id === activeResultTabId)}
 						{#if activeTab}
-							<!-- Results content - single table with optional inspector overlay -->
 							{#if activeTab.columns && activeTab.rows && activeTab.rows.length > 0}
 								<div class="relative flex min-h-0 flex-1">
-									<!-- Always render the table in the same location -->
 									<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
 										<QueryResultsTable
 											data={activeTab.rows}
@@ -502,17 +489,14 @@ SELECT 1 as test;`);
 									<JsonInspector {selectedCellData} onClose={() => (selectedCellData = null)} />
 								</div>
 							{:else}
-								<!-- Non-results states -->
 								<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-6">
 									{#if activeTab.error}
-										<!-- Error state -->
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
 												<div class="text-sm text-red-600">❌ {activeTab.error}</div>
 											</div>
 										</div>
 									{:else if activeTab.queryReturnsResults}
-										<!-- Modification query result -->
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
 												{#if activeTab.status === 'running'}
@@ -527,7 +511,6 @@ SELECT 1 as test;`);
 											</div>
 										</div>
 									{:else if activeTab.status === 'running'}
-										<!-- Loading state for SELECT queries -->
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
 												<div class="text-muted-foreground text-sm">Loading results...</div>
