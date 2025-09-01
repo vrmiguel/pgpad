@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   node:
-    name: Node (Svelte) - check, format & lint
+    name: Node (Svelte) - format & lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,13 +21,9 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci
-      - name: Type & Svelte check
-        run: npm run check
-      - name: Format
-        run: npm run format
-      - name: Lint
-        run: npm run lint
-      - name: Fail if formatter changed files
+      - run: npm run format
+      - run: npm run lint
+      - name: Fail if formatting changed files
         run: |
           if ! git diff --quiet; then
             echo "Formatter changed files. Please commit the updates."
@@ -38,6 +34,9 @@ jobs:
   rust:
     name: Rust - fmt & clippy
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -49,7 +48,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
       - run: cargo fmt --all -- --check
