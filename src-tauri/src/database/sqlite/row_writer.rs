@@ -38,7 +38,7 @@ impl RowWriter {
             match row.get_ref(i)? {
                 ValueRef::Null => self.write_json_string("NULL"),
                 ValueRef::Integer(value) if value == 0 || value == 1 => {
-                    let decltype = self.column_decltypes[i].as_ref().map(|s| s.as_str());
+                    let decltype = self.column_decltypes[i].as_deref();
                     let looks_like_bool = decltype
                         .map(|s| {
                             s.eq_ignore_ascii_case("boolean")
@@ -93,7 +93,7 @@ impl RowWriter {
     pub fn finish(&mut self) -> Box<RawValue> {
         self.json.push(']');
 
-        let json = std::mem::replace(&mut self.json, String::new());
+        let json = std::mem::take(&mut self.json);
         RawValue::from_string(json).unwrap()
     }
 
@@ -220,7 +220,7 @@ mod tests {
         let mut writer = RowWriter::new(column_decltypes);
 
         while let Some(row) = rows.next()? {
-            writer.add_row(&row)?;
+            writer.add_row(row)?;
         }
 
         let result = writer.finish();
@@ -240,13 +240,14 @@ mod tests {
         let row = rows.next()?.unwrap();
 
         let mut writer = RowWriter::new(column_decltypes);
-        writer.add_row(&row)?;
+        writer.add_row(row)?;
         let result = writer.finish();
 
         let json_result: Value = serde_json::from_str(result.get())?;
         Ok(json_result)
     }
 
+    #[allow(clippy::approx_constant)]
     #[test]
     fn basic_types() -> Result<(), Error> {
         let conn = create_test_db()?;
@@ -364,7 +365,7 @@ mod tests {
         let row = rows.next()?.unwrap();
 
         let mut writer = RowWriter::new(column_decltypes.clone());
-        writer.add_row(&row)?;
+        writer.add_row(row)?;
 
         assert_eq!(writer.len(), 1);
         assert!(!writer.is_empty());
@@ -378,7 +379,7 @@ mod tests {
         assert_eq!(writer.len(), 0);
         assert!(writer.is_empty());
 
-        writer.add_row(&row)?;
+        writer.add_row(row)?;
         let result = writer.finish();
         let result: Value = serde_json::from_str(result.get())?;
         assert_eq!(result, serde_json::json!([[1]]));

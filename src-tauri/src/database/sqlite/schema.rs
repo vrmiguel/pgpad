@@ -19,7 +19,7 @@ pub async fn get_database_schema(conn: Arc<Mutex<Connection>>) -> Result<Databas
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
         )?;
         let table_names: Vec<String> = tables_stmt
-            .query_map([], |row| Ok(row.get::<_, String>(0)?))?
+            .query_map([], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut tables = Vec::new();

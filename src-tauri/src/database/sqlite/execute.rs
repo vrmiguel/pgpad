@@ -34,7 +34,7 @@ pub async fn execute_query(
                 .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
 
             if statement.returns_values {
-                execute_query_with_results(&*client, &statement.statement, index, &channel)?;
+                execute_query_with_results(&client, &statement.statement, index, &channel)?;
             } else {
                 execute_modification_query(&client, &statement.statement, index, &channel)?;
             }

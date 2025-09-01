@@ -13,7 +13,7 @@ pub fn serialize_as_json_array<'a, I: ExactSizeIterator<Item = &'a str>>(
 
     for (i, col) in iter.enumerate() {
         if i > 0 {
-            json.push_str(",");
+            json.push(',');
         }
         write!(&mut json, "\"{}\"", col)?;
     }
@@ -33,15 +33,15 @@ mod tests {
     #[test]
     fn test_serialize_as_json_array() {
         let iter = ["a", "b", "c"];
-        let json = serialize_as_json_array(iter.iter().map(|s| *s)).unwrap();
+        let json = serialize_as_json_array(iter.iter().copied()).unwrap();
         assert_eq!(serde_json::to_string(&json).unwrap(), r#"["a","b","c"]"#);
 
         let iter = ["a"];
-        let json = serialize_as_json_array(iter.iter().map(|s| *s)).unwrap();
+        let json = serialize_as_json_array(iter.iter().copied()).unwrap();
         assert_eq!(serde_json::to_string(&json).unwrap(), r#"["a"]"#);
 
         let iter = [];
-        let json = serialize_as_json_array(iter.iter().map(|s| *s)).unwrap();
+        let json = serialize_as_json_array(iter.iter().copied()).unwrap();
         assert_eq!(serde_json::to_string(&json).unwrap(), r#"[]"#);
     }
 

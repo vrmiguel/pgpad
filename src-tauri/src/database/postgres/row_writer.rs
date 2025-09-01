@@ -62,7 +62,7 @@ impl RowWriter {
     pub fn finish(&mut self) -> Box<RawValue> {
         self.json.push(']');
 
-        let json = std::mem::replace(&mut self.json, String::new());
+        let json = std::mem::take(&mut self.json);
         RawValue::from_string(json).unwrap()
     }
 
@@ -207,7 +207,7 @@ impl RowWriter {
             // TODO(vini): BPCHAR and NAME are correct here?
             Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME => {
                 let value: &str = row.try_get(column_index)?;
-                self.write_json_string(&value);
+                self.write_json_string(value);
             }
 
             _ => {
@@ -359,7 +359,7 @@ mod tests {
         let row = &rows[0];
 
         let mut writer = RowWriter::new();
-        writer.add_row(&row).unwrap();
+        writer.add_row(row).unwrap();
         let result = writer.finish();
         let result: Value = serde_json::from_str(result.get()).unwrap();
         assert_eq!(

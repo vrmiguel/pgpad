@@ -44,6 +44,7 @@ impl<'a> FromSql<'a> for PgRecord {
     }
 }
 
+#[allow(clippy::wildcard_in_or_patterns)]
 // TODO(vini): this is a pretty bad implementation
 fn convert_pg_binary_to_json(
     pg_type: &Type,

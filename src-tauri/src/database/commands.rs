@@ -318,9 +318,9 @@ pub async fn get_query_history(
     limit: Option<u32>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<QueryHistoryEntry>, Error> {
-    Ok(state
+    state
         .storage
-        .get_query_history(&connection_id, limit.map(|l| l as i64))?)
+        .get_query_history(&connection_id, limit.map(|l| l as i64))
 }
 
 #[tauri::command]
