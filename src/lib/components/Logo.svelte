@@ -2,7 +2,6 @@
 	interface Props {
 		class?: string;
 		size?: 'sm' | 'md' | 'lg';
-		[key: string]: any;
 	}
 
 	let { class: className = '', size = 'md', ...restProps }: Props = $props();

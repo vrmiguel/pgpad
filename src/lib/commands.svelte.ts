@@ -1,9 +1,9 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 
 // What Rust sends us after processing query results (basically, JSON)
-export type PgValue = string | number | boolean | null | PgValue[] | { [key: string]: PgValue };
+export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
-export type PgRow = PgValue[];
+export type Row = Json[];
 
 export const preventDefault = <T extends Event>(fn: (e: T) => void): ((e: T) => void) => {
 	return (e: T) => {
@@ -25,7 +25,7 @@ export interface ConnectionInfo {
 
 export interface QueryResult {
 	columns: string[];
-	rows: any[][];
+	rows: Json[][];
 	row_count: number;
 	duration_ms: number;
 }
@@ -51,7 +51,7 @@ export type QueryStreamEvent =
 			event: 'resultBatch';
 			data: {
 				statementIndex: number;
-				rows: PgValue[][];
+				rows: Json[][];
 			};
 	  }
 	| {
@@ -69,7 +69,7 @@ export type QueryStreamEvent =
 	  }
 	| {
 			event: 'allFinished';
-			data: {};
+			data: Record<string, never>;
 	  }
 	| {
 			event: 'statementError';
@@ -83,7 +83,7 @@ export type QueryStreamEvent =
 // UI-facing result type that includes success/error state
 export interface QueryResultUI {
 	success: boolean;
-	data?: any[];
+	data?: unknown[];
 	columns?: string[];
 	message?: string;
 	duration?: number;

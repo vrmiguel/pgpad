@@ -1,8 +1,9 @@
 <script lang="ts">
+	import type { Json } from '$lib/commands.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	interface Props {
-		json: any;
+		json: Json;
 		depth?: number;
 	}
 
@@ -16,7 +17,7 @@
 	let userOverrides = new SvelteSet<string>();
 	let expandedStrings = new SvelteSet<string>();
 
-	function getValueType(value: any): string {
+	function getValueType(value: Json): string {
 		if (value === null) return 'null';
 		if (typeof value === 'boolean') return 'boolean';
 		if (typeof value === 'number') return 'number';
@@ -73,11 +74,11 @@
 	}
 
 	function renderValue(
-		value: any,
+		value: Json,
 		key: string | number | null = null,
 		path = '',
 		currentDepth = 0
-	): any {
+	) {
 		const valueType = getValueType(value);
 		const currentPath = path ? `${path}.${key}` : String(key || '');
 
@@ -85,33 +86,35 @@
 		const shouldExpand =
 			!isUserCollapsed && (isExpanded(currentPath) || shouldAutoExpand(currentDepth));
 
-		if (valueType === 'object' && value) {
-			const keys = Object.keys(value);
+		if (valueType === 'object' && value && typeof value === 'object' && !Array.isArray(value)) {
+			const objectValue = value as { [key: string]: Json };
+			const keys = Object.keys(objectValue);
 			const isEmpty = keys.length === 0;
 
 			return {
 				type: 'object',
 				key,
-				value,
+				value: objectValue,
 				path: currentPath,
 				isEmpty,
 				shouldExpand,
-				keys: shouldExpand ? keys : [],
+				keys: shouldExpand ? keys : undefined,
 				currentDepth
 			};
 		}
 
-		if (valueType === 'array') {
-			const isEmpty = value.length === 0;
+		if (valueType === 'array' && Array.isArray(value)) {
+			const arrayValue = value as Json[];
+			const isEmpty = arrayValue.length === 0;
 
 			return {
 				type: 'array',
 				key,
-				value,
+				value: arrayValue,
 				path: currentPath,
 				isEmpty,
 				shouldExpand,
-				items: shouldExpand ? value : [],
+				items: shouldExpand ? arrayValue : undefined,
 				currentDepth
 			};
 		}
@@ -134,7 +137,7 @@
 	</div>
 </div>
 
-{#snippet jsonElement(item: any)}
+{#snippet jsonElement(item: ReturnType<typeof renderValue>)}
 	<div class="json-item" style="margin-left: {item.currentDepth * 12}px">
 		{#if item.type === 'object'}
 			<div class="json-line">
@@ -157,8 +160,8 @@
 					<span class="json-bracket">&#125;</span>
 				{/if}
 			</div>
-			{#if item.shouldExpand && !item.isEmpty}
-				{#each item.keys as key, index}
+			{#if item.shouldExpand && !item.isEmpty && item.keys}
+				{#each item.keys as key, index (key)}
 					<div style="margin-left: {(item.currentDepth + 1) * 12}px">
 						<span class="json-property">
 							{@render jsonElement(
@@ -193,8 +196,8 @@
 					<span class="json-bracket">&#93;</span>
 				{/if}
 			</div>
-			{#if item.shouldExpand && !item.isEmpty}
-				{#each item.items as arrayItem, index}
+			{#if item.shouldExpand && !item.isEmpty && item.items}
+				{#each item.items as arrayItem, index (index)}
 					<div style="margin-left: {(item.currentDepth + 1) * 12}px">
 						<span class="json-property">
 							{@render jsonElement(renderValue(arrayItem, index, item.path, item.currentDepth + 1))}
@@ -214,7 +217,7 @@
 					<span class="json-colon">: </span>
 				{/if}
 				<span class="json-value json-{item.type}">
-					{#if item.type === 'string'}
+					{#if item.type === 'string' && typeof item.value === 'string'}
 						{@const stringPath = `${item.path}_string`}
 						{@const isStringExpanded = expandedStrings.has(stringPath)}
 						{@const shouldTruncate = item.value.length > 30}

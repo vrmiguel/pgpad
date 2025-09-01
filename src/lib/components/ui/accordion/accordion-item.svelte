@@ -2,12 +2,13 @@
 	import { ChevronDown } from '@lucide/svelte';
 	import { slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
+	import type { Snippet, Component } from 'svelte';
 
 	interface Props {
 		title: string;
-		icon?: any;
+		icon?: Component;
 		open?: boolean;
-		children?: any;
+		children?: Snippet;
 		class?: string;
 	}
 

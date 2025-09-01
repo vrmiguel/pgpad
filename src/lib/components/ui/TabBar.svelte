@@ -1,28 +1,25 @@
-<script lang="ts">
+<script lang="ts" generics="T extends TabItem">
 	import { X, Plus, Circle } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 
 	interface TabItem {
-		id: string | number;
+		id: number;
 		name: string;
-		[key: string]: any; // Allow additional properties
 	}
 
 	interface Props<T extends TabItem> {
 		tabs: T[];
-		activeTabId: string | number | null;
-		onTabSelect: (tabId: string | number) => void;
-		onTabClose?: (tabId: string | number) => void;
+		activeTabId: number | null;
+		onTabSelect: (tabId: number) => void;
+		onTabClose?: (tabId: number) => void;
 		onNewTab?: () => void;
-		onTabRename?: (tabId: string | number, newName: string) => void;
+		onTabRename?: (tabId: number, newName: string) => void;
 		showCloseButton?: boolean;
 		showNewTabButton?: boolean;
 		allowRename?: boolean;
 		getTabStatus?: (tab: T) => 'normal' | 'modified' | 'error';
-		// Styling
 		maxTabWidth?: string;
 		variant?: 'default' | 'seamless';
-		// Labels
 		newTabLabel?: string;
 		closeTabLabel?: string;
 	}
@@ -42,13 +39,13 @@
 		variant = 'default',
 		newTabLabel = 'New Tab',
 		closeTabLabel = 'Close tab'
-	}: Props<TabItem> = $props();
+	}: Props<T> = $props();
 
-	let editingTabId = $state<string | number | null>(null);
+	let editingTabId = $state<number | null>(null);
 	let editingName = $state('');
 	let nameInput = $state<HTMLInputElement>();
 
-	function handleTabClick(tabId: string | number) {
+	function handleTabClick(tabId: number) {
 		// Don't switch tabs while editing
 		if (editingTabId === tabId) return;
 
@@ -61,12 +58,12 @@
 		onTabSelect(tabId);
 	}
 
-	function handleTabClose(e: Event, tabId: string | number) {
+	function handleTabClose(e: Event, tabId: number) {
 		e.stopPropagation();
 		onTabClose?.(tabId);
 	}
 
-	function startEditingName(tabId: string | number, currentName: string) {
+	function startEditingName(tabId: number, currentName: string) {
 		if (!allowRename) return;
 
 		editingTabId = tabId;
@@ -84,7 +81,7 @@
 		if (editingTabId === null) return;
 
 		const trimmedName = editingName.trim();
-		const currentTab = tabs.find((t) => t.id === editingTabId);
+		const currentTab = tabs.find((t: T) => t.id === editingTabId);
 
 		if (trimmedName && trimmedName !== currentTab?.name) {
 			onTabRename?.(editingTabId, trimmedName);
@@ -107,7 +104,7 @@
 		}
 	}
 
-	function getStatusIndicator(tab: TabItem) {
+	function getStatusIndicator(tab: T) {
 		if (!getTabStatus) return null;
 		const status = getTabStatus(tab);
 

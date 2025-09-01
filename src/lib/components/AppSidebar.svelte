@@ -8,7 +8,6 @@
 		TableProperties,
 		Edit,
 		Trash2,
-		Settings,
 		Unplug
 	} from '@lucide/svelte';
 	import IconCibPostgresql from '~icons/cib/postgresql';

@@ -10,7 +10,8 @@
 		type ConnectionInfo,
 		type Script,
 		type QueryHistoryEntry,
-		type PgRow
+		type Row,
+		type Json
 	} from '$lib/commands.svelte';
 	import { createEditor } from '$lib/codemirror';
 	import { onMount } from 'svelte';
@@ -45,10 +46,10 @@
 SELECT 1 as test;`);
 
 	let queryHistory = $state<QueryHistoryEntry[]>([]);
-	let selectedCellData = $state<any | null>(null);
+	let selectedCellData = $state<Json | null>(null);
 
 	interface QueryResultTab {
-		id: string;
+		id: number;
 		name: string;
 		query: string;
 		timestamp: number;
@@ -57,13 +58,15 @@ SELECT 1 as test;`);
 		queryReturnsResults?: boolean;
 		affectedRows?: number;
 		columns?: string[];
-		rows?: PgRow[];
+		rows?: Row[];
 		error?: string;
 	}
 
 	let resultTabs = $state<QueryResultTab[]>([]);
-	let activeResultTabId = $state<string | null>(null);
+	let activeResultTabId = $state<number | null>(null);
 	let showHistory = $state(true);
+	// Counter for result tab IDs
+	let nextResultTabId = $state(1);
 
 	// Query execution state
 	let currentQuery = $state<string>('');
@@ -151,8 +154,8 @@ SELECT 1 as test;`);
 		statementIndex: number,
 		statement: string,
 		returnsValues: boolean
-	): string {
-		const tabId = crypto.randomUUID();
+	): number {
+		const tabId = nextResultTabId++;
 
 		let tabName = generateTabTitle(statement);
 		if (currentTableBrowse) {
@@ -194,7 +197,7 @@ SELECT 1 as test;`);
 		return tabId;
 	}
 
-	function handleStatementComplete(tabId: string, rowCount: number, duration: number) {
+	function handleStatementComplete(tabId: number, rowCount: number, duration: number) {
 		const tab = resultTabs.find((t) => t.id === tabId);
 		if (tab) {
 			if (tab.queryReturnsResults) {
@@ -216,7 +219,7 @@ SELECT 1 as test;`);
 		}
 	}
 
-	function handleStatementError(tabId: string, error: string) {
+	function handleStatementError(tabId: number, error: string) {
 		const tab = resultTabs.find((t) => t.id === tabId);
 		if (tab) {
 			tab.status = 'error';
@@ -229,7 +232,7 @@ SELECT 1 as test;`);
 		}
 	}
 
-	function handleTabUpdate(tabId: string, updates: Partial<QueryResultTab>) {
+	function handleTabUpdate(tabId: number, updates: Partial<QueryResultTab>) {
 		const tabIndex = resultTabs.findIndex((t) => t.id === tabId);
 		if (tabIndex !== -1) {
 			const tab = resultTabs[tabIndex];
@@ -269,8 +272,8 @@ SELECT 1 as test;`);
 		return cleaned.substring(0, 27) + '...';
 	}
 
-	function handleResultTabClose(tabId: string | number) {
-		if (tabId === 'history') return;
+	function handleResultTabClose(tabId: number) {
+		if (tabId === HISTORY_TAB_ID) return;
 
 		resultTabs = resultTabs.filter((tab) => tab.id !== tabId);
 
@@ -279,18 +282,18 @@ SELECT 1 as test;`);
 		}
 	}
 
-	function handleResultTabSelect(tabId: string | number) {
-		if (tabId === 'history') {
+	function handleResultTabSelect(tabId: number) {
+		if (tabId === HISTORY_TAB_ID) {
 			showHistory = true;
 			activeResultTabId = null;
 		} else {
 			showHistory = false;
-			activeResultTabId = tabId as string;
+			activeResultTabId = tabId;
 		}
 	}
 
-	function getTabStatus(tab: any): 'normal' | 'modified' | 'error' {
-		if (tab.id === 'history') return 'normal';
+	function getTabStatus(tab: QueryResultTab): 'normal' | 'modified' | 'error' {
+		if (tab.id === HISTORY_TAB_ID) return 'normal';
 
 		switch (tab.status) {
 			case 'error':
@@ -302,10 +305,13 @@ SELECT 1 as test;`);
 		}
 	}
 
+	// TODO(vini): this is a workaround, think of a better way of rendering the history tab
+	const HISTORY_TAB_ID = 0;
+
 	const allTabs = $derived(() => {
 		const tabs = [...resultTabs];
 		tabs.push({
-			id: 'history',
+			id: HISTORY_TAB_ID,
 			name: `History (${queryHistory.length})`,
 			query: '',
 			timestamp: 0,
@@ -387,9 +393,11 @@ SELECT 1 as test;`);
 				<div class="relative z-10">
 					<TabBar
 						tabs={allTabs()}
-						activeTabId={showHistory ? 'history' : activeResultTabId}
+						activeTabId={showHistory ? HISTORY_TAB_ID : activeResultTabId}
 						onTabSelect={handleResultTabSelect}
 						onTabClose={handleResultTabClose}
+						onNewTab={undefined}
+						onTabRename={undefined}
 						showCloseButton={true}
 						showNewTabButton={false}
 						allowRename={false}
@@ -408,7 +416,7 @@ SELECT 1 as test;`);
 							{#if queryHistory.length > 0}
 								<div class="flex-1 overflow-auto">
 									<div class="space-y-2 p-2">
-										{#each queryHistory as historyItem}
+										{#each queryHistory as historyItem (historyItem.id)}
 											<button
 												type="button"
 												class="group hover:bg-muted/30 w-full cursor-pointer rounded-lg border p-3 text-left transition-colors"

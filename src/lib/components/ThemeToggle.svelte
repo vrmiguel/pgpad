@@ -10,13 +10,13 @@
 		class?: string;
 	}
 
-	let { size = 'sm', variant = 'ghost', class: _className = '' }: Props = $props();
+	let { size = 'sm', variant = 'ghost', class: className = '' }: Props = $props();
 </script>
 
 <Button
 	{variant}
 	{size}
-	class={`{className} transition-all duration-200`}
+	class={`${className} transition-all duration-200`}
 	onclick={toggleTheme}
 	title={$theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
 >

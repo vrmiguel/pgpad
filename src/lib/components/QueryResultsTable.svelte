@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { PgRow } from '$lib/commands.svelte';
+	import type { Json, Row } from '$lib/commands.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { CellFormatter } from '$lib/utils/cell-formatter';
 
@@ -13,10 +13,10 @@
 	} from '@lucide/svelte';
 
 	interface Props {
-		data: PgRow[];
+		data: Row[];
 		columns: string[];
 		globalFilter?: string;
-		selectedCellData?: any | null;
+		selectedCellData?: Json | null;
 	}
 
 	let {
@@ -28,8 +28,8 @@
 
 	let tableContainer: HTMLDivElement;
 	let hasFocus = $state(false);
-	let processedData = $state<PgRow[]>([]);
-	let sortCache = $state(new Map<string, any[]>());
+	let processedData = $state<Row[]>([]);
+	let sortCache = $state(new Map<string, Row[]>());
 	let lastDataLength = $state(0);
 
 	let selectedCell = $state<{ rowId: number; columnId: number } | null>(null);
@@ -165,7 +165,7 @@
 	});
 
 	$effect(() => {
-		data;
+		void data;
 		selectedCell = null;
 		selectedCellData = null;
 		tableState.columnSizing = {};
@@ -199,7 +199,7 @@
 		document.removeEventListener('mouseup', stopColumnResize);
 	}
 
-	function handleSimpleCellClick(cellValue: any, rowId: number, columnId: number, _: MouseEvent) {
+	function handleSimpleCellClick(cellValue: Json, rowId: number, columnId: number) {
 		// Deselect when clicking the selected cell
 		if (selectedCell && selectedCell.rowId === rowId && selectedCell.columnId === columnId) {
 			selectedCell = null;
@@ -384,7 +384,7 @@
 			<table class="w-full table-fixed border-collapse text-xs">
 				<thead class="bg-accent border-border sticky top-0 z-10 border-b shadow-sm">
 					<tr>
-						{#each columns as columnName, columnIndex}
+						{#each columns as columnName, columnIndex (columnName)}
 							{@const columnWidth = getColumnWidth(columnIndex)}
 							<th
 								class="text-foreground bg-muted/95 border-border/40 column-header relative border-r px-2 py-1 text-left align-middle text-xs font-medium"
@@ -452,7 +452,7 @@
 									<button
 										class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
 										title={CellFormatter.formatCellTitle(cellValue)}
-										onclick={(event) => handleSimpleCellClick(cellValue, rowId, columnId, event)}
+										onclick={() => handleSimpleCellClick(cellValue, rowId, columnId)}
 									>
 										{#if cellType === 'null'}
 											<span class="cell-content text-muted-foreground text-xs italic"
@@ -515,7 +515,7 @@
 					bind:value={tableState.pagination.pageSize}
 					class="border-border bg-background focus:ring-ring h-6 w-12 rounded border text-xs focus:ring-1"
 				>
-					{#each [25, 50, 100, 200] as pageSize}
+					{#each [25, 50, 100, 200] as pageSize (pageSize)}
 						<option value={pageSize}>{pageSize}</option>
 					{/each}
 				</select>

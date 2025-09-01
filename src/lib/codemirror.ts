@@ -15,6 +15,7 @@ import {
 	closeCompletion,
 	type CompletionContext,
 	type CompletionResult,
+	type Completion,
 	closeBrackets,
 	closeBracketsKeymap
 } from '@codemirror/autocomplete';
@@ -22,8 +23,12 @@ import { keymap } from '@codemirror/view';
 import { indentWithTab, history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 
 import type { DatabaseSchema } from './commands.svelte';
-import { theme as themeStore, registerEditorThemeCallback } from './stores/theme';
-import { get } from 'svelte/store';
+import { registerEditorThemeCallback } from './stores/theme';
+
+interface ExtendedCompletion extends Completion {
+	formattedLabel?: string;
+}
+
 import {
 	bracketMatching,
 	indentOnInput,
@@ -148,12 +153,12 @@ function createTheme(theme: 'light' | 'dark') {
 	);
 }
 
-function generateSchemaCompletions(schema: DatabaseSchema | null): any[] {
+function generateSchemaCompletions(schema: DatabaseSchema | null): ExtendedCompletion[] {
 	if (!schema) {
 		return [];
 	}
 
-	const completions: any[] = [];
+	const completions: ExtendedCompletion[] = [];
 
 	for (const table of schema.tables) {
 		const tableName =
@@ -325,7 +330,7 @@ function formatIdentifierForCompletion(identifier: string): string {
 function createSqlAutocompletion(schema: DatabaseSchema | null) {
 	const cachedCompletions = generateSchemaCompletions(schema);
 
-	const completionsByFirstChar = new Map<string, any[]>();
+	const completionsByFirstChar = new Map<string, ExtendedCompletion[]>();
 
 	for (const completion of cachedCompletions) {
 		completion.formattedLabel = formatIdentifierForCompletion(completion.label);
@@ -401,7 +406,7 @@ function createSqlAutocompletion(schema: DatabaseSchema | null) {
 						matches = true;
 
 						if (completion.type === 'keyword') {
-							boost = completion.boost + (isShortSearch ? 2.0 : 1.0);
+							boost = (completion.boost || 0) + (isShortSearch ? 2.0 : 1.0);
 
 							if (completion.label.startsWith(searchText)) {
 								boost += 0.2;
@@ -413,10 +418,10 @@ function createSqlAutocompletion(schema: DatabaseSchema | null) {
 					} else if (!isShortSearch) {
 						if (completion.label.includes('.') && includes(completion.label, '.' + searchText)) {
 							matches = true;
-							boost = completion.type === 'keyword' ? completion.boost * 0.9 : 0.3;
+							boost = completion.type === 'keyword' ? (completion.boost || 0) * 0.9 : 0.3;
 						} else if (includes(completion.label, searchText)) {
 							matches = true;
-							boost = completion.type === 'keyword' ? completion.boost * 0.8 : 0.2;
+							boost = completion.type === 'keyword' ? (completion.boost || 0) * 0.8 : 0.2;
 						}
 					}
 
@@ -467,8 +472,8 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		schema = null
 	} = options;
 
-	let currentTheme: 'light' | 'dark' = get(themeStore);
-	const unsubscribeTheme = themeStore.subscribe((t) => (currentTheme = t));
+	// TODO(vini): is this right?
+	let currentTheme: 'light' | 'dark' = 'light';
 
 	let currentSchema = schema;
 
@@ -628,7 +633,6 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		getSelectedText,
 		updateSchema,
 		dispose: () => {
-			unsubscribeTheme();
 			unregisterThemeCallback();
 			view.destroy();
 		}

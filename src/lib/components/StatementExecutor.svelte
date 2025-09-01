@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { Commands, type QueryStreamEvent } from '$lib/commands.svelte';
+	import { Commands, type QueryStreamEvent, type Row } from '$lib/commands.svelte';
 	import { untrack } from 'svelte';
 
 	interface StatementTab {
-		id: string;
+		id: number;
 		status: 'running' | 'completed' | 'error';
 		columns?: string[];
-		rows?: any[][];
+		rows?: Row[];
 		affectedRows?: number;
 		error?: string;
 		queryReturnsResults?: boolean;
@@ -20,10 +20,10 @@
 			statementIndex: number,
 			statement: string,
 			returnsValues: boolean
-		) => string; // Returns tab ID
-		onStatementComplete?: (tabId: string, rowCount: number, duration: number) => void;
-		onStatementError?: (tabId: string, error: string) => void;
-		onTabUpdate?: (tabId: string, updates: Partial<StatementTab>) => void;
+		) => number;
+		onStatementComplete?: (tabId: number, rowCount: number, duration: number) => void;
+		onStatementError?: (tabId: number, error: string) => void;
+		onTabUpdate?: (tabId: number, updates: Partial<StatementTab>) => void;
 		onAllComplete?: () => void;
 	}
 
@@ -41,7 +41,9 @@
 	let isExecuting = $state(false);
 	let lastExecutionTrigger = $state<number>(-1);
 	let startTime = $state<number>(0);
-	let statementTabMap = $state<Map<number, string>>(new Map()); // Maps statement index to tab ID
+	// Maps statement index to tab ID
+	// TODO(vini): needed?
+	let statementTabMap = $state<Map<number, number>>(new Map());
 
 	function cleanup() {
 		statementTabMap.clear();

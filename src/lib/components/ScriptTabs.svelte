@@ -23,38 +23,24 @@
 		onScriptRename
 	}: Props = $props();
 
-	// Safe check for unsaved changes
 	function hasUnsavedChanges(scriptId: number): boolean {
 		return (
 			unsavedChanges && typeof unsavedChanges.has === 'function' && unsavedChanges.has(scriptId)
 		);
 	}
 
-	function getScriptStatus(script: any): 'normal' | 'modified' | 'error' {
-		return hasUnsavedChanges(script.id) ? 'modified' : 'normal';
-	}
-
-	// Type-safe wrapper functions
-	function handleTabSelect(tabId: string | number) {
-		onTabSelect(tabId as number);
-	}
-
-	function handleTabClose(tabId: string | number) {
-		onTabClose(tabId as number);
-	}
-
-	function handleTabRename(tabId: string | number, newName: string) {
-		onScriptRename(tabId as number, newName);
+	function getScriptStatus(tab: Script): 'normal' | 'modified' | 'error' {
+		return hasUnsavedChanges(tab.id) ? 'modified' : 'normal';
 	}
 </script>
 
 <TabBar
 	tabs={openScripts}
 	activeTabId={activeScriptId}
-	onTabSelect={handleTabSelect}
-	onTabClose={handleTabClose}
+	{onTabSelect}
+	{onTabClose}
 	onNewTab={onNewScript}
-	onTabRename={handleTabRename}
+	onTabRename={onScriptRename}
 	showCloseButton={true}
 	showNewTabButton={true}
 	allowRename={true}

@@ -79,7 +79,7 @@
 				</summary>
 				<div class="bg-muted/10 border-t">
 					<div class="space-y-1 p-2">
-						{#each table.columns as column}
+						{#each table.columns as column (column.name)}
 							<div class="flex w-full items-center gap-3 p-2 text-xs">
 								<Columns class="text-muted-foreground/60 h-2.5 w-2.5 flex-shrink-0" />
 								<div class="min-w-0 flex-1">

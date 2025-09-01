@@ -20,7 +20,7 @@ const initialTheme =
 
 export const theme = writable<Theme>(initialTheme as Theme);
 
-const editorThemeCallbacks = new Set<(theme: Theme) => void>();
+const editorThemeCallbacks = new Set<(theme: 'light' | 'dark') => void>();
 
 theme.subscribe((value) => {
 	if (typeof localStorage !== 'undefined') {
@@ -78,7 +78,7 @@ getCurrentWindow().onThemeChanged(({ payload: currentTheme }) => {
 	theme.set(currentTheme);
 });
 
-export function registerEditorThemeCallback(callback: (theme: Theme) => void) {
+export function registerEditorThemeCallback(callback: (theme: 'light' | 'dark') => void) {
 	editorThemeCallbacks.add(callback);
 
 	return () => {

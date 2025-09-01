@@ -1,4 +1,6 @@
-export function formatJsonTruncated(value: any, maxLength: number = 60): string {
+import type { Json } from '$lib/commands.svelte';
+
+export function formatJsonTruncated(value: Json, maxLength: number = 60): string {
 	let result = '';
 	let length = 0;
 
@@ -22,7 +24,7 @@ export function formatJsonTruncated(value: any, maxLength: number = 60): string 
 		return false;
 	}
 
-	function formatValue(val: any): boolean {
+	function formatValue(val: Json): boolean {
 		if (val === null) return addString('null');
 		if (val === undefined) return addString('undefined');
 		if (typeof val === 'boolean') return addString(val ? 'true' : 'false');
@@ -73,7 +75,7 @@ export function formatJsonTruncated(value: any, maxLength: number = 60): string 
 export class CellFormatter {
 	private static numberFormatter = new Intl.NumberFormat();
 
-	static formatCellDisplay(value: unknown): string {
+	static formatCellDisplay(value: Json): string {
 		if (value === null || value === undefined) return 'NULL';
 		if (typeof value === 'number') return this.numberFormatter.format(value);
 		if (typeof value === 'boolean') return value ? 'true' : 'false';

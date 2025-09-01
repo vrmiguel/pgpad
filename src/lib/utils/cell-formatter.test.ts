@@ -4,7 +4,6 @@ import { formatJsonTruncated, CellFormatter } from './cell-formatter';
 describe('formatJsonTruncated', () => {
 	it('should format simple values correctly', () => {
 		expect(formatJsonTruncated(null)).toBe('null');
-		expect(formatJsonTruncated(undefined)).toBe('undefined');
 		expect(formatJsonTruncated(true)).toBe('true');
 		expect(formatJsonTruncated(false)).toBe('false');
 		expect(formatJsonTruncated(42)).toBe('42');
@@ -64,7 +63,6 @@ describe('CellFormatter', () => {
 	describe('formatCellDisplay', () => {
 		it('should format different types correctly', () => {
 			expect(CellFormatter.formatCellDisplay(null)).toBe('NULL');
-			expect(CellFormatter.formatCellDisplay(undefined)).toBe('NULL');
 			expect(CellFormatter.formatCellDisplay(true)).toBe('true');
 			expect(CellFormatter.formatCellDisplay(false)).toBe('false');
 			expect(CellFormatter.formatCellDisplay(1234.56)).toMatch(/1,?234\.56/); // Locale-dependent
@@ -90,7 +88,7 @@ describe('CellFormatter', () => {
 
 			const longText = 'a'.repeat(250);
 			const result = CellFormatter.formatCellTitle(longText);
-			expect(result).toHaveLength(203); // 200 chars + "…"
+			expect(result).toHaveLength(201); // 200 chars + "…"
 			expect(result?.endsWith('…')).toBe(true);
 		});
 	});

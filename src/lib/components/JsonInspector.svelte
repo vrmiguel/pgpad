@@ -1,9 +1,10 @@
 <script lang="ts">
 	import JsonViewer from './JsonViewer.svelte';
 	import { X, Copy, Check } from '@lucide/svelte';
+	import type { Json } from '$lib/commands.svelte';
 
 	interface Props {
-		selectedCellData: any | null;
+		selectedCellData: unknown | null;
 		onClose?: () => void;
 	}
 
@@ -31,14 +32,14 @@
 		}
 	}
 
-	const jsonValueToDisplay = $derived(() => {
+	const jsonValueToDisplay = $derived((): Json | null => {
 		if (!selectedCellData) return null;
 
 		if (typeof selectedCellData !== 'object' || selectedCellData === null) {
 			return null;
 		}
 
-		return selectedCellData;
+		return selectedCellData as Json;
 	});
 
 	const isJsonValue = $derived(() => {

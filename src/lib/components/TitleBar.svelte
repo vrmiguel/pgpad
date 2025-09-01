@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { Cable, Minus, Square, X, Play, Save } from '@lucide/svelte';
+	import { Minus, Square, X, Play, Save } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ThemeToggle from './ThemeToggle.svelte';
-	import Logo from './Logo.svelte';
 	import { Commands } from '$lib/commands.svelte';
 
 	interface Props {
