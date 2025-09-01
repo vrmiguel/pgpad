@@ -336,9 +336,9 @@ mod tests {
         let results = parse_statements(more_pragmas).unwrap();
         assert_eq!(results.len(), 7);
 
-        for i in 0..6 {
+        for result in results.iter().take(6) {
             assert!(
-                results[i].returns_values,
+                result.returns_values,
                 "Known value-returning PRAGMA should return values"
             );
         }

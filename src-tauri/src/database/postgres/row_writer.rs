@@ -316,6 +316,7 @@ mod tests {
 
     use crate::database::postgres::row_writer::RowWriter;
 
+    #[allow(clippy::approx_constant)]
     #[tokio::test]
     async fn test_row_writer() {
         let now = Instant::now();

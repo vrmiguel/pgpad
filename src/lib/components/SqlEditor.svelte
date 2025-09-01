@@ -16,6 +16,7 @@
 	import { createEditor } from '$lib/codemirror';
 	import { onMount } from 'svelte';
 	import { TableProperties, History } from '@lucide/svelte';
+	import { EditorState } from '@codemirror/state';
 
 	interface Props {
 		selectedConnection: string | null;
@@ -86,6 +87,18 @@ SELECT 1 as test;`);
 		onContentChange?.(content);
 		if (sqlEditor) {
 			sqlEditor.updateValue(content);
+		}
+	}
+
+	export function saveState(): EditorState | undefined {
+		return sqlEditor?.saveState();
+	}
+
+	export function restoreState(state: EditorState) {
+		if (sqlEditor && state) {
+			sqlEditor.restoreState(state);
+			sqlQuery = sqlEditor.view.state.doc.toString();
+			onContentChange?.(sqlQuery);
 		}
 	}
 

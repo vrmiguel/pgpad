@@ -6,7 +6,7 @@ import {
 	lineNumbers,
 	rectangularSelection
 } from '@codemirror/view';
-import { EditorState, type Extension, Compartment } from '@codemirror/state';
+import { EditorState, type Extension, Compartment, Transaction } from '@codemirror/state';
 import { PostgreSQL, sql } from '@codemirror/lang-sql';
 import {
 	autocompletion,
@@ -576,9 +576,18 @@ export function createEditorInstance(options: CreateEditorOptions) {
 	const updateValue = (newValue: string) => {
 		if (view.state.doc.toString() !== newValue) {
 			view.dispatch({
-				changes: { from: 0, to: view.state.doc.length, insert: newValue }
+				changes: { from: 0, to: view.state.doc.length, insert: newValue },
+				annotations: [Transaction.addToHistory.of(false)]
 			});
 		}
+	};
+
+	const saveState = () => {
+		return view.state;
+	};
+
+	const restoreState = (savedState: EditorState) => {
+		view.setState(savedState);
 	};
 
 	const updateDisabled = (isDisabled: boolean) => {
@@ -632,6 +641,8 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		getExecutableText,
 		getSelectedText,
 		updateSchema,
+		saveState,
+		restoreState,
 		dispose: () => {
 			unregisterThemeCallback();
 			view.destroy();

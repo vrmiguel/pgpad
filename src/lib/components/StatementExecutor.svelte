@@ -41,8 +41,8 @@
 	let isExecuting = $state(false);
 	let lastExecutionTrigger = $state<number>(-1);
 	let startTime = $state<number>(0);
+
 	// Maps statement index to tab ID
-	// TODO(vini): needed?
 	let statementTabMap = $state<Map<number, number>>(new Map());
 
 	function cleanup() {

@@ -14,6 +14,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { listen } from '@tauri-apps/api/event';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { EditorState } from '@codemirror/state';
 
 	interface Props {
 		currentConnection?: {
@@ -47,6 +48,7 @@
 	let activeScriptId = $state<number | null>(null);
 	let unsavedChanges = new SvelteSet<number>();
 	let scriptContents = $state<Map<number, string>>(new Map());
+	let scriptEditorStates = $state<Map<number, EditorState>>(new Map());
 	let currentEditorContent = $state<string>('');
 	// Scripts not yet persisted in SQLite
 	let newScripts = new SvelteSet<number>();
@@ -321,16 +323,24 @@
 	}
 
 	function switchToTab(scriptId: number) {
-		// Save current script content before switching
-		if (activeScriptId !== null) {
+		// Save current script content and editor state before switching
+		if (activeScriptId !== null && sqlEditorRef) {
 			scriptContents.set(activeScriptId, currentEditorContent);
+			const state = sqlEditorRef.saveState();
+			if (state) {
+				scriptEditorStates.set(activeScriptId, state);
+			}
 		}
 
 		activeScriptId = scriptId;
 		const script = scripts.find((s) => s.id === scriptId);
-		if (script) {
-			const content = scriptContents.get(scriptId) || script.query_text;
-			if (sqlEditorRef) {
+		if (script && sqlEditorRef) {
+			const savedState = scriptEditorStates.get(scriptId);
+			if (savedState) {
+				sqlEditorRef.restoreState(savedState);
+			} else {
+				// First time opening this tab, set content normally
+				const content = scriptContents.get(scriptId) || script.query_text;
 				sqlEditorRef.setContent(content);
 			}
 		}
@@ -341,6 +351,7 @@
 		openScripts = openScripts.filter((s) => s.id !== scriptId);
 
 		scriptContents.delete(scriptId);
+		scriptEditorStates.delete(scriptId);
 		unsavedChanges.delete(scriptId);
 		newScripts.delete(scriptId);
 
