@@ -48,7 +48,7 @@ function createTheme(theme: 'light' | 'dark') {
 				height: '100%',
 				overflow: 'hidden',
 				borderRadius: '0.75rem',
-				fontSize: '15px',
+				fontSize: '13px',
 				lineHeight: '1.5',
 				margin: '0',
 				padding: '0',
@@ -110,7 +110,7 @@ function createTheme(theme: 'light' | 'dark') {
 				borderBottom: 'none',
 				borderLeft: 'none',
 				minHeight: '100%',
-				fontSize: '15px',
+				fontSize: '13px',
 				margin: '0',
 				padding: '0',
 				borderTopLeftRadius: '0.75rem',
@@ -123,9 +123,9 @@ function createTheme(theme: 'light' | 'dark') {
 			},
 			'.cm-lineNumbers': {
 				minHeight: '100%',
-				fontSize: '15px',
+				fontSize: '12px',
 				margin: '0',
-				padding: '0 0px 0 10px'
+				padding: '0 0px 0 6px'
 			},
 			'.cm-editor': {
 				outline: 'none !important',

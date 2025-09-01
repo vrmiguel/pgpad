@@ -217,7 +217,7 @@
 			</div>
 		</div>
 
-		<div class="scrollable-container flex-1 overflow-y-auto p-4">
+		<div class="scrollable-container scrollbar-none flex-1 overflow-y-auto p-2">
 			<Accordion>
 				<!-- Connections accordion -->
 				<AccordionItem title="Connections" icon={Cable} bind:open={isConnectionsAccordionOpen}>
@@ -225,14 +225,14 @@
 						<div class="space-y-3">
 							<Button
 								variant="ghost"
-								class="mb-3 w-full gap-2 rounded-lg border border-dashed border-gray-300 bg-black/5 transition-all duration-200 hover:border-gray-400 hover:bg-black/10 dark:border-gray-600 dark:bg-white/5 dark:hover:border-gray-500 dark:hover:bg-white/10"
+								class="mb-4 w-full gap-2 rounded-md border border-dashed border-gray-300/60 bg-transparent p-2.5 text-sm transition-all duration-200 hover:border-gray-400/80 hover:bg-black/3 dark:border-gray-600/60 dark:hover:border-gray-500/80 dark:hover:bg-white/3"
 								onclick={showConnectionForm}
 							>
 								<Plus class="h-4 w-4" />
 								Add Connection
 							</Button>
 
-							<div class="space-y-2">
+							<div class="space-y-1">
 								{#if connections.length === 0}
 									<div class="px-4 py-8 text-center">
 										<div
@@ -251,10 +251,10 @@
 											<ContextMenu.Trigger class="w-full">
 												<Button
 													variant="ghost"
-													class="h-auto w-full justify-start rounded-lg p-2.5 transition-all duration-200 hover:bg-black/5 dark:hover:bg-white/5 {selectedConnection ===
+													class="h-auto w-full justify-start rounded-none p-3 transition-all duration-200 hover:bg-black/3 dark:hover:bg-white/3 {selectedConnection ===
 													connection.id
-														? 'border border-blue-200/50 bg-blue-50 dark:border-blue-800/50 dark:bg-blue-950/30'
-														: 'border border-transparent'}"
+														? 'border-l-2 border-l-blue-500 bg-blue-50/50 dark:border-l-blue-400 dark:bg-blue-950/20'
+														: 'border-l-2 border-l-transparent'}"
 													onclick={() => selectConnection(connection.id)}
 													ondblclick={() => connectToDatabase(connection.id)}
 												>
@@ -352,15 +352,15 @@
 					<AccordionContent>
 						<div class="space-y-3">
 							<Button
-								class="w-full justify-start gap-2 shadow-sm hover:shadow-md"
-								variant="outline"
+								class="w-full justify-start gap-2 rounded-md border border-dashed border-gray-300/60 bg-transparent p-2.5 text-sm transition-all duration-200 hover:border-gray-400/80 hover:bg-black/3 dark:border-gray-600/60 dark:hover:border-gray-500/80 dark:hover:bg-white/3"
+								variant="ghost"
 								onclick={createNewScript}
 							>
 								<Plus class="h-4 w-4" />
 								New Script
 							</Button>
 
-							<div class="space-y-2">
+							<div class="space-y-1">
 								{#if scripts.length === 0}
 									<div class="px-4 py-8 text-center">
 										<div
@@ -379,11 +379,11 @@
 									{#each scripts as script (script.id)}
 										<div class="group relative">
 											<Button
-												variant={activeScriptId === script.id ? 'secondary' : 'ghost'}
-												class="h-auto w-full justify-start p-3 shadow-sm transition-all duration-200 hover:shadow-md {activeScriptId ===
+												variant="ghost"
+												class="h-auto w-full justify-start rounded-none p-3 transition-all duration-200 hover:bg-black/3 dark:hover:bg-white/3 {activeScriptId ===
 												script.id
-													? 'bg-primary/10 border-primary/20 border shadow-md'
-													: ''}"
+													? 'border-l-2 border-l-blue-500 bg-blue-50/50 dark:border-l-blue-400 dark:bg-blue-950/20'
+													: 'border-l-2 border-l-transparent'}"
 												onclick={() => selectScript(script)}
 											>
 												<div class="flex w-full items-start gap-3">

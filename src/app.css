@@ -228,7 +228,6 @@
 			'calt' 1;
 	}
 
-	/* Allows rounded corners */
 	html,
 	body {
 		overflow: hidden;
@@ -282,8 +281,9 @@
 	}
 
 	.scrollable-container {
-		scrollbar-width: thin;
+		scrollbar-width: none;
 		scrollbar-color: transparent transparent;
+		scrollbar-gutter: stable;
 		transition: scrollbar-color 0.2s ease;
 	}
 
@@ -293,7 +293,6 @@
 }
 
 @layer utilities {
-	/* Modern Glass Effects */
 	.glass-card {
 		background: var(--glass-bg);
 		border: 1px solid var(--glass-border);
@@ -307,9 +306,6 @@
 		-webkit-backdrop-filter: blur(8px);
 	}
 
-	/* Enhanced Shadow System - using Tailwind's built-in classes */
-
-	/* Modern Animation Classes */
 	.animate-press {
 		@apply transition-transform duration-100 ease-out;
 	}
@@ -326,7 +322,6 @@
 		animation: slideUp 0.3s ease-out;
 	}
 
-	/* Hover Effects */
 	.hover-lift {
 		@apply transition-all duration-200 ease-out;
 	}
@@ -335,7 +330,6 @@
 		@apply -translate-y-0.5 shadow-lg;
 	}
 
-	/* Focus States */
 	.focus-ring {
 		@apply focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none;
 	}

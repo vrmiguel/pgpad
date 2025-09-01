@@ -199,8 +199,8 @@
 		}
 	}
 
-	// Auto-collapse if resized below 12%
-	const COLLAPSE_THRESHOLD = 12;
+	// Auto-collapse if resized below 20%
+	const COLLAPSE_THRESHOLD = 20;
 	// Auto-expand if resized above 10%
 	const EXPAND_THRESHOLD = 10;
 

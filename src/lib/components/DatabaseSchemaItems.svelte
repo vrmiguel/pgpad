@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { TableProperties, Columns } from '@lucide/svelte';
+	import { TableProperties, Search } from '@lucide/svelte';
 	import type { DatabaseSchema } from '$lib/commands.svelte';
 
 	interface Props {
@@ -10,6 +10,10 @@
 	}
 
 	let { databaseSchema, loadingSchema, selectedConnection, onTableClick }: Props = $props();
+
+	const sortedTables = $derived(
+		databaseSchema?.tables.toSorted((a, b) => a.name.localeCompare(b.name)) || []
+	);
 </script>
 
 <div class="space-y-3">
@@ -45,56 +49,55 @@
 			<p class="text-muted-foreground/70 text-xs">This database has no tables</p>
 		</div>
 	{:else}
-		{#each databaseSchema.tables as table (table.name)}
-			<details class="group overflow-hidden rounded-lg border">
-				<summary
-					class="hover:bg-muted/30 flex cursor-pointer items-center gap-3 p-3 transition-colors"
-				>
-					<div class="flex-shrink-0">
-						<TableProperties class="text-muted-foreground h-3 w-3" />
-					</div>
-					<div class="min-w-0 flex-1 text-left">
-						<div class="text-foreground truncate text-xs font-medium">
-							{table.name}
+		<div class="space-y-0">
+			{#each sortedTables as table (table.name)}
+				<details class="group">
+					<summary
+						class="relative flex cursor-pointer list-none items-center gap-3 rounded-none px-3 py-2 transition-all duration-200 hover:bg-black/3 dark:hover:bg-white/3"
+					>
+						<div class="min-w-0 flex-1 text-left">
+							<div class="text-foreground truncate text-sm font-medium">
+								{table.name}
+							</div>
+							<div class="text-muted-foreground/60 truncate text-xs">
+								{table.schema && table.schema !== 'public' ? `${table.schema} • ` : ''}{table
+									.columns.length} columns
+							</div>
 						</div>
-						<div class="text-muted-foreground/80 truncate text-xs">
-							{table.schema && table.schema !== 'public'
-								? `${table.schema}.${table.name}`
-								: table.name} • {table.columns.length} columns
-						</div>
-					</div>
-					{#if onTableClick}
-						<button
-							class="hover:bg-primary/10 text-primary/70 hover:text-primary flex-shrink-0 rounded p-1 transition-colors"
-							onclick={(e) => {
-								e.preventDefault();
-								e.stopPropagation();
-								onTableClick(table.name, table.schema);
-							}}
-							title="Browse table data"
-						>
-							<TableProperties class="h-3 w-3" />
-						</button>
-					{/if}
-				</summary>
-				<div class="bg-muted/10 border-t">
-					<div class="space-y-1 p-2">
-						{#each table.columns as column (column.name)}
-							<div class="flex w-full items-center gap-3 p-2 text-xs">
-								<Columns class="text-muted-foreground/60 h-2.5 w-2.5 flex-shrink-0" />
+						{#if onTableClick}
+							<button
+								class="text-muted-foreground/70 flex-shrink-0 rounded-md p-1.5 opacity-0 transition-all duration-200 group-hover:opacity-100 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+								onclick={(e) => {
+									e.preventDefault();
+									e.stopPropagation();
+									onTableClick(table.name, table.schema);
+								}}
+								title="Browse table data"
+							>
+								<Search class="h-3.5 w-3.5" />
+							</button>
+						{/if}
+						<div class="bg-border/40 absolute right-0 bottom-0 left-0 h-px"></div>
+					</summary>
+					<div class="relative ml-5 space-y-0.5">
+						{#each table.columns as column, index (column.name)}
+							<div
+								class="flex items-center gap-2 rounded-none px-2 py-1.5 text-xs transition-colors duration-200 hover:bg-black/2 dark:hover:bg-white/2"
+							>
+								<div class="flex-shrink-0">
+									<div class="bg-muted-foreground/30 h-1 w-1 rounded-full"></div>
+								</div>
 								<div class="min-w-0 flex-1">
-									<div class="text-foreground truncate font-medium">
-										{column.name}
-									</div>
-									<div class="text-muted-foreground/70 truncate">
-										{column.data_type}{column.is_nullable ? ' (nullable)' : ' (not null)'}
-									</div>
+									<span class="text-foreground font-medium">{column.name}</span>
+									<span class="text-muted-foreground/60 ml-2 text-xs">
+										{column.data_type}{column.is_nullable ? '' : ' • not null'}
+									</span>
 								</div>
 							</div>
 						{/each}
 					</div>
-				</div>
-			</details>
-		{/each}
+				</details>
+			{/each}
+		</div>
 	{/if}
 </div>

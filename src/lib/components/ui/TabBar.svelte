@@ -136,7 +136,7 @@
 				<!-- Tab content area (clickable) -->
 				<button
 					type="button"
-					class="relative flex min-w-0 flex-1 items-center gap-2 px-4 py-3 text-sm transition-all duration-200 {activeTabId ===
+					class="relative flex min-w-0 flex-1 items-center gap-2 px-4 py-1.5 text-sm transition-all duration-200 {activeTabId ===
 					tab.id
 						? 'text-foreground font-medium'
 						: 'text-muted-foreground hover:text-foreground'}"
@@ -151,7 +151,7 @@
 							onkeydown={handleNameKeydown}
 							onblur={finishEditingName}
 							onclick={(e) => e.stopPropagation()}
-							class="focus:ring-primary h-6 border-none bg-transparent p-0 text-sm font-medium shadow-none focus:ring-1 focus:outline-none"
+							class="h-6 border-none bg-transparent p-0 text-sm font-medium shadow-none focus:border-transparent focus:ring-0 focus:outline-none"
 						/>
 					{:else}
 						<span class="truncate font-medium">
@@ -183,7 +183,7 @@
 				<!-- Active tab indicator - spans entire tab width -->
 				{#if activeTabId === tab.id}
 					<div
-						class="absolute right-0 bottom-0 left-0 h-1 bg-blue-500 transition-all duration-200"
+						class="absolute right-0 bottom-0 left-0 h-0.5 bg-blue-500 transition-all duration-200"
 					></div>
 				{/if}
 			</div>

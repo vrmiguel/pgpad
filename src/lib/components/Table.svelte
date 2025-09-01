@@ -387,14 +387,14 @@
 						{#each columns as columnName, columnIndex (columnName)}
 							{@const columnWidth = getColumnWidth(columnIndex)}
 							<th
-								class="text-foreground bg-muted/95 border-border/40 column-header relative border-r px-2 py-1 text-left align-middle text-xs font-medium"
+								class="text-foreground bg-muted/95 border-border/40 column-header relative border-r px-2 py-0.5 text-left align-middle text-xs font-medium"
 								style="--column-width: {columnWidth}px"
 							>
 								<div class="flex items-center justify-between">
 									<Button
 										variant="ghost"
 										size="sm"
-										class="hover:bg-accent/30 -ml-1 h-6 flex-1 justify-start p-1 text-xs font-medium"
+										class="hover:bg-accent/30 -ml-1 h-5 flex-1 justify-start p-1 text-xs font-medium"
 										onclick={() => customSorting.toggleSort(columnIndex)}
 									>
 										{columnName}

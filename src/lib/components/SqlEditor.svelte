@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import QueryResultsTable from './QueryResultsTable.svelte';
+	import Table from './Table.svelte';
 	import JsonInspector from './JsonInspector.svelte';
 	import StatementExecutor from './StatementExecutor.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
@@ -500,7 +500,7 @@ SELECT 1 as test;`);
 							{#if activeTab.columns && activeTab.rows && activeTab.rows.length > 0}
 								<div class="relative flex min-h-0 flex-1">
 									<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
-										<QueryResultsTable
+										<Table
 											data={activeTab.rows}
 											columns={activeTab.columns}
 											bind:selectedCellData
