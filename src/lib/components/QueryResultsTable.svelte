@@ -379,7 +379,7 @@
 	onblur={() => (hasFocus = false)}
 >
 	<!-- Table content -->
-	<div class="flex-1 overflow-hidden" bind:this={tableContainer}>
+	<div class="table-container flex-1 overflow-hidden" bind:this={tableContainer}>
 		<div class="scrollable-container h-full overflow-auto">
 			<table class="w-full table-fixed border-collapse text-xs">
 				<thead class="bg-accent border-border sticky top-0 z-10 border-b shadow-sm">
@@ -604,8 +604,14 @@
 </div>
 
 <style>
+	.table-container {
+		contain: layout style paint;
+		isolation: isolate;
+	}
+
 	.table-fixed {
 		table-layout: fixed;
+		contain: layout style;
 	}
 
 	.column-header {
@@ -616,6 +622,7 @@
 		width: var(--column-width);
 		overflow: hidden;
 		text-overflow: ellipsis;
+		contain: layout style;
 	}
 
 	.cell-content {

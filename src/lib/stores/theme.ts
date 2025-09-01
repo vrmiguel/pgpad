@@ -22,31 +22,59 @@ export const theme = writable<Theme>(initialTheme as Theme);
 
 const editorThemeCallbacks = new Set<(theme: Theme) => void>();
 
-theme.subscribe(async (value) => {
+theme.subscribe((value) => {
 	if (typeof localStorage !== 'undefined') {
 		localStorage.setItem('theme', value);
 	}
-	if (value == 'auto') value = await getSystemTheme();
+
+	if (value === 'auto') {
+		getSystemTheme()
+			.then((systemTheme) => {
+				const resolvedTheme = systemTheme || 'light';
+				applyResolvedTheme(resolvedTheme);
+			})
+			.catch((error) => {
+				console.error('Error resolving system theme:', error);
+				applyResolvedTheme('light');
+			});
+	} else {
+		applyResolvedTheme(value);
+	}
+});
+
+function applyResolvedTheme(resolvedTheme: 'light' | 'dark') {
 	if (typeof document !== 'undefined') {
-		if (value === 'dark') {
+		if (resolvedTheme === 'dark') {
 			document.documentElement.classList.add('dark');
 		} else {
 			document.documentElement.classList.remove('dark');
 		}
 	}
 
-	editorThemeCallbacks.forEach((callback) => callback(value));
-});
+	editorThemeCallbacks.forEach((callback) => callback(resolvedTheme));
+}
 
-if (typeof document !== 'undefined' && initialTheme === 'dark') {
-	document.documentElement.classList.add('dark');
+if (typeof document !== 'undefined') {
+	if (initialTheme === 'auto') {
+		getSystemTheme()
+			.then((systemTheme) => {
+				const resolvedTheme = systemTheme || 'light';
+				applyResolvedTheme(resolvedTheme);
+			})
+			.catch((error) => {
+				console.error('Error resolving initial system theme:', error);
+				applyResolvedTheme('light');
+			});
+	} else if (initialTheme === 'dark') {
+		document.documentElement.classList.add('dark');
+	}
 }
 
 export function toggleTheme() {
 	theme.update((current) => (current === 'light' ? 'dark' : 'light'));
 }
 
-await getCurrentWindow().onThemeChanged(({ payload: currentTheme }) => {
+getCurrentWindow().onThemeChanged(({ payload: currentTheme }) => {
 	theme.set(currentTheme);
 });
 
