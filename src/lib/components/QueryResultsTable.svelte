@@ -26,21 +26,13 @@
 		selectedCellData = $bindable(null)
 	}: Props = $props();
 
-	let resizePreviewX = $state(0);
 	let tableContainer: HTMLDivElement;
 	let hasFocus = $state(false);
 	let processedData = $state<PgRow[]>([]);
 	let sortCache = $state(new Map<string, any[]>());
 	let lastDataLength = $state(0);
 
-	const COLUMN_RESIZE = {
-		MIN_WIDTH: 150,
-		CHAR_WIDTH: 8,
-		PADDING: 32,
-		MAX_WIDTH: 600
-	} as const;
-
-	let selectedCell = $state<{ rowId: string; columnId: string } | null>(null);
+	let selectedCell = $state<{ rowId: number; columnId: number } | null>(null);
 
 	const tableState = $state({
 		pagination: {
@@ -58,7 +50,8 @@
 		sorting: [] as Array<{ columnIndex: number; desc: boolean }>
 	});
 
-	const defaultColumnWidth = 150;
+	// TODO(vini): default width based on column's DB type
+	const defaultColumnWidth = 280;
 	const getColumnWidth = (columnIndex: number): number => {
 		return tableState.columnSizing[columnIndex] || defaultColumnWidth;
 	};
@@ -196,12 +189,6 @@
 		const newWidth = Math.max(50, tableState.resizing.startWidth + deltaX); // Min width 50px
 
 		tableState.columnSizing[tableState.resizing.columnIndex] = newWidth;
-
-		// update resize handle line
-		if (tableContainer) {
-			const containerRect = tableContainer.getBoundingClientRect();
-			resizePreviewX = event.clientX - containerRect.left + tableContainer.scrollLeft;
-		}
 	}
 
 	function stopColumnResize() {
@@ -212,12 +199,7 @@
 		document.removeEventListener('mouseup', stopColumnResize);
 	}
 
-	function handleWindowMouseMove(event: MouseEvent) {
-		if (!tableContainer || !tableState.resizing.isResizing) return;
-		handleColumnResize(event);
-	}
-
-	function handleSimpleCellClick(cellValue: any, rowId: string, columnId: string, _: MouseEvent) {
+	function handleSimpleCellClick(cellValue: any, rowId: number, columnId: number, _: MouseEvent) {
 		// Deselect when clicking the selected cell
 		if (selectedCell && selectedCell.rowId === rowId && selectedCell.columnId === columnId) {
 			selectedCell = null;
@@ -227,26 +209,14 @@
 
 		selectedCell = { rowId, columnId };
 		selectedCellData = cellValue;
-
-		if (cellValue !== null && cellValue !== undefined) {
-			const contentLength = String(cellValue).length;
-			const minWidth = Math.max(
-				COLUMN_RESIZE.MIN_WIDTH,
-				Math.min(
-					contentLength * COLUMN_RESIZE.CHAR_WIDTH + COLUMN_RESIZE.PADDING,
-					COLUMN_RESIZE.MAX_WIDTH
-				)
-			);
-			tableState.columnSizing[parseInt(columnId)] = minWidth;
-		}
 	}
 
 	function getCellValueForCopy(): string | null {
 		if (!selectedCell) return null;
 
 		try {
-			const rowIndex = parseInt(selectedCell.rowId);
-			const colIndex = parseInt(selectedCell.columnId);
+			const rowIndex = selectedCell.rowId;
+			const colIndex = selectedCell.columnId;
 
 			if (rowIndex >= 0 && rowIndex < data.length && colIndex >= 0 && colIndex < columns.length) {
 				const cellValue = data[rowIndex][colIndex];
@@ -343,8 +313,8 @@
 	function navigateCell(direction: string) {
 		if (!selectedCell) return;
 
-		const rowIndex = parseInt(selectedCell.rowId);
-		const colIndex = parseInt(selectedCell.columnId);
+		const rowIndex = selectedCell.rowId;
+		const colIndex = selectedCell.columnId;
 		const pageSize = tableState.pagination.pageSize;
 		const pageIndex = tableState.pagination.pageIndex;
 		const startRowIndex = pageIndex * pageSize;
@@ -373,7 +343,7 @@
 			tableState.pagination.pageIndex = newPageIndex;
 		}
 
-		selectedCell = { rowId: String(newRowIndex), columnId: String(newColIndex) };
+		selectedCell = { rowId: newRowIndex, columnId: newColIndex };
 		if (newRowIndex < data.length && newColIndex < columns.length) {
 			selectedCellData = data[newRowIndex][newColIndex];
 		}
@@ -398,7 +368,7 @@
 	}
 </script>
 
-<svelte:window on:keydown={handleKeydown} onmousemove={handleWindowMouseMove} />
+<svelte:window on:keydown={handleKeydown} />
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
@@ -408,25 +378,17 @@
 	onfocus={() => (hasFocus = true)}
 	onblur={() => (hasFocus = false)}
 >
-	<!-- Resize preview line -->
-	{#if tableState.resizing.isResizing}
-		<div
-			class="pointer-events-none absolute top-0 bottom-0 z-20 w-0.5 bg-blue-500 opacity-75"
-			style="left: {resizePreviewX}px"
-		></div>
-	{/if}
-
 	<!-- Table content -->
 	<div class="flex-1 overflow-hidden" bind:this={tableContainer}>
 		<div class="scrollable-container h-full overflow-auto">
-			<table class="w-full border-collapse text-xs">
+			<table class="w-full table-fixed border-collapse text-xs">
 				<thead class="bg-accent border-border sticky top-0 z-10 border-b shadow-sm">
 					<tr>
 						{#each columns as columnName, columnIndex}
 							{@const columnWidth = getColumnWidth(columnIndex)}
 							<th
-								class="text-foreground bg-muted/95 border-border/40 relative border-r px-2 py-1 text-left align-middle text-xs font-medium"
-								style="width: {columnWidth}px"
+								class="text-foreground bg-muted/95 border-border/40 column-header relative border-r px-2 py-1 text-left align-middle text-xs font-medium"
+								style="--column-width: {columnWidth}px"
 							>
 								<div class="flex items-center justify-between">
 									<Button
@@ -471,8 +433,8 @@
 							{#each rowData as cellValue, colIndex (colIndex)}
 								{@const globalRowIndex =
 									currentPageIndex() * tableState.pagination.pageSize + index}
-								{@const columnId = String(colIndex)}
-								{@const rowId = String(globalRowIndex)}
+								{@const columnId = colIndex}
+								{@const rowId = globalRowIndex}
 								{@const isSelected = selectedCell
 									? selectedCell.rowId === rowId && selectedCell.columnId === columnId
 									: false}
@@ -480,10 +442,10 @@
 								{@const displayValue = CellFormatter.formatCellDisplay(cellValue)}
 								{@const columnWidth = getColumnWidth(colIndex)}
 								<td
-									class="border-border/30 border-r px-0 py-0 align-top text-xs transition-colors {isSelected
+									class="border-border/30 table-cell border-r px-0 py-0 align-top text-xs transition-colors {isSelected
 										? 'bg-primary/10 ring-primary/40 ring-1'
 										: ''}"
-									style="width: {columnWidth}px"
+									style="--column-width: {columnWidth}px"
 									role="gridcell"
 									aria-selected={isSelected}
 								>
@@ -505,10 +467,7 @@
 												<span class="font-mono text-xs">{displayValue}</span>
 											</div>
 										{:else}
-											<div
-												class="cell-content text-foreground {isSelected ? '' : 'truncate'}"
-												style="max-width: {isSelected ? 'none' : columnWidth - 16 + 'px'}"
-											>
+											<div class="cell-content text-foreground">
 												{displayValue}
 											</div>
 										{/if}
@@ -643,3 +602,25 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	.table-fixed {
+		table-layout: fixed;
+	}
+
+	.column-header {
+		width: var(--column-width);
+	}
+
+	.table-cell {
+		width: var(--column-width);
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.cell-content {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+</style>
