@@ -253,7 +253,7 @@
 													variant="ghost"
 													class="h-auto w-full justify-start rounded-none p-3 transition-all duration-200 hover:bg-black/3 dark:hover:bg-white/3 {selectedConnection ===
 													connection.id
-														? 'border-l-2 border-l-blue-500 bg-blue-50/50 dark:border-l-blue-400 dark:bg-blue-950/20'
+														? 'bg-blue-50/50 border-l-2 border-l-blue-500 dark:bg-blue-950/20 dark:border-l-blue-400'
 														: 'border-l-2 border-l-transparent'}"
 													onclick={() => selectConnection(connection.id)}
 													ondblclick={() => connectToDatabase(connection.id)}
@@ -382,7 +382,7 @@
 												variant="ghost"
 												class="h-auto w-full justify-start rounded-none p-3 transition-all duration-200 hover:bg-black/3 dark:hover:bg-white/3 {activeScriptId ===
 												script.id
-													? 'border-l-2 border-l-blue-500 bg-blue-50/50 dark:border-l-blue-400 dark:bg-blue-950/20'
+													? 'bg-blue-50/50 border-l-2 border-l-blue-500 dark:bg-blue-950/20 dark:border-l-blue-400'
 													: 'border-l-2 border-l-transparent'}"
 												onclick={() => selectScript(script)}
 											>

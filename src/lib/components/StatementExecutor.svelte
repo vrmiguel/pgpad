@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Commands, type QueryStreamEvent, type Row } from '$lib/commands.svelte';
-	import { untrack } from 'svelte';
+	import { untrack, onDestroy } from 'svelte';
 
 	interface StatementTab {
 		id: number;
@@ -41,6 +41,7 @@
 	let isExecuting = $state(false);
 	let lastExecutionTrigger = $state<number>(-1);
 	let startTime = $state<number>(0);
+	let currentSessionId = $state<string | null>(null);
 
 	// Maps statement index to tab ID
 	let statementTabMap = $state<Map<number, number>>(new Map());
@@ -48,6 +49,11 @@
 	function cleanup() {
 		statementTabMap.clear();
 		isExecuting = false;
+		
+		if (currentSessionId) {
+			Commands.unregisterQuerySession(currentSessionId);
+			currentSessionId = null;
+		}
 	}
 
 	function handleQueryStreamEvent(event: QueryStreamEvent) {
@@ -144,7 +150,7 @@
 		startTime = Date.now();
 
 		try {
-			await Commands.executeQueryStream(connectionId, query, handleQueryStreamEvent);
+			currentSessionId = await Commands.executeQueryStream(connectionId, query, handleQueryStreamEvent);
 		} catch (error) {
 			console.error('Query execution failed:', error);
 			cleanup();
@@ -164,6 +170,11 @@
 				}
 			});
 		}
+	});
+
+	// Cleanup on component destroy
+	onDestroy(() => {
+		cleanup();
 	});
 </script>
 

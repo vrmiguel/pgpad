@@ -1,7 +1,6 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
-use tauri::ipc::Channel;
 use uuid::Uuid;
 
 use crate::{
@@ -10,7 +9,6 @@ use crate::{
         sqlite,
         types::{
             ConnectionInfo, Database, DatabaseConnection, DatabaseInfo, DatabaseSchema,
-            QueryStreamEvent,
         },
         Certificates, ConnectionMonitor,
     },
@@ -194,8 +192,9 @@ pub async fn disconnect_from_database(
 pub async fn execute_query_stream(
     connection_id: Uuid,
     query: &str,
+    session_id: Uuid,
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-    channel: Channel<QueryStreamEvent>,
 ) -> Result<(), Error> {
     let connection_entry = state
         .connections
@@ -209,7 +208,7 @@ pub async fn execute_query_stream(
             client: Some(client),
             ..
         } => {
-            postgres::execute::execute_query(client, query, &channel).await?;
+            postgres::execute::execute_query(client, query, session_id, &app_handle).await?;
         }
         Database::Postgres { client: None, .. } => {
             return Err(Error::Any(anyhow::anyhow!(
@@ -220,7 +219,7 @@ pub async fn execute_query_stream(
             connection: Some(sqlite_conn),
             ..
         } => {
-            sqlite::execute::execute_query(Arc::clone(sqlite_conn), query, channel).await?;
+            sqlite::execute::execute_query(Arc::clone(sqlite_conn), query, session_id, &app_handle).await?;
         }
         Database::SQLite {
             connection: None, ..

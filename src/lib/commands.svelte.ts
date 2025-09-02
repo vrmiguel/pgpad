@@ -1,9 +1,58 @@
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 // What Rust sends us after processing query results (basically, JSON)
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
 export type Row = Json[];
+
+// Global query event management
+class QueryEventManager {
+	private static instance: QueryEventManager | null = null;
+	private listeners = new Map<string, (event: QueryStreamEvent) => void>();
+	private globalUnlisten: UnlistenFn | null = null;
+	private initialized = false;
+
+	private constructor() {}
+
+	static getInstance(): QueryEventManager {
+		if (!QueryEventManager.instance) {
+			QueryEventManager.instance = new QueryEventManager();
+		}
+		return QueryEventManager.instance;
+	}
+
+	async initialize(): Promise<void> {
+		if (this.initialized) return;
+
+		this.globalUnlisten = await listen('query-stream-event', (event) => {
+			const payload = event.payload as { session_id: string; event: QueryStreamEvent };
+			const listener = this.listeners.get(payload.session_id);
+			if (listener) {
+				listener(payload.event);
+			}
+		});
+
+		this.initialized = true;
+	}
+
+	registerSession(sessionId: string, onEvent: (event: QueryStreamEvent) => void): void {
+		this.listeners.set(sessionId, onEvent);
+	}
+
+	unregisterSession(sessionId: string): void {
+		this.listeners.delete(sessionId);
+	}
+
+	async cleanup(): Promise<void> {
+		if (this.globalUnlisten) {
+			this.globalUnlisten();
+			this.globalUnlisten = null;
+		}
+		this.listeners.clear();
+		this.initialized = false;
+	}
+}
 
 export const preventDefault = <T extends Event>(fn: (e: T) => void): ((e: T) => void) => {
 	return (e: T) => {
@@ -153,15 +202,35 @@ export class Commands {
 		connectionId: string,
 		query: string,
 		onEvent: (event: QueryStreamEvent) => void
-	): Promise<void> {
-		const channel = new Channel<QueryStreamEvent>();
-		channel.onmessage = onEvent;
+	): Promise<string> {
+		const sessionId = crypto.randomUUID();
+		const eventManager = QueryEventManager.getInstance();
+		
+		// Initialize global listener if not already done
+		await eventManager.initialize();
+		
+		// Register this session's event handler
+		eventManager.registerSession(sessionId, onEvent);
 
-		return await invoke('execute_query_stream', {
+		await invoke('execute_query_stream', {
 			connectionId,
 			query,
-			channel
+			sessionId: sessionId
 		});
+
+		return sessionId;
+	}
+
+	// Helper method to clean up a query session
+	static unregisterQuerySession(sessionId: string): void {
+		const eventManager = QueryEventManager.getInstance();
+		eventManager.unregisterSession(sessionId);
+	}
+
+	// Global cleanup method for app shutdown
+	static async cleanupQueryEventSystem(): Promise<void> {
+		const eventManager = QueryEventManager.getInstance();
+		await eventManager.cleanup();
 	}
 
 	static async getConnections(): Promise<ConnectionInfo[]> {
