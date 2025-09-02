@@ -4,6 +4,9 @@ use bytes::Buf;
 use chrono::Utc;
 use tokio_postgres::types::{FromSql, Type};
 
+/// Deserializes record types into a JSON array
+/// E.g. `ROW('("fuzzy dice",42,1.99)'` -> `["fuzzy dice", 42, 1.99]`
+// TODO(vini): make this write directly into the RowWriter's buffer
 #[derive(Debug)]
 pub struct PgRecord {
     pub fields: Vec<serde_json::Value>,

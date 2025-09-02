@@ -7,32 +7,34 @@ use crate::utils;
 
 /// A somewhat efficient way of converting the raw SQLite query results into JSON values.
 pub struct RowWriter {
-    json: String,
+    buf: String,
     row_count: usize,
     column_decltypes: Vec<Option<String>>,
 }
 
 impl RowWriter {
     pub fn new(column_decltypes: Vec<Option<String>>) -> Self {
-        let mut json = String::with_capacity(2);
-        json.push('[');
-
         Self {
-            json,
+            buf: String::new(),
             row_count: 0,
             column_decltypes,
         }
     }
 
     pub fn add_row(&mut self, row: &Row) -> Result<(), anyhow::Error> {
-        if self.row_count > 0 {
-            self.json.push(',');
+        if self.row_count == 0 {
+            self.buf.reserve(2);
+            self.buf.push('[');
         }
 
-        self.json.push('[');
+        if self.row_count > 0 {
+            self.buf.push(',');
+        }
+
+        self.buf.push('[');
         for i in 0..self.column_decltypes.len() {
             if i > 0 {
-                self.json.push(',');
+                self.buf.push(',');
             }
 
             match row.get_ref(i)? {
@@ -48,13 +50,13 @@ impl RowWriter {
                         .unwrap_or(false);
 
                     if looks_like_bool {
-                        write!(&mut self.json, "{}", value == 1)?
+                        write!(&mut self.buf, "{}", value == 1)?
                     } else {
-                        write!(&mut self.json, "{value}")?
+                        write!(&mut self.buf, "{value}")?
                     }
                 }
-                ValueRef::Integer(value) => write!(&mut self.json, "{value}")?,
-                ValueRef::Real(value) => write!(&mut self.json, "{value}")?,
+                ValueRef::Integer(value) => write!(&mut self.buf, "{value}")?,
+                ValueRef::Real(value) => write!(&mut self.buf, "{value}")?,
                 ValueRef::Text(value) => {
                     // If this is a JSON object or array, convert it so that it's picked up by JsonInspector in the front-end
                     let is_json = val_is_json(value);
@@ -65,7 +67,7 @@ impl RowWriter {
                     };
 
                     if is_json {
-                        self.json.write_str(utf8)?;
+                        self.buf.write_str(utf8)?;
                     } else {
                         self.write_json_string(utf8);
                     }
@@ -76,7 +78,7 @@ impl RowWriter {
                 }
             };
         }
-        self.json.push(']');
+        self.buf.push(']');
         self.row_count += 1;
 
         Ok(())
@@ -91,34 +93,33 @@ impl RowWriter {
     }
 
     pub fn finish(&mut self) -> Box<RawValue> {
-        self.json.push(']');
+        if self.row_count == 0 {
+            self.buf.push('[');
+        }
+        self.buf.push(']');
 
-        let json = std::mem::take(&mut self.json);
+        let json = std::mem::take(&mut self.buf);
+        self.row_count = 0;
+
         RawValue::from_string(json).unwrap()
     }
 
-    pub fn clear(&mut self) {
-        self.json.reserve(2);
-        self.json.push('[');
-        self.row_count = 0;
-    }
-
     fn write_json_string(&mut self, s: &str) {
-        self.json.push('"');
+        self.buf.push('"');
         for ch in s.chars() {
             match ch {
-                '"' => self.json.push_str("\\\""),
-                '\\' => self.json.push_str("\\\\"),
-                '\n' => self.json.push_str("\\n"),
-                '\r' => self.json.push_str("\\r"),
-                '\t' => self.json.push_str("\\t"),
+                '"' => self.buf.push_str("\\\""),
+                '\\' => self.buf.push_str("\\\\"),
+                '\n' => self.buf.push_str("\\n"),
+                '\r' => self.buf.push_str("\\r"),
+                '\t' => self.buf.push_str("\\t"),
                 c if c.is_control() => {
-                    write!(&mut self.json, "\\u{:04x}", c as u32).unwrap();
+                    write!(&mut self.buf, "\\u{:04x}", c as u32).unwrap();
                 }
-                c => self.json.push(c),
+                c => self.buf.push(c),
             }
         }
-        self.json.push('"');
+        self.buf.push('"');
     }
 }
 
@@ -373,8 +374,6 @@ mod tests {
         let first_result = writer.finish();
         let first_result: Value = serde_json::from_str(first_result.get())?;
         assert_eq!(first_result, serde_json::json!([[1]]));
-
-        writer.clear();
 
         assert_eq!(writer.len(), 0);
         assert!(writer.is_empty());

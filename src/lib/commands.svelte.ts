@@ -5,13 +5,6 @@ export type Json = string | number | boolean | null | Json[] | { [key: string]: 
 
 export type Row = Json[];
 
-export const preventDefault = <T extends Event>(fn: (e: T) => void): ((e: T) => void) => {
-	return (e: T) => {
-		e.preventDefault();
-		fn(e);
-	};
-};
-
 export type DatabaseInfo =
 	| { Postgres: { connection_string: string } }
 	| { SQLite: { db_path: string } };
@@ -21,13 +14,6 @@ export interface ConnectionInfo {
 	name: string;
 	connected: boolean;
 	database_type: DatabaseInfo;
-}
-
-export interface QueryResult {
-	columns: string[];
-	rows: Json[][];
-	row_count: number;
-	duration_ms: number;
 }
 
 export type QueryStreamEvent =
@@ -79,16 +65,6 @@ export type QueryStreamEvent =
 				error: string;
 			};
 	  };
-
-// UI-facing result type that includes success/error state
-export interface QueryResultUI {
-	success: boolean;
-	data?: unknown[];
-	columns?: string[];
-	message?: string;
-	duration?: number;
-	queryResult?: QueryResult;
-}
 
 export interface QueryHistoryEntry {
 	id: number;

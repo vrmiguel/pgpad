@@ -105,7 +105,6 @@ fn execute_query_with_results(
                                         })
                                         .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
 
-                                    writer.clear();
                                     batch_size = (batch_size * 2).min(max_batch_size);
                                 }
                             }
