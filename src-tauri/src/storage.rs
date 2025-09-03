@@ -212,6 +212,7 @@ impl Storage {
         Ok(())
     }
 
+    // TODO: add `get_connection`
     pub fn get_connections(&self) -> Result<Vec<ConnectionInfo>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn

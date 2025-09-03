@@ -40,6 +40,8 @@ bytes = "1.10.1"
 hex = "0.4.3"
 sqlparser = "0.58.0"
 rfd = "0.15.4"
+keyring = "3.2.0"
+url = "2.5.4"
 
 [profile.release]
 panic = "abort"

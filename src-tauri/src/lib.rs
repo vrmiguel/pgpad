@@ -1,3 +1,4 @@
+mod credentials;
 mod database;
 mod error;
 mod init;

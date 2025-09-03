@@ -8,14 +8,10 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 pub type ConnectionCheck = JoinHandle<()>;
 
 pub async fn connect(
-    connection_string: &str,
+    config: &tokio_postgres::Config,
     certificates: &Certificates,
 ) -> Result<(Client, ConnectionCheck), Error> {
     use tokio_postgres::config::SslMode;
-
-    let config: tokio_postgres::Config = connection_string
-        .parse()
-        .with_context(|| format!("Failed to parse connection string: {}", connection_string))?;
 
     let client = match config.get_ssl_mode() {
         SslMode::Require | SslMode::Prefer => {
@@ -39,7 +35,7 @@ pub async fn connect(
             let (client, conn) = config
                 .connect(NoTls)
                 .await
-                .with_context(|| format!("Failed to connect to Postgres: {}", connection_string))?;
+                .with_context(|| format!("Failed to connect to Postgres '{config:?}'",))?;
 
             let conn_check = tauri::async_runtime::spawn(check_connection::<NoTls>(conn));
 
@@ -59,5 +55,19 @@ where
     match res {
         Ok(()) => println!("Connected successfully"),
         Err(err) => eprintln!("Error or disconnect: {err:?}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn test_connect() {
+        let connection_string = "postgres://postgres@localhost:5432/postgres";
+        let config: tokio_postgres::Config = connection_string.parse().unwrap();
+        assert_eq!(config.get_password(), None);
+
+        let connection_string = "postgres://postgres:postgres@localhost:5432/postgres";
+        let config: tokio_postgres::Config = connection_string.parse().unwrap();
+        assert_eq!(config.get_password(), Some(&b"postgres"[..]));
     }
 }
