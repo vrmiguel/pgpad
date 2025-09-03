@@ -1,16 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import {
-		Cable,
-		X,
-		CheckCircle,
-		AlertCircle,
-		Info,
-		Database,
-		Server,
-		FolderOpen
-	} from '@lucide/svelte';
+	import { Cable, X, CheckCircle, AlertCircle, Info, FolderOpen } from '@lucide/svelte';
 
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
