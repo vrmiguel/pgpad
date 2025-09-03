@@ -300,10 +300,10 @@ pub async fn test_connection(
 ) -> Result<bool, Error> {
     match database_info {
         DatabaseInfo::Postgres { connection_string } => {
-            log::info!("Testing Postgres connection: {}", connection_string);
             let config: tokio_postgres::Config = connection_string.parse().with_context(|| {
                 format!("Failed to parse connection string: {}", connection_string)
             })?;
+            log::info!("Testing Postgres connection: {config:?}");
             match connect(&config, &certificates).await {
                 Ok(_) => Ok(true),
                 Err(e) => {
