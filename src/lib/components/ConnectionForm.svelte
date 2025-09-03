@@ -11,6 +11,10 @@
 		Server,
 		FolderOpen
 	} from '@lucide/svelte';
+
+	import IconCibPostgresql from '~icons/cib/postgresql';
+	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+
 	import { Commands, type DatabaseInfo, type ConnectionInfo } from '$lib/commands.svelte';
 	import { Tabs } from 'bits-ui';
 
@@ -162,14 +166,14 @@
 						value="postgres"
 						class="data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:shadow-lg"
 					>
-						<Server class="h-4 w-4" />
+						<IconCibPostgresql class="h-4 w-4" />
 						PostgreSQL
 					</Tabs.Trigger>
 					<Tabs.Trigger
 						value="sqlite"
 						class="data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:shadow-lg"
 					>
-						<Database class="h-4 w-4" />
+						<IconSimpleIconsSqlite class="h-4 w-4" />
 						SQLite
 					</Tabs.Trigger>
 				</Tabs.List>
