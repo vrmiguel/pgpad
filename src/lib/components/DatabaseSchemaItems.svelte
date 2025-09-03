@@ -80,7 +80,7 @@
 						<div class="bg-border/40 absolute right-0 bottom-0 left-0 h-px"></div>
 					</summary>
 					<div class="relative ml-5 space-y-0.5">
-						{#each table.columns as column, index (column.name)}
+						{#each table.columns as column (column.name)}
 							<div
 								class="flex items-center gap-2 rounded-none px-2 py-1.5 text-xs transition-colors duration-200 hover:bg-black/2 dark:hover:bg-white/2"
 							>

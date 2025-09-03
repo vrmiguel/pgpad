@@ -5,6 +5,7 @@ use tauri::ipc::Channel;
 use uuid::Uuid;
 
 use crate::{
+    credentials,
     database::{
         postgres::{self, connect::connect},
         sqlite,
@@ -26,6 +27,15 @@ pub async fn add_connection(
     state: tauri::State<'_, AppState>,
 ) -> Result<ConnectionInfo, Error> {
     let id = Uuid::new_v4();
+
+    let (database_info, password) = credentials::extract_sensitive_data(database_info)?;
+
+    // It's expected that add_connection receives database_info with the password included,
+    // as checked by the form in the UI. This call saves it in the keyring.
+    if let Some(password) = password {
+        credentials::store_sensitive_data(&id, &password)?;
+    }
+
     let connection = DatabaseConnection::new(id, name, database_info);
     let info = connection.to_connection_info();
 
@@ -42,6 +52,11 @@ pub async fn update_connection(
     database_info: DatabaseInfo,
     state: tauri::State<'_, AppState>,
 ) -> Result<ConnectionInfo, Error> {
+    let (database_info, password) = credentials::extract_sensitive_data(database_info)?;
+    if let Some(password) = password {
+        credentials::store_sensitive_data(&conn_id, &password)?;
+    }
+
     if let Some(mut connection_entry) = state.connections.get_mut(&conn_id) {
         let connection = connection_entry.value_mut();
 
@@ -125,25 +140,35 @@ pub async fn connect_to_database(
         Database::Postgres {
             connection_string,
             client,
-        } => match connect(connection_string, &certificates).await {
-            Ok((pg_client, conn_check)) => {
-                *client = Some(pg_client);
-                connection.connected = true;
+        } => {
+            let mut config: tokio_postgres::Config =
+                connection_string.parse().with_context(|| {
+                    format!("Failed to parse connection string: {}", connection_string)
+                })?;
+            if config.get_password().is_none() {
+                credentials::get_password(&connection_id)?.map(|pw| config.password(pw));
+            }
 
-                if let Err(e) = state.storage.update_last_connected(&connection_id) {
-                    log::warn!("Failed to update last connected timestamp: {}", e);
+            match connect(&config, &certificates).await {
+                Ok((pg_client, conn_check)) => {
+                    *client = Some(pg_client);
+                    connection.connected = true;
+
+                    if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                        log::warn!("Failed to update last connected timestamp: {}", e);
+                    }
+
+                    monitor.add_connection(connection_id, conn_check).await;
+
+                    Ok(true)
                 }
-
-                monitor.add_connection(connection_id, conn_check).await;
-
-                Ok(true)
+                Err(e) => {
+                    log::error!("Failed to connect to Postgres: {}", e);
+                    connection.connected = false;
+                    Ok(false)
+                }
             }
-            Err(e) => {
-                log::error!("Failed to connect to Postgres: {}", e);
-                connection.connected = false;
-                Ok(false)
-            }
-        },
+        }
         Database::SQLite {
             db_path,
             connection: sqlite_conn,
@@ -254,8 +279,14 @@ pub async fn remove_connection(
     connection_id: Uuid,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
-    state.storage.remove_connection(&connection_id)?;
+    if let Err(e) = credentials::delete_password(&connection_id) {
+        log::debug!(
+            "Could not delete password from keyring (may not exist): {}",
+            e
+        );
+    }
 
+    state.storage.remove_connection(&connection_id)?;
     state.connections.remove(&connection_id);
 
     Ok(())
@@ -263,13 +294,17 @@ pub async fn remove_connection(
 
 #[tauri::command]
 pub async fn test_connection(
+    // It's expected that test_connection receives database_info with the password included
     database_info: DatabaseInfo,
     certificates: tauri::State<'_, Certificates>,
 ) -> Result<bool, Error> {
     match database_info {
         DatabaseInfo::Postgres { connection_string } => {
-            log::info!("Testing Postgres connection: {}", connection_string);
-            match connect(&connection_string, &certificates).await {
+            let config: tokio_postgres::Config = connection_string.parse().with_context(|| {
+                format!("Failed to parse connection string: {}", connection_string)
+            })?;
+            log::info!("Testing Postgres connection: {config:?}");
+            match connect(&config, &certificates).await {
                 Ok(_) => Ok(true),
                 Err(e) => {
                     log::error!("Postgres connection test failed: {}", e);
