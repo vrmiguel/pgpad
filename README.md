@@ -13,7 +13,7 @@
 ### Requirements
 
 - A relatively recent build of `npm`
-- The Rust toolchain, with a minimum version of 1.81 or higher
+- The Rust toolchain, with a minimum version of 1.85
 
 ### Setup
 
