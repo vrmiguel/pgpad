@@ -12,7 +12,7 @@
 	let { databaseSchema, loadingSchema, selectedConnection, onTableClick }: Props = $props();
 
 	const sortedTables = $derived(
-		databaseSchema?.tables.toSorted((a, b) => a.name.localeCompare(b.name)) || []
+		databaseSchema?.tables?.toSorted((a, b) => a.name.localeCompare(b.name)) || []
 	);
 </script>
 
@@ -40,7 +40,7 @@
 			<p class="text-muted-foreground mb-1 text-xs font-medium">Schema not loaded</p>
 			<p class="text-muted-foreground/70 text-xs">Connect to database to view tables</p>
 		</div>
-	{:else if databaseSchema.tables.length === 0}
+	{:else if databaseSchema?.tables?.length === 0}
 		<div class="px-4 py-8 text-center">
 			<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
 				<TableProperties class="text-muted-foreground/50 h-6 w-6" />
