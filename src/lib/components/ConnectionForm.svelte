@@ -155,14 +155,14 @@
 				<Tabs.List class="bg-muted/20 grid w-full grid-cols-2 gap-1 rounded-lg p-1">
 					<Tabs.Trigger
 						value="postgres"
-						class="data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:shadow-lg"
+						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
 					>
 						<IconCibPostgresql class="h-4 w-4" />
 						PostgreSQL
 					</Tabs.Trigger>
 					<Tabs.Trigger
 						value="sqlite"
-						class="data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:shadow-lg"
+						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
 					>
 						<IconSimpleIconsSqlite class="h-4 w-4" />
 						SQLite
@@ -308,7 +308,7 @@
 
 		<div class="flex-1"></div>
 
-		<Button type="button" variant="ghost" onclick={onCancel} class="shadow-sm hover:shadow-md">
+		<Button type="button" variant="outline" onclick={onCancel} class="shadow-sm hover:shadow-md">
 			Cancel
 		</Button>
 		<Button type="submit" class="gap-2 shadow-md hover:shadow-lg">

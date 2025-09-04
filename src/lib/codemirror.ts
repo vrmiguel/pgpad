@@ -23,7 +23,8 @@ import { keymap } from '@codemirror/view';
 import { indentWithTab, history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 
 import type { DatabaseSchema } from './commands.svelte';
-import { registerEditorThemeCallback } from './stores/theme';
+import { registerEditorThemeCallback, theme } from './stores/theme';
+import { get } from 'svelte/store';
 
 interface ExtendedCompletion extends Completion {
 	formattedLabel?: string;
@@ -44,10 +45,9 @@ function createTheme(theme: 'light' | 'dark') {
 		{
 			'&': {
 				color: theme === 'dark' ? '#d4d4d4' : '#24292e',
-				backgroundColor: theme === 'dark' ? '#1e1e1e' : '#ffffff',
+				backgroundColor: theme === 'dark' ? '#2c2c2e' : '#ffffff',
 				height: '100%',
 				overflow: 'hidden',
-				borderRadius: '0.75rem',
 				fontSize: '13px',
 				lineHeight: '1.5',
 				margin: '0',
@@ -56,12 +56,10 @@ function createTheme(theme: 'light' | 'dark') {
 				boxShadow: 'none'
 			},
 			'.cm-content': {
-				padding: '0 12px', // No top/bottom padding, only left/right
 				margin: '0', // Ensure no margins
 				caretColor: theme === 'dark' ? '#d4d4d4' : '#24292e',
 				minHeight: '100%',
-				border: 'none',
-				borderRadius: '0.75rem'
+				border: 'none'
 			},
 			'.cm-focused .cm-cursor': {
 				borderLeftColor: theme === 'dark' ? '#d4d4d4' : '#24292e'
@@ -97,7 +95,6 @@ function createTheme(theme: 'light' | 'dark') {
 				outline: 'none',
 				height: '100%',
 				overflow: 'auto',
-				borderRadius: '0.75rem',
 				margin: '0',
 				padding: '0',
 				border: 'none',
@@ -113,8 +110,6 @@ function createTheme(theme: 'light' | 'dark') {
 				fontSize: '13px',
 				margin: '0',
 				padding: '0',
-				borderTopLeftRadius: '0.75rem',
-				borderBottomLeftRadius: '0.75rem',
 				borderTopRightRadius: '0',
 				borderBottomRightRadius: '0'
 			},
@@ -474,6 +469,10 @@ export function createEditorInstance(options: CreateEditorOptions) {
 
 	// TODO(vini): is this right?
 	let currentTheme: 'light' | 'dark' = 'light';
+	const $theme = get(theme);
+	if ($theme !== 'auto') {
+		currentTheme = $theme;
+	}
 
 	let currentSchema = schema;
 

@@ -87,39 +87,39 @@
 }
 
 .dark {
-	--background: oklch(0.08 0.015 240);
+	--background: oklch(29% 0% 68deg);
 	--foreground: var(--text-dark-primary);
-	--card: oklch(0.14 0.02 240);
+	--card: oklch(27% 0% 126deg);
 	--card-foreground: var(--text-dark-primary);
-	--popover: oklch(0.14 0.02 240);
+	--popover: oklch(24% 0% 106deg);
 	--popover-foreground: var(--text-dark-primary);
 
-	--primary: oklch(0.68 0.14 250);
+	--primary: oklch(65% 48% 251deg);
 	--primary-foreground: var(--color-neutral-950);
-	--primary-light: oklch(0.78 0.12 250);
-	--primary-dark: oklch(0.58 0.16 250);
+	--primary-light: oklch(63% 50% 254deg);
+	--primary-dark: oklch(56% 29% 234deg);
 
 	--secondary: var(--color-neutral-800);
 	--secondary-foreground: var(--text-dark-primary);
 
-	--success: oklch(0.65 0.12 150);
+	--success: oklch(76% 52% 147deg);
 	--success-foreground: var(--color-neutral-950);
 	--success-light: oklch(0.2 0.08 150);
 
-	--warning: oklch(0.75 0.14 65);
+	--warning: oklch(76% 42% 57deg);
 	--warning-foreground: var(--color-neutral-950);
 	--warning-light: oklch(0.2 0.06 65);
 
-	--error: oklch(0.68 0.16 25);
+	--error: oklch(66% 56% 25deg);
 	--error-foreground: var(--color-neutral-950);
 	--error-light: oklch(0.2 0.06 25);
 
-	--muted: oklch(0.18 0.025 240);
+	--muted: oklch(65% 2% 286deg / 0.2);
 	--muted-foreground: var(--text-dark-secondary);
-	--accent: oklch(0.22 0.03 240);
+	--accent: oklch(75% 2% 286deg / 0.2);
 	--accent-foreground: var(--text-dark-primary);
 
-	--border: var(--color-neutral-700);
+	--border: oklch(40% 1% 286deg);
 	--border-light: var(--color-neutral-800);
 	--input: var(--color-neutral-900);
 	--ring: oklch(0.68 0.14 250 / 40%);
@@ -130,9 +130,9 @@
 	--sidebar-primary-foreground: var(--primary-foreground);
 	--sidebar-accent: oklch(0.16 0.022 240);
 	--sidebar-accent-foreground: var(--text-dark-primary);
-	--sidebar-border: oklch(0.25 0.035 240);
+	--sidebar-border: oklch(40% 1% 286deg);
 	--sidebar-ring: var(--ring);
-	--titlebar-bg: oklch(0.12 0.018 240);
+	--titlebar-bg: oklch(33% 0% 266deg);
 
 	--shadow-sm: 0 1px 2px oklch(0.02 0.02 240 / 25%);
 	--shadow-md: 0 4px 6px -1px oklch(0.02 0.02 240 / 30%), 0 2px 4px -1px oklch(0.02 0.02 240 / 20%);
@@ -141,8 +141,8 @@
 	--shadow-xl:
 		0 20px 25px -5px oklch(0.02 0.02 240 / 40%), 0 10px 10px -5px oklch(0.02 0.02 240 / 25%);
 
-	--glass-bg: oklch(0.08 0.05 240 / 85%);
-	--glass-border: oklch(0.25 0.04 240 / 30%);
+	--glass-bg: oklch(26% 1% 286deg);
+	--glass-border: oklch(40% 1% 286deg);
 }
 
 @theme inline {
