@@ -390,8 +390,8 @@ SELECT 1 as test;`);
 <div class="flex flex-1 flex-col">
 	<ResizablePaneGroup direction="vertical" class="flex-1">
 		<ResizablePane defaultSize={60} minSize={30} maxSize={80}>
-			<div class="h-full px-1 pt-1">
-				<Card class="flex h-full flex-col gap-0 overflow-hidden rounded-b-none py-0">
+			<div class="h-full">
+				<Card class="flex h-full flex-col gap-0 overflow-hidden rounded-none border-none py-0">
 					<CardContent class="min-h-0 flex-1 p-0">
 						<div bind:this={editorContainer} class="h-full w-full"></div>
 					</CardContent>
@@ -402,7 +402,7 @@ SELECT 1 as test;`);
 		<ResizableHandle />
 
 		<ResizablePane defaultSize={40} minSize={20}>
-			<div class="relative flex h-full flex-col px-1 pb-1">
+			<div class="relative flex h-full flex-col">
 				<div class="relative z-10">
 					<TabBar
 						tabs={allTabs()}
@@ -421,9 +421,7 @@ SELECT 1 as test;`);
 					/>
 				</div>
 
-				<Card
-					class="-mt-px flex flex-1 flex-col gap-0 overflow-hidden rounded-t-none border-t-0 pt-0 pb-0"
-				>
+				<Card class="flex flex-1 flex-col gap-0 overflow-hidden rounded-none border-none pt-0 pb-0">
 					{#if showHistory}
 						<CardContent class="flex min-h-0 flex-1 flex-col px-6 pt-0">
 							{#if queryHistory.length > 0}
@@ -470,7 +468,7 @@ SELECT 1 as test;`);
 														: historyItem.query_text}
 												</code>
 												{#if historyItem.error_message}
-													<p class="mt-1 rounded bg-red-50 p-2 text-left text-xs text-red-600">
+													<p class="bg-error/50 mt-1 rounded p-2 text-left text-xs">
 														{historyItem.error_message}
 													</p>
 												{/if}
