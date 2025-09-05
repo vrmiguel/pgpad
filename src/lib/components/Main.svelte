@@ -232,6 +232,10 @@
 			const connection = allConnections.find((c) => c.id === connId);
 			if (connection?.connected) {
 				loadDatabaseSchemaIfNeeded(connId);
+
+				if (lastLoadedSchemaConnectionId === connId && sqlEditorRef) {
+					sqlEditorRef.updatedSelectedConnection();
+				}
 			} else {
 				databaseSchema = null;
 				lastLoadedSchemaConnectionId = null;
@@ -524,6 +528,10 @@
 			loadingSchema = true;
 			databaseSchema = await Commands.getDatabaseSchema(connectionId);
 			lastLoadedSchemaConnectionId = connectionId;
+			
+			if (sqlEditorRef && selectedConnection === connectionId) {
+				await sqlEditorRef.updatedSelectedConnection();
+			}
 		} catch (error) {
 			console.error('Failed to load database schema:', error);
 			databaseSchema = null;

@@ -333,15 +333,13 @@ SELECT 1 as test;`);
 		return tabs;
 	});
 
-	async function loadDatabaseSchema() {
+	export async function updatedSelectedConnection() {
 		if (!selectedConnection || !sqlEditor) return;
 
 		try {
 			const connection = connections.find((c) => c.id === selectedConnection);
 			if (connection?.connected) {
-				// Get schema information for autocomplete
-				const schema = await Commands.getDatabaseSchema(selectedConnection);
-				sqlEditor.updateSchema(schema);
+				sqlEditor.updateSelectedConnection(selectedConnection);
 			}
 		} catch (error) {
 			console.error('Failed to load database schema:', error);
@@ -351,7 +349,6 @@ SELECT 1 as test;`);
 	$effect(() => {
 		if (selectedConnection) {
 			loadQueryHistory();
-			loadDatabaseSchema();
 		}
 	});
 
@@ -369,11 +366,10 @@ SELECT 1 as test;`);
 					onExecuteSelection: (selectedText: string) => {
 						handleExecuteQuery(selectedText);
 					},
-					disabled: false,
-					schema: null
+					disabled: false
 				});
 
-				loadDatabaseSchema();
+				updatedSelectedConnection();
 			} else {
 				setTimeout(initializeEditor, 100);
 			}
