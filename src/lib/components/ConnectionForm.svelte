@@ -21,7 +21,7 @@
 	let connectionName = $state(editingConnection?.name || '');
 
 	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
-	let connectionString = $state('postgresql://username:password@localhost:5432/database');
+	let connectionString = $state('');
 	let sqliteFilePath = $state('');
 
 	if (editingConnection) {
@@ -137,6 +137,7 @@
 				bind:value={connectionName}
 				placeholder="e.g., Local Development"
 				class={`shadow-sm transition-shadow focus:shadow-md ${errors.name ? 'border-error focus:ring-error/30' : 'focus:ring-primary/30'}`}
+				autofocus
 			/>
 			{#if errors.name}
 				<p class="text-error mt-2 flex items-center gap-2 text-sm">
@@ -172,7 +173,7 @@
 				<Tabs.Content value="postgres" class="mt-3">
 					<div class="bg-card rounded-xl border p-5 shadow-sm">
 						<label for="connectionString" class="text-foreground mb-2 block text-sm font-semibold">
-							PostgreSQL Connection String <span class="text-error">*</span>
+							Connection String <span class="text-error">*</span>
 						</label>
 						<Input
 							id="connectionString"
@@ -192,8 +193,7 @@
 							<div class="flex items-start gap-3">
 								<Info class="text-primary mt-0.5 h-4 w-4 flex-shrink-0" />
 								<div class="text-muted-foreground min-w-0 flex-1 text-sm">
-									<p class="text-foreground mb-2 font-medium">Connection String Format:</p>
-									<p class="mb-2">Use the following format for your PostgreSQL connection:</p>
+									<p class="mb-2">Use the following format for your Postgres connection:</p>
 									<div class="bg-muted/50 overflow-x-auto rounded border p-2 font-mono text-xs">
 										<code class="whitespace-nowrap">
 											postgresql://username:password@host:port/database
@@ -216,7 +216,7 @@
 				<Tabs.Content value="sqlite" class="mt-3">
 					<div class="bg-card rounded-xl border p-5 shadow-sm">
 						<label for="sqliteFilePath" class="text-foreground mb-2 block text-sm font-semibold">
-							SQLite Database File <span class="text-error">*</span>
+							Database File <span class="text-error">*</span>
 						</label>
 
 						<div class="flex gap-3">
@@ -251,7 +251,6 @@
 							<div class="flex items-start gap-3">
 								<Info class="text-primary mt-0.5 h-4 w-4 flex-shrink-0" />
 								<div class="text-muted-foreground min-w-0 flex-1 text-sm">
-									<p class="text-foreground mb-2 font-medium">SQLite Database File:</p>
 									<p class="mb-2 leading-relaxed">
 										Select an existing SQLite database file or choose a location to create a new
 										one.
