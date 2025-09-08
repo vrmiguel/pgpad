@@ -9,18 +9,26 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Event, Listener, Manager};
 use uuid::Uuid;
 
-use crate::{database::types::DatabaseSchema, AppState, Error};
+use crate::{
+    database::types::DatabaseSchema,
+    lsp::parser::{ParsingContext, SuggestionCategory, SuggestionType},
+    AppState, Error,
+};
+use tree_sitter::Point;
+
+mod parser;
+mod types;
 
 /// A request from CodeMirror
 #[derive(Debug, Deserialize)]
-struct Request {
+pub struct Request {
     pub id: Option<serde_json::Value>,
     pub method: RequestMethod,
     pub params: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
-enum RequestMethod {
+pub enum RequestMethod {
     #[serde(rename = "initialize")]
     Initialize,
     #[serde(rename = "textDocument/completion")]
@@ -72,10 +80,9 @@ pub struct CompletionList {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerCapabilities {
-    #[serde(rename = "completionProvider")]
     pub completion_provider: Option<CompletionOptions>,
-    #[serde(rename = "textDocumentSync")]
     pub text_document_sync: Option<TextDocumentSyncOptions>,
 }
 
@@ -140,14 +147,23 @@ pub mod completion_kind {
     pub const TYPE_PARAMETER: u32 = 25;
 }
 
-#[derive(Debug, Default)]
-struct CompletionContext {
-    line: u32,
-    character: u32,
-    typed_text: String,
-    explicit_trigger: bool,
-    trigger_character: Option<String>,
-    document_uri: String,
+#[derive(Debug, Deserialize)]
+pub struct CompletionParams {
+    pub position: Position,
+    pub context: Option<CompletionContext>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Position {
+    pub character: u32,
+    pub line: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionContext {
+    pub trigger_character: Option<String>,
+    pub trigger_kind: u32,
 }
 
 pub fn setup_listener(app: AppHandle) {
@@ -174,6 +190,7 @@ struct LanguageServer {
     connection_id: Option<Uuid>,
     // Completions for the current selection
     schema_completions: Vec<CompletionItem>,
+    parsing_context: ParsingContext,
 }
 
 #[derive(Clone)]
@@ -256,6 +273,7 @@ impl LanguageServer {
             app,
             connection_id: None,
             schema_completions: Vec::new(),
+            parsing_context: ParsingContext::new().unwrap(),
         }
     }
 
@@ -267,7 +285,7 @@ impl LanguageServer {
         if identifier.chars().any(|c| !c.is_alphanumeric() && c != '_') {
             return true;
         }
-        
+
         if identifier.chars().next().map_or(false, |c| c.is_numeric()) {
             return true;
         }
@@ -389,7 +407,6 @@ impl LanguageServer {
         let message = serde_json::from_str::<String>(event.payload())?;
 
         let json = serde_json::from_str::<Value>(&message)?;
-        println!("LSP request: {}", serde_json::to_string_pretty(&json)?);
 
         match serde_json::from_str::<Request>(&message) {
             Ok(request) => {
@@ -453,38 +470,33 @@ impl LanguageServer {
         self.send_response(request.id, Some(serde_json::to_value(result)?), None)
     }
 
-    fn handle_completion(&self, request: Request) -> Result<(), Error> {
-        log::info!("Handling completion request: {:?}", request);
+    fn handle_completion(&mut self, request: Request) -> Result<(), Error> {
         let now = Instant::now();
 
-        let params = request.params.as_ref();
-        let context = self.extract_completion_context(params);
+        let params = request
+            .params
+            .as_ref()
+            .ok_or_else(|| Error::Any(anyhow::anyhow!("No params in completion request")))?;
 
-        let mut completion_items = Vec::new();
+        let completion_params: CompletionParams = serde_json::from_value(params.clone())?;
+        log::info!(
+            "Handling completion request, params: {:?}",
+            completion_params
+        );
 
-        for keyword in SQL_KEYWORDS {            
-            if self.should_include_keyword(&keyword.keyword, &context) {
-                completion_items.push(CompletionItem {
-                    label: keyword.keyword.to_string(),
-                    kind: completion_kind::KEYWORD,
-                    detail: Some("SQL keyword".to_string()),
-                    documentation: Some(format!("SQL keyword: {}", keyword.keyword)),
-                    insert_text: Some(format!("{} ", keyword.keyword)),
-                    // What the CodeMirror LSP actually uses for autocompletion filtering
-                    filter_text: Some(keyword.keyword.to_string()),
-                    // How the CodeMirror LSP orders completions
-                    sort_text: Some(format!("0_{}", keyword.keyword)),
-                });
+        let completion_items = match self.handle_completion_with_parser(&completion_params) {
+            Ok(items) => items,
+            Err(e) => {
+                log::warn!(
+                    "Parser-based completion failed, falling back to basic completion: {}",
+                    e
+                );
+                self.handle_completion_fallback(&completion_params)?
             }
-        }
-
-        let schema_completions = self.schema_completions_for_context(&context);
-        completion_items.extend(schema_completions.cloned());
-
-        let is_incomplete = context.typed_text.len() < 2 && !context.explicit_trigger;
+        };
 
         let result = CompletionList {
-            is_incomplete,
+            is_incomplete: false,
             items: completion_items,
         };
 
@@ -494,125 +506,304 @@ impl LanguageServer {
         self.send_response(request.id, Some(serde_json::to_value(result)?), None)
     }
 
-    fn extract_completion_context(&self, params: Option<&serde_json::Value>) -> CompletionContext {
-        let mut context = CompletionContext::default();
+    fn handle_completion_with_parser(
+        &mut self,
+        params: &CompletionParams,
+    ) -> Result<Vec<CompletionItem>, Error> {
+        let position = Point {
+            row: params.position.line as usize,
+            column: params.position.character as usize,
+        };
 
-        if let Some(params) = params {
-            if let Some(position) = params.get("position") {
-                context.line = position.get("line").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                context.character = position
-                    .get("character")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0) as u32;
+        log::debug!("Completion request at position: {:?}", position);
+
+        // Use the sophisticated parser to get suggestion type
+        let suggestion_type = self
+            .parsing_context
+            .suggestion_for_position(position)
+            .map_err(|e| Error::Any(anyhow::anyhow!("Parser completion failed: {}", e)))?;
+
+        log::info!("Parser suggests: {:?}", suggestion_type);
+        log::info!("Current parser state: {:?}", self.parsing_context.state);
+        log::info!("Current token: {:?}", self.parsing_context.current_token);
+
+        // Convert parser suggestions to LSP completion items
+        Ok(self.convert_suggestions_to_completions(suggestion_type))
+    }
+
+    fn handle_completion_fallback(
+        &self,
+        params: &CompletionParams,
+    ) -> Result<Vec<CompletionItem>, Error> {
+        let mut completion_items = Vec::new();
+
+        for keyword in SQL_KEYWORDS {
+            if self.should_include_keyword(&keyword.keyword, params) {
+                completion_items.push(CompletionItem {
+                    label: keyword.keyword.to_string(),
+                    kind: completion_kind::KEYWORD,
+                    detail: Some("SQL keyword".to_string()),
+                    documentation: Some(format!("SQL keyword: {}", keyword.keyword)),
+                    insert_text: Some(format!("{} ", keyword.keyword)),
+                    filter_text: Some(keyword.keyword.to_string()),
+                    sort_text: Some(format!("0_{}", keyword.keyword)),
+                });
             }
+        }
 
-            if let Some(trigger_ctx) = params.get("context") {
-                context.explicit_trigger = trigger_ctx
-                    .get("triggerKind")
-                    .and_then(|v| v.as_u64())
-                    .map(|k| k == 2) // TriggerKind.Invoked
-                    .unwrap_or(false);
+        let schema_completions = self.schema_completions_for_context(params);
+        completion_items.extend(schema_completions.cloned());
 
-                context.trigger_character = trigger_ctx
-                    .get("triggerCharacter")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+        Ok(completion_items)
+    }
+
+    fn convert_suggestions_to_completions(
+        &self,
+        suggestion_type: SuggestionType,
+    ) -> Vec<CompletionItem> {
+        // Get current partial text for keyword filtering
+        let partial_text = self
+            .parsing_context
+            .current_token
+            .as_ref()
+            .map(|token| token.text.as_str());
+
+        // Get tables from parser context
+        let available_tables: Vec<String> = self
+            .parsing_context
+            .scope
+            .available_tables
+            .keys()
+            .cloned()
+            .collect();
+
+        match suggestion_type {
+            SuggestionType::Keywords => self.get_filtered_keyword_completions(partial_text),
+            SuggestionType::Tables => self.get_table_completions(),
+            SuggestionType::Columns { tables } => {
+                // Use tables from parser context if available, otherwise use the provided tables
+                let table_list = if tables.is_empty() {
+                    available_tables
+                } else {
+                    tables
+                };
+                self.get_column_completions(table_list)
             }
-
-            // Extract text document context for more advanced parsing
-            if let Some(text_doc) = params.get("textDocument") {
-                if let Some(uri) = text_doc.get("uri").and_then(|v| v.as_str()) {
-                    context.document_uri = uri.to_string();
+            SuggestionType::Functions => self.get_function_completions(),
+            SuggestionType::Values(values) => self.get_value_completions(values),
+            SuggestionType::Mixed(categories) => {
+                let mut items = Vec::new();
+                for category in categories {
+                    items.extend(self.convert_suggestion_category_to_completions(
+                        category,
+                        partial_text,
+                        &available_tables,
+                    ));
                 }
+                items
             }
-        }
-
-        context
-    }
-
-    fn should_include_keyword(&self, keyword: &str, context: &CompletionContext) -> bool {
-        if !context.typed_text.is_empty() {
-            let keyword_lower = keyword.to_lowercase();
-            let typed_lower = context.typed_text.to_lowercase();
-
-            // Only include if keyword starts with typed text (prefix match)
-            if !keyword_lower.starts_with(&typed_lower) {
-                return false;
-            }
-        }
-
-        // Context-specific filtering
-        match context.trigger_character.as_deref() {
-            Some(".") => {
-                // After dot, prefer column/field keywords
-                matches!(keyword, "COUNT" | "SUM" | "AVG" | "MAX" | "MIN")
-            }
-            Some(",") => {
-                // After comma, prefer column names and some keywords
-                !matches!(keyword, "CREATE TABLE" | "DROP TABLE")
-            }
-            Some("(") => {
-                // After opening paren, prefer function-like keywords
-                matches!(
-                    keyword,
-                    "SELECT" | "COUNT" | "SUM" | "AVG" | "MAX" | "MIN" | "DISTINCT"
-                )
-            }
-            _ => true, // Include all keywords by default
         }
     }
 
-    fn schema_completions_for_context<'a, 'b>(
-        &'a self,
-        context: &'b CompletionContext,
-    ) -> impl Iterator<Item = &'a CompletionItem> + 'a 
-    where
-        'b: 'a,
-    {
-        self.schema_completions.iter().filter(move |completion| {
-            if let Some(filter_text) = &completion.filter_text {
-                // If we have typed text, apply prefix filtering
-                if !context.typed_text.is_empty() {
-                    let filter_lower = filter_text.to_lowercase();
-                    let typed_lower = context.typed_text.to_lowercase();
+    fn convert_suggestion_category_to_completions(
+        &self,
+        category: SuggestionCategory,
+        partial_text: Option<&str>,
+        available_tables: &[String],
+    ) -> Vec<CompletionItem> {
+        match category {
+            SuggestionCategory::Keywords => self.get_filtered_keyword_completions(partial_text),
+            SuggestionCategory::Tables => self.get_table_completions(),
+            SuggestionCategory::Columns { tables } => {
+                // Use tables from parser context if available, otherwise use the provided tables
+                let table_list = if tables.is_empty() {
+                    available_tables.to_vec()
+                } else {
+                    tables
+                };
+                self.get_column_completions(table_list)
+            }
+            SuggestionCategory::Functions => self.get_function_completions(),
+            SuggestionCategory::Values(values) => self.get_value_completions(values),
+        }
+    }
 
-                    // Check prefix match or contains match for longer queries
-                    filter_lower.starts_with(&typed_lower)
-                        || (typed_lower.len() > 2 && filter_lower.contains(&typed_lower))
+    fn get_filtered_keyword_completions(&self, partial_text: Option<&str>) -> Vec<CompletionItem> {
+        SQL_KEYWORDS
+            .iter()
+            .filter(|keyword| {
+                if let Some(partial) = partial_text {
+                    if partial.is_empty() {
+                        return true;
+                    }
+                    // Case-insensitive prefix matching for partial keywords
+                    keyword
+                        .keyword
+                        .to_lowercase()
+                        .starts_with(&partial.to_lowercase())
                 } else {
                     true
                 }
-            } else {
-                true
-            }
-        })
+            })
+            .map(|keyword| CompletionItem {
+                label: keyword.keyword.to_string(),
+                kind: completion_kind::KEYWORD,
+                detail: Some("SQL keyword".to_string()),
+                documentation: Some(format!("SQL keyword: {}", keyword.keyword)),
+                insert_text: Some(keyword.keyword.to_string()), // Don't add space for partial completions
+                filter_text: Some(keyword.keyword.to_string()),
+                sort_text: Some(format!("0_{}", keyword.keyword)),
+            })
+            .collect()
     }
 
-    fn handle_did_open(&self, request: Request) -> Result<(), Error> {
-        log::info!("Handling didOpen notification");
-        if let Some(params) = &request.params {
-            if let Some(text_document) = params.get("textDocument") {
-                log::info!("Document opened: {:?}", text_document);
+    fn get_table_completions(&self) -> Vec<CompletionItem> {
+        self.schema_completions
+            .iter()
+            .filter(|item| item.kind == completion_kind::CLASS)
+            .cloned()
+            .collect()
+    }
+
+    fn get_column_completions(&self, tables: Vec<String>) -> Vec<CompletionItem> {
+        log::info!("Getting column completions for tables: {:?}", tables);
+        if tables.is_empty() {
+            // Return all column completions
+            self.schema_completions
+                .iter()
+                .filter(|item| item.kind == completion_kind::FIELD)
+                .cloned()
+                .collect()
+        } else {
+            // Return columns for specific tables
+            self.schema_completions
+                .iter()
+                .filter(|item| {
+                    item.kind == completion_kind::FIELD
+                        && item.filter_text.as_ref().map_or(false, |filter_text| {
+                            tables.iter().any(|table| filter_text.starts_with(table))
+                        })
+                })
+                .cloned()
+                .collect()
+        }
+    }
+
+    fn get_function_completions(&self) -> Vec<CompletionItem> {
+        // For now, return function-like SQL keywords
+        SQL_KEYWORDS
+            .iter()
+            .filter(|keyword| matches!(keyword.keyword, "COUNT" | "SUM" | "AVG" | "MAX" | "MIN"))
+            .map(|keyword| CompletionItem {
+                label: keyword.keyword.to_string(),
+                kind: completion_kind::FUNCTION,
+                detail: Some("SQL function".to_string()),
+                documentation: Some(format!("SQL function: {}", keyword.keyword)),
+                insert_text: Some(format!("{}(", keyword.keyword)),
+                filter_text: Some(keyword.keyword.to_string()),
+                sort_text: Some(format!("1_{}", keyword.keyword)),
+            })
+            .collect()
+    }
+
+    fn get_value_completions(&self, values: Vec<String>) -> Vec<CompletionItem> {
+        values
+            .into_iter()
+            .map(|value| CompletionItem {
+                label: value.clone(),
+                kind: completion_kind::VALUE,
+                detail: Some("Value".to_string()),
+                documentation: Some(format!("Value: {}", value)),
+                insert_text: Some(value.clone()),
+                filter_text: Some(value.clone()),
+                sort_text: Some(format!("2_{}", value)),
+            })
+            .collect()
+    }
+
+    fn should_include_keyword(&self, keyword: &str, params: &CompletionParams) -> bool {
+        // Context-specific filtering based on trigger character
+        if let Some(context) = &params.context {
+            match context.trigger_character.as_deref() {
+                Some(".") => {
+                    // After dot, prefer column/field keywords
+                    matches!(keyword, "COUNT" | "SUM" | "AVG" | "MAX" | "MIN")
+                }
+                Some(",") => {
+                    // After comma, prefer column names and some keywords
+                    !matches!(keyword, "CREATE TABLE" | "DROP TABLE")
+                }
+                Some("(") => {
+                    // After opening paren, prefer function-like keywords
+                    matches!(
+                        keyword,
+                        "SELECT" | "COUNT" | "SUM" | "AVG" | "MAX" | "MIN" | "DISTINCT"
+                    )
+                }
+                _ => true, // Include all keywords by default
             }
+        } else {
+            true // Include all keywords by default when no context
+        }
+    }
+
+    fn schema_completions_for_context<'a>(
+        &'a self,
+        _params: &CompletionParams,
+    ) -> impl Iterator<Item = &'a CompletionItem> + 'a {
+        // For now, return all schema completions
+        // TODO: Add filtering based on context when needed
+        self.schema_completions.iter()
+    }
+
+    fn handle_did_open(&mut self, request: Request) -> Result<(), Error> {
+        log::info!("Handling didOpen notification");
+
+        #[derive(Deserialize, Debug)]
+        #[serde(rename_all = "camelCase")]
+        struct DidOpenParams {
+            text_document: TextDocument,
+        }
+
+        #[derive(Deserialize, Debug)]
+        struct TextDocument {
+            text: String,
+        }
+
+        if let Some(params) = &request.params {
+            let params = serde_json::from_value::<DidOpenParams>(params.clone())?;
+            self.parsing_context.did_change(params.text_document.text)?;
         }
 
         Ok(())
     }
 
-    fn handle_did_change(&self, request: Request) -> Result<(), Error> {
+    fn handle_did_change(&mut self, request: Request) -> Result<(), Error> {
+        #[derive(Deserialize, Debug)]
+        #[serde(rename_all = "camelCase")]
+        struct DidChangeParams {
+            content_changes: Vec<ContentChange>,
+        }
+        // TODO(vini): handle when the client sends just the diff
+        #[derive(Deserialize, Debug)]
+        struct ContentChange {
+            text: String,
+        }
+
         log::info!("Handling didChange notification");
         if let Some(params) = &request.params {
-            // log::info!(
-            //     "Document changes: {}",
-            //     serde_json::to_string_pretty(params)?
-            // );
+            let params = serde_json::from_value::<DidChangeParams>(params.clone())?;
+            // log::info!("Deserialized didChange: {:?}", params);
+            for content_change in params.content_changes {
+                self.parsing_context.did_change(content_change.text)?;
+            }
         }
 
         Ok(())
     }
 
     fn handle_connection_selected(&mut self, request: Request) -> Result<(), Error> {
-        log::info!("Handling updateSchema request");
+        // log::info!("Handling updateSchema request");
 
         if let Some(params) = &request.params {
             match serde_json::from_value::<Uuid>(params.clone()) {
@@ -646,8 +837,6 @@ impl LanguageServer {
 
         let response_str =
             serde_json::to_string(&response).context("Failed to serialize response")?;
-
-        // log::info!("Sending LSP response: {}", response_str);
 
         self.app
             .emit("lsp-response", response_str)

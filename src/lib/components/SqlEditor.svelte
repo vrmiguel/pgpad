@@ -39,12 +39,7 @@
 	let editorContainer = $state<HTMLElement>();
 	let sqlEditor: ReturnType<typeof createEditor> | null = null;
 
-	let sqlQuery = $state(`-- Welcome to PgPad!
--- Keyboard shortcuts:
---   Ctrl+Enter: Run selected text (or current line if nothing selected)
---   Ctrl+R: Run entire script
-
-SELECT 1 as test;`);
+	let sqlQuery = $state('');
 
 	let queryHistory = $state<QueryHistoryEntry[]>([]);
 	let selectedCellData = $state<Json | null>(null);

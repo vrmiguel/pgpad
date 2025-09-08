@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
-use tauri::{ipc::Channel};
+use tauri::ipc::Channel;
 use uuid::Uuid;
 
 use crate::{

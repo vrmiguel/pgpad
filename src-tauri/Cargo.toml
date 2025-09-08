@@ -42,6 +42,8 @@ sqlparser = "0.58.0"
 rfd = "0.15.4"
 keyring = { version = "3.2.0", features = ["apple-native", "windows-native", "sync-secret-service"] }
 url = "2.5.4"
+tree-sitter = "0.25.9"
+tree-sitter-sequel = "0.3.8"
 
 [profile.release]
 panic = "abort"
