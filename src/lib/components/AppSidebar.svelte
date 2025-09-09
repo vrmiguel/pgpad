@@ -8,7 +8,8 @@
 		TableProperties,
 		Edit,
 		Trash2,
-		Unplug
+		Unplug,
+		History
 	} from '@lucide/svelte';
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
@@ -17,7 +18,12 @@
 	import { ContextMenu } from 'bits-ui';
 	import DatabaseSchemaItems from './DatabaseSchemaItems.svelte';
 	import Logo from './Logo.svelte';
-	import type { ConnectionInfo, Script, DatabaseSchema } from '$lib/commands.svelte';
+	import type {
+		ConnectionInfo,
+		Script,
+		DatabaseSchema,
+		QueryHistoryEntry
+	} from '$lib/commands.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	interface Props {
@@ -29,11 +35,13 @@
 		unsavedChanges: SvelteSet<number>;
 		databaseSchema: DatabaseSchema | null;
 		loadingSchema: boolean;
+		queryHistory: QueryHistoryEntry[];
 
 		//Bound props
 		isSidebarCollapsed?: boolean;
 		isConnectionsAccordionOpen?: boolean;
 		isScriptsAccordionOpen?: boolean;
+		isHistoryAccordionOpen?: boolean;
 		isItemsAccordionOpen?: boolean;
 
 		onToggleSidebar?: () => void;
@@ -47,6 +55,7 @@
 		onCreateNewScript?: () => void;
 		onDeleteScript?: (script: Script) => void;
 		onTableClick?: (tableName: string, schema: string) => void;
+		onLoadFromHistory?: (historyQuery: string) => void;
 	}
 
 	let {
@@ -58,10 +67,12 @@
 		unsavedChanges,
 		databaseSchema,
 		loadingSchema,
+		queryHistory,
 
 		isSidebarCollapsed = $bindable(false),
 		isConnectionsAccordionOpen = $bindable(true),
 		isScriptsAccordionOpen = $bindable(false),
+		isHistoryAccordionOpen = $bindable(false),
 		isItemsAccordionOpen = $bindable(false),
 
 		onToggleSidebar,
@@ -74,7 +85,8 @@
 		onSelectScript,
 		onCreateNewScript,
 		onDeleteScript,
-		onTableClick
+		onTableClick,
+		onLoadFromHistory
 	}: Props = $props();
 
 	function toggleSidebar() {
@@ -156,6 +168,7 @@
 					isSidebarCollapsed = false;
 					isConnectionsAccordionOpen = true;
 					isScriptsAccordionOpen = false;
+					isHistoryAccordionOpen = false;
 					isItemsAccordionOpen = false;
 				}}
 				title="Connections"
@@ -172,11 +185,28 @@
 					isSidebarCollapsed = false;
 					isConnectionsAccordionOpen = false;
 					isScriptsAccordionOpen = true;
+					isHistoryAccordionOpen = false;
 					isItemsAccordionOpen = false;
 				}}
 				title="Scripts"
 			>
 				<FileJson
+					class="text-sidebar-foreground/70 group-hover:text-primary/90 h-5 w-5 transition-colors duration-200"
+				/>
+			</button>
+
+			<button
+				class="group flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 ease-out hover:bg-white/3 dark:hover:bg-white/5"
+				onclick={() => {
+					isSidebarCollapsed = false;
+					isConnectionsAccordionOpen = false;
+					isScriptsAccordionOpen = false;
+					isHistoryAccordionOpen = true;
+					isItemsAccordionOpen = false;
+				}}
+				title="Query History"
+			>
+				<History
 					class="text-sidebar-foreground/70 group-hover:text-primary/90 h-5 w-5 transition-colors duration-200"
 				/>
 			</button>
@@ -188,6 +218,7 @@
 					isSidebarCollapsed = false;
 					isConnectionsAccordionOpen = false;
 					isScriptsAccordionOpen = false;
+					isHistoryAccordionOpen = false;
 					isItemsAccordionOpen = true;
 				}}
 				title="Database Items"
@@ -427,6 +458,76 @@
 									{/each}
 								{/if}
 							</div>
+						</div>
+					</AccordionContent>
+				</AccordionItem>
+
+				<AccordionItem title="History" icon={History} bind:open={isHistoryAccordionOpen}>
+					<AccordionContent>
+						<div class="space-y-3">
+							{#if queryHistory.length > 0}
+								<div class="space-y-2">
+									{#each queryHistory as historyItem (historyItem.id)}
+										<button
+											type="button"
+											class="group hover:bg-muted/30 w-full cursor-pointer rounded-lg border p-3 text-left transition-colors"
+											onclick={() => onLoadFromHistory?.(historyItem.query_text)}
+										>
+											<div class="mb-2 flex items-start justify-between gap-2">
+												<div class="flex min-w-0 flex-1 items-center gap-2">
+													<div class="flex items-center gap-1">
+														{#if historyItem.status === 'success'}
+															<div class="h-2 w-2 rounded-full bg-green-500"></div>
+														{:else}
+															<div class="h-2 w-2 rounded-full bg-red-500"></div>
+														{/if}
+													</div>
+													<span class="text-muted-foreground text-xs">
+														{new Date(historyItem.executed_at * 1000).toLocaleDateString()}
+													</span>
+													{#if historyItem.status === 'success'}
+														<span class="text-muted-foreground text-xs">
+															{historyItem.row_count} rows
+														</span>
+													{/if}
+													<span class="text-muted-foreground text-xs">
+														{historyItem.duration_ms}ms
+													</span>
+												</div>
+												<span
+													class="text-primary text-xs font-medium opacity-0 group-hover:opacity-100"
+												>
+													Load
+												</span>
+											</div>
+											<code class="bg-muted/50 block overflow-hidden rounded p-2 text-left text-xs">
+												{historyItem.query_text.length > 100
+													? historyItem.query_text.slice(0, 100) + '...'
+													: historyItem.query_text}
+											</code>
+											{#if historyItem.error_message}
+												<p class="bg-error/50 mt-1 rounded p-2 text-left text-xs">
+													{historyItem.error_message}
+												</p>
+											{/if}
+										</button>
+									{/each}
+								</div>
+							{:else}
+								<div class="text-muted-foreground flex flex-1 items-center justify-center py-8">
+									<div class="text-center">
+										<div
+											class="bg-muted/20 mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+										>
+											<History class="text-muted-foreground/50 h-6 w-6" />
+										</div>
+										<p class="text-sm font-medium">No query history</p>
+										<p class="text-muted-foreground/70 mt-1 text-xs">
+											Execute queries to see history here
+										</p>
+									</div>
+								</div>
+							{/if}
 						</div>
 					</AccordionContent>
 				</AccordionItem>

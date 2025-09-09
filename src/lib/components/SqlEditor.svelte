@@ -9,13 +9,11 @@
 		Commands,
 		type ConnectionInfo,
 		type Script,
-		type QueryHistoryEntry,
 		type Row,
 		type Json
 	} from '$lib/commands.svelte';
 	import { createEditor } from '$lib/codemirror';
 	import { onMount } from 'svelte';
-	import { TableProperties, History } from '@lucide/svelte';
 	import { EditorState } from '@codemirror/state';
 
 	interface Props {
@@ -25,6 +23,7 @@
 		hasUnsavedChanges: boolean;
 		onContentChange?: (content: string) => void;
 		onLoadFromHistory?: (historyQuery: string) => void;
+		onHistoryUpdate?: () => void;
 	}
 
 	let {
@@ -33,7 +32,8 @@
 		currentScript = $bindable(),
 		hasUnsavedChanges = $bindable(),
 		onContentChange,
-		onLoadFromHistory
+		onLoadFromHistory,
+		onHistoryUpdate
 	}: Props = $props();
 
 	let editorContainer = $state<HTMLElement>();
@@ -46,7 +46,6 @@
 
 SELECT 1 as test;`);
 
-	let queryHistory = $state<QueryHistoryEntry[]>([]);
 	let selectedCellData = $state<Json | null>(null);
 
 	interface QueryResultTab {
@@ -65,7 +64,6 @@ SELECT 1 as test;`);
 
 	let resultTabs = $state<QueryResultTab[]>([]);
 	let activeResultTabId = $state<number | null>(null);
-	let showHistory = $state(true);
 	// Counter for result tab IDs
 	let nextResultTabId = $state(1);
 
@@ -102,17 +100,6 @@ SELECT 1 as test;`);
 		}
 	}
 
-	async function loadQueryHistory() {
-		if (!selectedConnection) return;
-
-		try {
-			queryHistory = await Commands.getQueryHistory(selectedConnection, 50);
-		} catch (error) {
-			console.error('Failed to load query history:', error);
-			queryHistory = [];
-		}
-	}
-
 	let executionTrigger = $state(0);
 
 	export function handleExecuteQuery(queryToExecute?: string) {
@@ -133,11 +120,15 @@ SELECT 1 as test;`);
 		executionTrigger++;
 
 		console.log('HandleExecuteQuery called with:', currentQuery, 'trigger:', executionTrigger);
-
-		showHistory = false;
 	}
 
 	let currentTableBrowse: { tableName: string; schema: string } | null = $state(null);
+
+	export function loadQueryFromHistory(historyQuery: string) {
+		if (onLoadFromHistory) {
+			onLoadFromHistory(historyQuery);
+		}
+	}
 
 	export function handleTableBrowse(tableName: string, schema: string) {
 		if (!selectedConnection || !tableName) return;
@@ -158,7 +149,6 @@ SELECT 1 as test;`);
 		activeResultTabId = null;
 		currentQuery = query.trim();
 		executionTrigger++;
-		showHistory = false;
 
 		console.log('Table browse started for:', tableName, 'with query:', query);
 	}
@@ -228,7 +218,7 @@ SELECT 1 as test;`);
 				rowCount,
 				undefined
 			);
-			loadQueryHistory();
+			onHistoryUpdate?.();
 		}
 	}
 
@@ -241,7 +231,7 @@ SELECT 1 as test;`);
 
 		if (selectedConnection && tab) {
 			Commands.saveQueryToHistory(selectedConnection, tab.query, 0, 'error', 0, error);
-			loadQueryHistory();
+			onHistoryUpdate?.();
 		}
 	}
 
@@ -263,22 +253,6 @@ SELECT 1 as test;`);
 		return handleExecuteQuery(queryToExecute);
 	}
 
-	function loadQueryFromHistory(historyQuery: string) {
-		if (onLoadFromHistory) {
-			onLoadFromHistory(historyQuery);
-		}
-	}
-
-	function formatDuration(ms: number | null): string {
-		if (ms === null || ms === undefined) return '0ms';
-		if (ms < 1000) return `${ms}ms`;
-		return `${(ms / 1000).toFixed(2)}s`;
-	}
-
-	function formatTimestamp(timestamp: number): string {
-		return new Date(timestamp * 1000).toLocaleString();
-	}
-
 	function generateTabTitle(query: string): string {
 		const cleaned = query.trim().replace(/\s+/g, ' ');
 		if (cleaned.length <= 30) return cleaned;
@@ -286,8 +260,6 @@ SELECT 1 as test;`);
 	}
 
 	function handleResultTabClose(tabId: number) {
-		if (tabId === HISTORY_TAB_ID) return;
-
 		resultTabs = resultTabs.filter((tab) => tab.id !== tabId);
 
 		if (activeResultTabId === tabId) {
@@ -296,18 +268,10 @@ SELECT 1 as test;`);
 	}
 
 	function handleResultTabSelect(tabId: number) {
-		if (tabId === HISTORY_TAB_ID) {
-			showHistory = true;
-			activeResultTabId = null;
-		} else {
-			showHistory = false;
-			activeResultTabId = tabId;
-		}
+		activeResultTabId = tabId;
 	}
 
 	function getTabStatus(tab: QueryResultTab): 'normal' | 'modified' | 'error' {
-		if (tab.id === HISTORY_TAB_ID) return 'normal';
-
 		switch (tab.status) {
 			case 'error':
 				return 'error';
@@ -317,21 +281,6 @@ SELECT 1 as test;`);
 				return 'normal';
 		}
 	}
-
-	// TODO(vini): this is a workaround, think of a better way of rendering the history tab
-	const HISTORY_TAB_ID = 0;
-
-	const allTabs = $derived(() => {
-		const tabs = [...resultTabs];
-		tabs.push({
-			id: HISTORY_TAB_ID,
-			name: `History (${queryHistory.length})`,
-			query: '',
-			timestamp: 0,
-			status: 'completed' as const
-		});
-		return tabs;
-	});
 
 	async function loadDatabaseSchema() {
 		if (!selectedConnection || !sqlEditor) return;
@@ -350,7 +299,6 @@ SELECT 1 as test;`);
 
 	$effect(() => {
 		if (selectedConnection) {
-			loadQueryHistory();
 			loadDatabaseSchema();
 		}
 	});
@@ -380,10 +328,6 @@ SELECT 1 as test;`);
 		};
 
 		initializeEditor();
-
-		if (selectedConnection) {
-			loadQueryHistory();
-		}
 	});
 </script>
 
@@ -405,8 +349,8 @@ SELECT 1 as test;`);
 			<div class="relative flex h-full flex-col">
 				<div class="relative z-10">
 					<TabBar
-						tabs={allTabs()}
-						activeTabId={showHistory ? HISTORY_TAB_ID : activeResultTabId}
+						tabs={resultTabs}
+						activeTabId={activeResultTabId}
 						onTabSelect={handleResultTabSelect}
 						onTabClose={handleResultTabClose}
 						onNewTab={undefined}
@@ -422,77 +366,7 @@ SELECT 1 as test;`);
 				</div>
 
 				<Card class="flex flex-1 flex-col gap-0 overflow-hidden rounded-none border-none pt-0 pb-0">
-					{#if showHistory}
-						<CardContent class="flex min-h-0 flex-1 flex-col px-6 pt-0">
-							{#if queryHistory.length > 0}
-								<div class="flex-1 overflow-auto">
-									<div class="space-y-2 p-2">
-										{#each queryHistory as historyItem (historyItem.id)}
-											<button
-												type="button"
-												class="group hover:bg-muted/30 w-full cursor-pointer rounded-lg border p-3 text-left transition-colors"
-												onclick={() => loadQueryFromHistory(historyItem.query_text)}
-											>
-												<div class="mb-2 flex items-start justify-between gap-2">
-													<div class="flex min-w-0 flex-1 items-center gap-2">
-														<div class="flex items-center gap-1">
-															{#if historyItem.status === 'success'}
-																<div class="h-2 w-2 rounded-full bg-green-500"></div>
-															{:else}
-																<div class="h-2 w-2 rounded-full bg-red-500"></div>
-															{/if}
-														</div>
-														<span class="text-muted-foreground text-xs">
-															{formatTimestamp(historyItem.executed_at)}
-														</span>
-														{#if historyItem.status === 'success'}
-															<span class="text-muted-foreground text-xs">
-																{historyItem.row_count} rows
-															</span>
-														{/if}
-														<span class="text-muted-foreground text-xs">
-															{formatDuration(historyItem.duration_ms)}
-														</span>
-													</div>
-													<span
-														class="text-primary text-xs font-medium opacity-0 group-hover:opacity-100"
-													>
-														Load
-													</span>
-												</div>
-												<code
-													class="bg-muted/50 block overflow-hidden rounded p-2 text-left text-xs"
-												>
-													{historyItem.query_text.length > 200
-														? historyItem.query_text.slice(0, 200) + '...'
-														: historyItem.query_text}
-												</code>
-												{#if historyItem.error_message}
-													<p class="bg-error/50 mt-1 rounded p-2 text-left text-xs">
-														{historyItem.error_message}
-													</p>
-												{/if}
-											</button>
-										{/each}
-									</div>
-								</div>
-							{:else}
-								<div class="text-muted-foreground flex flex-1 items-center justify-center">
-									<div class="text-center">
-										<div
-											class="bg-muted/20 mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
-										>
-											<History class="text-muted-foreground/50 h-8 w-8" />
-										</div>
-										<p class="text-sm font-medium">No query history</p>
-										<p class="text-muted-foreground/70 mt-1 text-xs">
-											Execute queries to see history here
-										</p>
-									</div>
-								</div>
-							{/if}
-						</CardContent>
-					{:else if activeResultTabId}
+					{#if activeResultTabId}
 						{@const activeTab = resultTabs.find((t) => t.id === activeResultTabId)}
 						{#if activeTab}
 							{#if activeTab.columns && activeTab.rows && activeTab.rows.length > 0}
@@ -548,16 +422,23 @@ SELECT 1 as test;`);
 					{:else}
 						<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-6 pt-0">
 							<div class="text-muted-foreground flex flex-1 items-center justify-center">
-								<div class="text-center">
-									<div
-										class="bg-muted/20 mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
-									>
-										<TableProperties class="text-muted-foreground/50 h-8 w-8" />
+								<div class="space-y-3 text-xs">
+									<div class="flex min-w-[20rem] items-center justify-between gap-4">
+										<span class="text-muted-foreground/80">Run selected text or current line</span>
+										<kbd
+											class="bg-muted text-muted-foreground pointer-events-none inline-flex h-5 items-center justify-center gap-1 rounded border px-1.5 font-mono text-[10px] font-medium opacity-100 select-none"
+										>
+											<span class="text-xs">⌘</span>Enter
+										</kbd>
 									</div>
-									<p class="text-sm font-medium">No results to display</p>
-									<p class="text-muted-foreground/70 mt-1 text-xs">
-										Run a query to see results here
-									</p>
+									<div class="flex min-w-[20rem] items-center justify-between gap-4">
+										<span class="text-muted-foreground/80">Run entire script</span>
+										<kbd
+											class="bg-muted text-muted-foreground pointer-events-none inline-flex h-5 items-center justify-center gap-1 rounded border px-1.5 font-mono text-[10px] font-medium opacity-100 select-none"
+										>
+											<span class="text-xs">⌘</span>R
+										</kbd>
+									</div>
 								</div>
 							</div>
 						</CardContent>

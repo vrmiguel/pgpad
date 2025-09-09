@@ -9,7 +9,8 @@
 		type ConnectionInfo,
 		type DatabaseInfo,
 		type Script,
-		type DatabaseSchema
+		type DatabaseSchema,
+		type QueryHistoryEntry
 	} from '$lib/commands.svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import { listen } from '@tauri-apps/api/event';
@@ -60,6 +61,7 @@
 
 	let databaseSchema = $state<DatabaseSchema | null>(null);
 	let loadingSchema = $state(false);
+	let queryHistory = $state<QueryHistoryEntry[]>([]);
 	let lastLoadedSchemaConnectionId = $state<string | null>(null);
 
 	let isItemsAccordionOpen = $state(false);
@@ -84,6 +86,7 @@
 	}
 	let isConnectionsAccordionOpen = $state(true);
 	let isScriptsAccordionOpen = $state(false);
+	let isHistoryAccordionOpen = $state(false);
 
 	// TODO(vini): turn into an $effect that updates with its dependencies
 	let shouldSaveSession = false;
@@ -113,6 +116,7 @@
 					isSidebarCollapsed,
 					isConnectionsAccordionOpen,
 					isScriptsAccordionOpen,
+					isHistoryAccordionOpen,
 					isItemsAccordionOpen,
 					openScriptIds: openScripts.map((s) => s.id),
 					activeScriptId,
@@ -156,6 +160,8 @@
 				isConnectionsAccordionOpen = saved.isConnectionsAccordionOpen;
 			if (saved.isScriptsAccordionOpen !== undefined)
 				isScriptsAccordionOpen = saved.isScriptsAccordionOpen;
+			if (saved.isHistoryAccordionOpen !== undefined)
+				isHistoryAccordionOpen = saved.isHistoryAccordionOpen;
 			if (saved.isItemsAccordionOpen !== undefined)
 				isItemsAccordionOpen = saved.isItemsAccordionOpen;
 			if (saved.nextTempId !== undefined) nextTempId = Math.min(nextTempId, saved.nextTempId);
@@ -376,7 +382,7 @@
 		openScript(script);
 	}
 
-	async function loadQueryFromHistory(historyQuery: string) {
+	async function createScriptFromHistory(historyQuery: string) {
 		const name = generateScriptName();
 		const tempId = nextTempId--;
 
@@ -554,6 +560,30 @@
 	function handleTableClick(tableName: string, schema: string) {
 		sqlEditorRef?.handleTableBrowse(tableName, schema);
 	}
+
+	async function loadQueryHistory() {
+		if (!selectedConnection) {
+			queryHistory = [];
+			return;
+		}
+
+		try {
+			queryHistory = await Commands.getQueryHistory(selectedConnection, 50);
+		} catch (error) {
+			console.error('Failed to load query history:', error);
+			queryHistory = [];
+		}
+	}
+
+	function loadQueryFromHistory(historyQuery: string) {
+		sqlEditorRef?.loadQueryFromHistory(historyQuery);
+	}
+
+	$effect(() => {
+		if (selectedConnection) {
+			loadQueryHistory();
+		}
+	});
 
 	function editConnection(connection: ConnectionInfo) {
 		editingConnection = connection;
@@ -822,9 +852,11 @@ SELECT 1 as test;`;
 				{unsavedChanges}
 				{databaseSchema}
 				{loadingSchema}
+				{queryHistory}
 				bind:isSidebarCollapsed
 				bind:isConnectionsAccordionOpen
 				bind:isScriptsAccordionOpen
+				bind:isHistoryAccordionOpen
 				bind:isItemsAccordionOpen
 				onSelectConnection={selectConnection}
 				onConnectToDatabase={connectToDatabase}
@@ -839,6 +871,7 @@ SELECT 1 as test;`;
 				onCreateNewScript={createNewScript}
 				onDeleteScript={deleteScript}
 				onTableClick={handleTableClick}
+				onLoadFromHistory={loadQueryFromHistory}
 			/>
 		</ResizablePane>
 
@@ -869,7 +902,8 @@ SELECT 1 as test;`;
 						hasUnsavedChanges={activeScriptId !== null && unsavedChanges.has(activeScriptId)}
 						bind:this={sqlEditorRef}
 						onContentChange={handleEditorContentChange}
-						onLoadFromHistory={loadQueryFromHistory}
+						onLoadFromHistory={createScriptFromHistory}
+						onHistoryUpdate={loadQueryHistory}
 					/>
 				</div>
 			</div>
