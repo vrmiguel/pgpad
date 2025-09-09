@@ -6,16 +6,13 @@
 		ChevronRight,
 		FileJson,
 		TableProperties,
-		Edit,
-		Trash2,
-		Unplug,
 		History
 	} from '@lucide/svelte';
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
 	import { Button } from '$lib/components/ui/button';
 	import { Accordion, AccordionItem, AccordionContent } from '$lib/components/ui/accordion';
-	import { ContextMenu } from 'bits-ui';
+	import { Menu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 	import DatabaseSchemaItems from './DatabaseSchemaItems.svelte';
 	import Logo from './Logo.svelte';
 	import type {
@@ -132,6 +129,60 @@
 
 	function disconnectConnection(connectionId: string) {
 		onDisconnectConnection?.(connectionId);
+	}
+
+	async function showContextMenu(event: MouseEvent, connection: ConnectionInfo) {
+		event.preventDefault();
+
+		try {
+			const menu = await Menu.new();
+
+			const editItem = await MenuItem.new({
+				text: 'Edit Connection',
+				action: () => {
+					console.log('Edit clicked');
+					editConnection(connection);
+				}
+			});
+
+			let connectItem;
+			if (connection.connected) {
+				connectItem = await MenuItem.new({
+					text: 'Disconnect',
+					action: () => {
+						disconnectConnection(connection.id);
+					}
+				});
+			} else {
+				connectItem = await MenuItem.new({
+					text: 'Connect',
+					action: () => {
+						connectToDatabase(connection.id);
+					}
+				});
+			}
+
+			const deleteItem = await MenuItem.new({
+				text: 'Delete Connection',
+				action: () => {
+					deleteConnection(connection.id);
+				}
+			});
+
+			const separator = await PredefinedMenuItem.new({
+				item: 'Separator'
+			});
+
+			await menu.append(editItem);
+			await menu.append(connectItem);
+			await menu.append(separator);
+			await menu.append(deleteItem);
+
+			await menu.popup();
+		} catch (error) {
+			console.error('Failed to show context menu:', error);
+			console.error('Error details:', error);
+		}
 	}
 </script>
 
@@ -278,99 +329,54 @@
 									</div>
 								{:else}
 									{#each connections as connection (connection.id)}
-										<ContextMenu.Root>
-											<ContextMenu.Trigger class="w-full">
-												<Button
-													variant="ghost"
-													class="h-auto w-full justify-start rounded-none p-3 transition-all duration-200 hover:bg-black/3 dark:hover:bg-white/3 {selectedConnection ===
-													connection.id
-														? 'dark:bg-primary/20 border-l-2 border-l-blue-500 bg-blue-50/50 dark:border-l-blue-400'
-														: 'border-l-2 border-l-transparent'}"
-													onclick={() => selectConnection(connection.id)}
-													ondblclick={() => connectToDatabase(connection.id)}
-												>
-													<div class="flex w-full items-center gap-2.5">
-														<div class="flex flex-shrink-0 items-center gap-2">
-															<!-- Connection status dot -->
-															{#if connection.connected}
-																<div class="h-2 w-2 rounded-full bg-green-500 shadow-sm"></div>
-															{:else if establishingConnections.has(connection.id)}
-																<div
-																	class="h-2 w-2 animate-pulse rounded-full bg-amber-500 shadow-sm"
-																></div>
-															{:else}
-																<div class="h-2 w-2 rounded-full bg-gray-400"></div>
-															{/if}
-
-															{#if 'Postgres' in connection.database_type}
-																<IconCibPostgresql class="h-4 w-4" />
-															{:else if 'SQLite' in connection.database_type}
-																<IconSimpleIconsSqlite class="h-4 w-4" />
-															{/if}
-														</div>
-
-														<div class="min-w-0 flex-1 text-left">
-															<div class="text-foreground mb-0.5 truncate text-sm font-medium">
-																{connection.name}
-															</div>
-															<div class="text-muted-foreground truncate font-mono text-xs">
-																{#if 'Postgres' in connection.database_type}
-																	{connection.database_type.Postgres.connection_string
-																		.replace(/^postgresql?:\/\/[^@]*@/, '')
-																		.replace(/\/[^?]*/, '')}
-																{:else if 'SQLite' in connection.database_type}
-																	{connection.database_type.SQLite.db_path.split('/').pop() ||
-																		connection.database_type.SQLite.db_path}
-																{/if}
-															</div>
-														</div>
-													</div>
-												</Button>
-											</ContextMenu.Trigger>
-
-											<ContextMenu.Portal>
-												<ContextMenu.Content
-													class="bg-popover text-popover-foreground z-[1000] max-w-64 min-w-48 overflow-hidden rounded-lg border p-2 shadow-lg backdrop-blur-sm"
-													style="box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.05);"
-												>
-													<ContextMenu.Item
-														class="hover:bg-accent hover:text-accent-foreground relative flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all outline-none select-none"
-														onclick={() => editConnection(connection)}
-													>
-														<Edit class="text-muted-foreground h-4 w-4" />
-														<span>Edit Connection</span>
-													</ContextMenu.Item>
-
+										<Button
+											variant="ghost"
+											class="h-auto w-full justify-start rounded-none p-3 transition-all duration-200 hover:bg-black/3 dark:hover:bg-white/3 {selectedConnection ===
+											connection.id
+												? 'dark:bg-primary/20 border-l-2 border-l-blue-500 bg-blue-50/50 dark:border-l-blue-400'
+												: 'border-l-2 border-l-transparent'}"
+											onclick={() => selectConnection(connection.id)}
+											ondblclick={() => connectToDatabase(connection.id)}
+											oncontextmenu={(event) => showContextMenu(event, connection)}
+											data-context-menu="true"
+										>
+											<div class="flex w-full items-center gap-2.5">
+												<div class="flex flex-shrink-0 items-center gap-2">
+													<!-- Connection status dot -->
 													{#if connection.connected}
-														<ContextMenu.Item
-															class="hover:bg-accent hover:text-accent-foreground relative flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all outline-none select-none"
-															onclick={() => disconnectConnection(connection.id)}
-														>
-															<Unplug class="text-muted-foreground h-4 w-4" />
-															<span>Disconnect</span>
-														</ContextMenu.Item>
+														<div class="h-2 w-2 rounded-full bg-green-500 shadow-sm"></div>
+													{:else if establishingConnections.has(connection.id)}
+														<div
+															class="h-2 w-2 animate-pulse rounded-full bg-amber-500 shadow-sm"
+														></div>
 													{:else}
-														<ContextMenu.Item
-															class="hover:bg-accent hover:text-accent-foreground relative flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all outline-none select-none"
-															onclick={() => connectToDatabase(connection.id)}
-														>
-															<Cable class="text-muted-foreground h-4 w-4" />
-															<span>Connect</span>
-														</ContextMenu.Item>
+														<div class="h-2 w-2 rounded-full bg-gray-400"></div>
 													{/if}
 
-													<ContextMenu.Separator class="bg-border my-2 h-px" />
+													{#if 'Postgres' in connection.database_type}
+														<IconCibPostgresql class="h-4 w-4" />
+													{:else if 'SQLite' in connection.database_type}
+														<IconSimpleIconsSqlite class="h-4 w-4" />
+													{/if}
+												</div>
 
-													<ContextMenu.Item
-														class="text-error hover:bg-error/10 hover:text-error relative flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all outline-none select-none"
-														onclick={() => deleteConnection(connection.id)}
-													>
-														<Trash2 class="h-4 w-4" />
-														<span>Delete Connection</span>
-													</ContextMenu.Item>
-												</ContextMenu.Content>
-											</ContextMenu.Portal>
-										</ContextMenu.Root>
+												<div class="min-w-0 flex-1 text-left">
+													<div class="text-foreground mb-0.5 truncate text-sm font-medium">
+														{connection.name}
+													</div>
+													<div class="text-muted-foreground truncate font-mono text-xs">
+														{#if 'Postgres' in connection.database_type}
+															{connection.database_type.Postgres.connection_string
+																.replace(/^postgresql?:\/\/[^@]*@/, '')
+																.replace(/\/[^?]*/, '')}
+														{:else if 'SQLite' in connection.database_type}
+															{connection.database_type.SQLite.db_path.split('/').pop() ||
+																connection.database_type.SQLite.db_path}
+														{/if}
+													</div>
+												</div>
+											</div>
+										</Button>
 									{/each}
 								{/if}
 							</div>
