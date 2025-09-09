@@ -42,6 +42,7 @@
 	let sqlQuery = $state('');
 
 	let selectedCellData = $state<Json | null>(null);
+	let jsonInspectorData = $state<{ data: Json; position: { x: number; y: number } } | null>(null);
 
 	interface QueryResultTab {
 		id: number;
@@ -371,10 +372,21 @@
 											data={activeTab.rows}
 											columns={activeTab.columns}
 											bind:selectedCellData
+											onJsonInspect={(data, position) => {
+												jsonInspectorData = { data, position };
+											}}
 										/>
 									</CardContent>
 
-									<JsonInspector {selectedCellData} onClose={() => (selectedCellData = null)} />
+									{#if jsonInspectorData}
+										<JsonInspector
+											selectedCellData={jsonInspectorData.data}
+											initialPosition={jsonInspectorData.position}
+											onClose={() => {
+												jsonInspectorData = null;
+											}}
+										/>
+									{/if}
 								</div>
 							{:else}
 								<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-6">

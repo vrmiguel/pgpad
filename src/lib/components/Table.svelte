@@ -9,7 +9,8 @@
 		ChevronsUpDown,
 		ChevronLeft,
 		ChevronRight,
-		Search
+		Search,
+		MoreHorizontal
 	} from '@lucide/svelte';
 
 	interface Props {
@@ -17,13 +18,15 @@
 		columns: string[];
 		globalFilter?: string;
 		selectedCellData?: Json | null;
+		onJsonInspect?: (data: Json, position: { x: number; y: number }) => void;
 	}
 
 	let {
 		data,
 		columns,
 		globalFilter = $bindable(''),
-		selectedCellData = $bindable(null)
+		selectedCellData = $bindable(null),
+		onJsonInspect
 	}: Props = $props();
 
 	let tableContainer: HTMLDivElement;
@@ -208,7 +211,41 @@
 		}
 
 		selectedCell = { rowId, columnId };
-		selectedCellData = cellValue;
+		const cellType = CellFormatter.getCellType(cellValue);
+		if (cellType !== 'object') {
+			selectedCellData = cellValue;
+		}
+	}
+
+	function handleJsonInspectorOpen(cellValue: Json, event: MouseEvent) {
+		event.stopPropagation();
+
+		const WINDOW_SIZE = { width: 450, height: 400 };
+		const VIEWPORT_MARGIN = 10;
+		const BELOW_OFFSET = 30;
+
+		const button = event.currentTarget as HTMLElement;
+		const buttonRect = button.getBoundingClientRect();
+
+		let x = buttonRect.left + buttonRect.width / 2 - WINDOW_SIZE.width / 2;
+		let y = buttonRect.top - WINDOW_SIZE.height - VIEWPORT_MARGIN;
+
+		// Clip to viewport
+		x = Math.max(
+			VIEWPORT_MARGIN,
+			Math.min(x, window.innerWidth - WINDOW_SIZE.width - VIEWPORT_MARGIN)
+		);
+
+		if (y < VIEWPORT_MARGIN) {
+			y = buttonRect.top + BELOW_OFFSET;
+		}
+
+		y = Math.max(
+			VIEWPORT_MARGIN,
+			Math.min(y, window.innerHeight - WINDOW_SIZE.height - VIEWPORT_MARGIN)
+		);
+
+		onJsonInspect?.(cellValue, { x, y });
 	}
 
 	function getCellValueForCopy(): string | null {
@@ -449,29 +486,51 @@
 									role="gridcell"
 									aria-selected={isSelected}
 								>
-									<button
-										class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
-										title={CellFormatter.formatCellTitle(cellValue)}
-										onclick={() => handleSimpleCellClick(cellValue, rowId, columnId)}
-									>
-										{#if cellType === 'null'}
-											<span class="cell-content text-muted-foreground text-xs italic"
-												>{displayValue}</span
+									{#if cellType === 'object'}
+										<div class="group/json-cell relative h-full w-full">
+											<button
+												class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
+												title={CellFormatter.formatCellTitle(cellValue)}
+												onclick={() => handleSimpleCellClick(cellValue, rowId, columnId)}
 											>
-										{:else if cellType === 'boolean'}
-											<span class="cell-content text-foreground">{displayValue}</span>
-										{:else if cellType === 'number'}
-											<span class="cell-content text-foreground font-mono">{displayValue}</span>
-										{:else if cellType === 'object'}
-											<div class="cell-content cursor-pointer">
-												<span class="font-mono text-xs">{displayValue}</span>
-											</div>
-										{:else}
-											<div class="cell-content text-foreground">
-												{displayValue}
-											</div>
-										{/if}
-									</button>
+												<div class="cell-content flex items-center pr-6">
+													<span class="min-w-0 flex-1 truncate font-mono text-xs"
+														>{displayValue}</span
+													>
+												</div>
+											</button>
+											<button
+												class="hover:bg-accent/60 focus:ring-primary/30 absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 transition-all duration-150 focus:ring-1 focus:outline-none"
+												title="Inspect JSON"
+												onclick={(e) => handleJsonInspectorOpen(cellValue, e)}
+												type="button"
+											>
+												<MoreHorizontal
+													class="text-muted-foreground/80 hover:text-foreground h-3 w-3"
+												/>
+											</button>
+										</div>
+									{:else}
+										<button
+											class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
+											title={CellFormatter.formatCellTitle(cellValue)}
+											onclick={() => handleSimpleCellClick(cellValue, rowId, columnId)}
+										>
+											{#if cellType === 'null'}
+												<span class="cell-content text-muted-foreground text-xs italic"
+													>{displayValue}</span
+												>
+											{:else if cellType === 'boolean'}
+												<span class="cell-content text-foreground">{displayValue}</span>
+											{:else if cellType === 'number'}
+												<span class="cell-content text-foreground font-mono">{displayValue}</span>
+											{:else}
+												<div class="cell-content text-foreground">
+													{displayValue}
+												</div>
+											{/if}
+										</button>
+									{/if}
 								</td>
 							{/each}
 						</tr>
