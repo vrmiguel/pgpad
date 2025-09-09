@@ -382,7 +382,11 @@ pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result
 pub async fn get_database_schema(
     connection_id: Uuid,
     state: tauri::State<'_, AppState>,
-) -> Result<DatabaseSchema, Error> {
+) -> Result<Arc<DatabaseSchema>, Error> {
+    if let Some(schema) = state.schemas.get(&connection_id) {
+        return Ok(schema.clone());
+    }
+
     let connection_entry = state
         .connections
         .get(&connection_id)
@@ -390,22 +394,29 @@ pub async fn get_database_schema(
 
     let connection = connection_entry.value();
 
-    match &connection.database {
+    let schema = match &connection.database {
         Database::Postgres {
             client: Some(client),
             ..
-        } => postgres::schema::get_database_schema(client).await,
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
-            "Postgres connection not active"
-        ))),
+        } => postgres::schema::get_database_schema(client).await?,
+        Database::Postgres { client: None, .. } => {
+            return Err(Error::Any(anyhow::anyhow!(
+                "Postgres connection not active"
+            )))
+        }
         Database::SQLite {
             connection: Some(conn),
             ..
-        } => sqlite::schema::get_database_schema(Arc::clone(conn)).await,
+        } => sqlite::schema::get_database_schema(Arc::clone(conn)).await?,
         Database::SQLite {
             connection: None, ..
-        } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
-    }
+        } => return Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+    };
+
+    let schema = Arc::new(schema);
+    state.schemas.insert(connection_id, schema.clone());
+
+    Ok(schema)
 }
 
 // Script management commands

@@ -6,12 +6,17 @@ mod storage;
 mod utils;
 mod window;
 
+use std::sync::Arc;
+
 use dashmap::DashMap;
 use tauri::Manager;
 use uuid::Uuid;
 
 use crate::{
-    database::{types::DatabaseConnection, ConnectionMonitor},
+    database::{
+        types::{DatabaseConnection, DatabaseSchema},
+        ConnectionMonitor,
+    },
     storage::Storage,
 };
 pub use error::{Error, Result};
@@ -19,6 +24,7 @@ pub use error::{Error, Result};
 #[derive(Debug)]
 pub struct AppState {
     pub connections: DashMap<Uuid, DatabaseConnection>,
+    pub schemas: DashMap<Uuid, Arc<DatabaseSchema>>,
     pub storage: Storage,
 }
 
@@ -33,6 +39,7 @@ impl AppState {
 
         Ok(Self {
             connections: DashMap::new(),
+            schemas: DashMap::new(),
             storage,
         })
     }
