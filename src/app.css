@@ -358,3 +358,8 @@
 		transform: translateY(0);
 	}
 }
+
+#app {
+	user-select: none;
+	-webkit-user-select: none;
+}
