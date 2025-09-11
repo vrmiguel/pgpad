@@ -84,6 +84,14 @@
 		}
 	}
 
+	// Set content without onContentChange
+	export function setContentSilently(content: string) {
+		sqlQuery = content;
+		if (sqlEditor) {
+			sqlEditor.updateValue(content);
+		}
+	}
+
 	export function saveState(): EditorState | undefined {
 		return sqlEditor?.saveState();
 	}

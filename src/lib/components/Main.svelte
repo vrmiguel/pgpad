@@ -15,7 +15,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { listen } from '@tauri-apps/api/event';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { EditorState } from '@codemirror/state';
+	import { tabs, type ScriptTab } from '$lib/stores/tabs.svelte';
 
 	interface Props {
 		currentConnection?: {
@@ -44,17 +44,14 @@
 	let sqlEditorRef = $state<SqlEditor>();
 	let establishingConnections = new SvelteSet<string>();
 
-	let scripts = $state<Script[]>([]);
-	let openScripts = $state<Script[]>([]);
-	let activeScriptId = $state<number | null>(null);
-	let unsavedChanges = new SvelteSet<number>();
-	let scriptContents = $state<Map<number, string>>(new Map());
-	let scriptEditorStates = $state<Map<number, EditorState>>(new Map());
-	let currentEditorContent = $state<string>('');
-	// Scripts not yet persisted in SQLite
-	let newScripts = new SvelteSet<number>();
-	// Let's use negative IDs for unpersisted scripts
-	let nextTempId = $state(-1);
+	const scripts = $derived(tabs.scripts);
+	const openScripts = $derived(
+		tabs.all.filter((tab) => tab.type === 'script').map((tab) => (tab as ScriptTab).script)
+	);
+	const activeScriptId = $derived(
+		tabs.active?.type === 'script' ? (tabs.active as ScriptTab).scriptId : null
+	);
+	const currentEditorContent = $derived(tabs.currentEditorContent);
 
 	let isSidebarCollapsed = $state(false);
 	let lastResizeTime = $state(0);
@@ -74,7 +71,7 @@
 
 	$effect(() => {
 		if (hasUnsavedChanges !== undefined) {
-			hasUnsavedChanges = activeScriptId !== null && unsavedChanges.has(activeScriptId);
+			hasUnsavedChanges = tabs.active?.isDirty ?? false;
 		}
 	});
 
@@ -110,38 +107,18 @@
 
 	async function saveSessionNow() {
 		try {
-			await Commands.saveSessionState(
-				JSON.stringify({
+			await tabs.saveSession(async (tabSessionData) => {
+				const fullSessionData = {
+					...tabSessionData,
 					selectedConnection,
 					isSidebarCollapsed,
 					isConnectionsAccordionOpen,
 					isScriptsAccordionOpen,
 					isHistoryAccordionOpen,
-					isItemsAccordionOpen,
-					openScriptIds: openScripts.map((s) => s.id),
-					activeScriptId,
-					unsavedChanges: Object.fromEntries(
-						Array.from(scriptContents.entries()).filter(([id, content]) => {
-							if (newScripts.has(id)) return false;
-							const original = scripts.find((s) => s.id === id);
-							return original && content !== original.query_text;
-						})
-					),
-					tempScripts: Array.from(newScripts)
-						.map((id) => {
-							const script = scripts.find((s) => s.id === id);
-							return script
-								? {
-										id: script.id,
-										name: script.name,
-										content: scriptContents.get(id) ?? script.query_text
-									}
-								: null;
-						})
-						.filter(Boolean),
-					nextTempId
-				})
-			);
+					isItemsAccordionOpen
+				};
+				await Commands.saveSessionState(JSON.stringify(fullSessionData));
+			});
 		} catch (e) {
 			console.error('Failed to save session:', e);
 		}
@@ -164,41 +141,9 @@
 				isHistoryAccordionOpen = saved.isHistoryAccordionOpen;
 			if (saved.isItemsAccordionOpen !== undefined)
 				isItemsAccordionOpen = saved.isItemsAccordionOpen;
-			if (saved.nextTempId !== undefined) nextTempId = Math.min(nextTempId, saved.nextTempId);
 
-			for (const temp of saved.tempScripts ?? []) {
-				if (!scripts.find((s) => s.id === temp.id)) {
-					scripts.push({
-						id: temp.id,
-						name: temp.name,
-						description: null,
-						query_text: temp.content,
-						connection_id: null,
-						tags: null,
-						created_at: Date.now() / 1000,
-						updated_at: Date.now() / 1000,
-						favorite: false
-					});
-				}
-				newScripts.add(temp.id);
-				scriptContents.set(temp.id, temp.content);
-			}
-
-			for (const [idStr, content] of Object.entries(saved.unsavedChanges ?? {})) {
-				scriptContents.set(parseInt(idStr), content as string);
-			}
-
-			for (const id of saved.openScriptIds ?? []) {
-				const script = scripts.find((s) => s.id === id);
-				if (script) openScript(script);
-			}
-
-			if (saved.activeScriptId != null) {
-				const script = scripts.find((s) => s.id === saved.activeScriptId);
-				if (script) switchToTab(script.id);
-			}
-
-			return (saved.openScriptIds?.length ?? 0) > 0;
+			const restored = await tabs.restoreSession(saved);
+			return restored;
 		} catch (e) {
 			console.error('Failed to restore session:', e);
 			return false;
@@ -248,47 +193,23 @@
 		}
 	});
 
-	// Track unsaved changes for active script
 	$effect(() => {
-		if (activeScriptId !== null && currentEditorContent !== undefined) {
-			const savedContent = scripts.find((s) => s.id === activeScriptId)?.query_text || '';
-			const isNewScript = newScripts.has(activeScriptId);
+		if (sqlEditorRef) {
+			tabs.setSqlEditorRef(sqlEditorRef);
+		}
+	});
 
-			// For new scripts, only show unsaved changes if there's actual content
-			// For existing scripts, show unsaved changes if content differs from saved version
-			const shouldShowUnsaved = isNewScript
-				? currentEditorContent.length > 0
-				: currentEditorContent !== savedContent;
-
-			if (shouldShowUnsaved) {
-				if (!unsavedChanges.has(activeScriptId)) {
-					unsavedChanges.add(activeScriptId);
-				}
-			} else {
-				if (unsavedChanges.has(activeScriptId)) {
-					unsavedChanges.delete(activeScriptId);
-				}
+	$effect(() => {
+		if (sqlEditorRef && currentEditorContent !== undefined) {
+			const currentContent = sqlEditorRef.getContent();
+			if (currentContent !== currentEditorContent) {
+				sqlEditorRef.setContentSilently(currentEditorContent);
 			}
 		}
 	});
 
-	$effect(() => {
-		if (activeScriptId !== null) {
-			const content =
-				scriptContents.get(activeScriptId) ||
-				scripts.find((s) => s.id === activeScriptId)?.query_text ||
-				'';
-			currentEditorContent = content;
-		} else {
-			currentEditorContent = '';
-		}
-	});
-
 	function handleEditorContentChange(newContent: string) {
-		currentEditorContent = newContent;
-		if (activeScriptId !== null) {
-			scriptContents.set(activeScriptId, newContent);
-		}
+		tabs.handleEditorContentChange(newContent);
 	}
 
 	function handlePaneResize(sizes: number[]) {
@@ -311,70 +232,7 @@
 	}
 
 	function openScript(script: Script) {
-		// Add to open scripts if not already open
-		if (!openScripts.find((s) => s.id === script.id)) {
-			openScripts.push(script);
-		}
-
-		// Set as active and initialize content
-		activeScriptId = script.id;
-		scriptContents.set(script.id, script.query_text);
-
-		// Update the editor content
-		if (sqlEditorRef) {
-			sqlEditorRef.setContent(script.query_text);
-		}
-
-		markSessionDirty();
-	}
-
-	function switchToTab(scriptId: number) {
-		// Save current script content and editor state before switching
-		if (activeScriptId !== null && sqlEditorRef) {
-			scriptContents.set(activeScriptId, currentEditorContent);
-			const state = sqlEditorRef.saveState();
-			if (state) {
-				scriptEditorStates.set(activeScriptId, state);
-			}
-		}
-
-		activeScriptId = scriptId;
-		const script = scripts.find((s) => s.id === scriptId);
-		if (script && sqlEditorRef) {
-			const savedState = scriptEditorStates.get(scriptId);
-			if (savedState) {
-				sqlEditorRef.restoreState(savedState);
-			} else {
-				// First time opening this tab, set content normally
-				const content = scriptContents.get(scriptId) || script.query_text;
-				sqlEditorRef.setContent(content);
-			}
-		}
-		markSessionDirty();
-	}
-
-	function closeTab(scriptId: number) {
-		openScripts = openScripts.filter((s) => s.id !== scriptId);
-
-		scriptContents.delete(scriptId);
-		scriptEditorStates.delete(scriptId);
-		unsavedChanges.delete(scriptId);
-		newScripts.delete(scriptId);
-
-		// if closing the active tab, switch to another or clear active
-		if (activeScriptId === scriptId) {
-			if (openScripts.length > 0) {
-				// Switch to the last remaining tab
-				const lastScript = openScripts[openScripts.length - 1];
-				switchToTab(lastScript.id);
-			} else {
-				// no more open tabs left
-				activeScriptId = null;
-				if (sqlEditorRef) {
-					sqlEditorRef.setContent('');
-				}
-			}
-		}
+		tabs.openScript(script);
 		markSessionDirty();
 	}
 
@@ -383,25 +241,8 @@
 	}
 
 	async function createScriptFromHistory(historyQuery: string) {
-		const name = generateScriptName();
-		const tempId = nextTempId--;
-
-		const newScript: Script = {
-			id: tempId,
-			name,
-			description: null,
-			query_text: historyQuery,
-			connection_id: null,
-			tags: null,
-			created_at: Date.now() / 1000,
-			updated_at: Date.now() / 1000,
-			favorite: false
-		};
-
-		scripts.push(newScript);
-		// Mark as new/unsaved
-		newScripts.add(tempId);
-		openScript(newScript);
+		tabs.createScriptFromHistory(historyQuery);
+		markSessionDirty();
 	}
 
 	onMount(async () => {
@@ -410,19 +251,23 @@
 			await loadConnections();
 			await loadScripts();
 
+			tabs.setScripts(scripts);
+
+			tabs.onSessionSave(() => markSessionDirty());
+
 			unlistenDisconnect = await listen('end-of-connection', (event) => {
 				const connectionId = event.payload as string;
 				handleConnectionDisconnect(connectionId);
 			});
 
-			// checks if we should auto-save the sesssion, every 20 secs
+			// checks if we should auto-save the session, every 20 secs
 			sessionSaveTimer = setInterval(() => {
 				checkAndSaveSession().catch(console.error);
 			}, 20000);
 
 			const restored = await restoreSession();
 			// If we restored a session and still no scripts were loaded
-			if (!restored && openScripts.length === 0) {
+			if (!restored && tabs.all.length === 0) {
 				const existingUntitledScript = scripts.find((s) => s.name === 'Untitled Script');
 				if (existingUntitledScript) {
 					openScript(existingUntitledScript);
@@ -506,9 +351,7 @@
 		try {
 			const success = await Commands.connectToDatabase(connectionId);
 			if (success) {
-				// Update the connection status
 				await loadConnections();
-				// Load schema after successful connection
 				if (selectedConnection === connectionId) {
 					await loadDatabaseSchema();
 				}
@@ -614,39 +457,16 @@
 
 	async function loadScripts() {
 		try {
-			scripts = await Commands.getScripts();
+			const loadedScripts = await Commands.getScripts();
+			tabs.setScripts(loadedScripts);
 		} catch (error) {
 			console.error('Failed to load scripts:', error);
 		}
 	}
 
-	function generateScriptName(): string {
-		const existingUntitled = scripts.filter((s) => s.name.startsWith('Untitled Script')).length;
-		return existingUntitled === 0 ? 'Untitled Script' : `Untitled Script ${existingUntitled + 1}`;
-	}
-
 	async function createNewScript() {
 		try {
-			const name = generateScriptName();
-			// New scripts get negative IDs
-			const tempId = nextTempId--;
-
-			const newScript: Script = {
-				id: tempId,
-				name,
-				description: null,
-				query_text: '',
-				connection_id: null,
-				tags: null,
-				created_at: Date.now() / 1000,
-				updated_at: Date.now() / 1000,
-				favorite: false
-			};
-
-			scripts.push(newScript);
-			// Mark as new/unsaved
-			newScripts.add(tempId);
-			openScript(newScript);
+			tabs.createNewScript();
 			markSessionDirty();
 		} catch (error) {
 			console.error('Failed to create new script:', error);
@@ -665,7 +485,7 @@
 			const currentScript = scripts.find((s) => s.id === activeScriptId);
 			if (!currentScript) return;
 
-			const isNewScript = newScripts.has(activeScriptId);
+			const isNewScript = tabs.newScripts.has(activeScriptId);
 
 			if (isNewScript) {
 				const scriptId = await Commands.saveScript(
@@ -675,7 +495,6 @@
 					currentScript.description || undefined
 				);
 
-				// Update the script with the real database ID
 				const updatedScript = {
 					...currentScript,
 					id: scriptId,
@@ -694,14 +513,12 @@
 					openScripts[openScriptIndex] = updatedScript;
 				}
 
-				// Update state management
-				scriptContents.delete(activeScriptId);
-				scriptContents.set(scriptId, content);
-				unsavedChanges.delete(activeScriptId);
-				newScripts.delete(activeScriptId);
+				tabs.newScripts.delete(activeScriptId);
 
-				// Update active script ID
-				activeScriptId = scriptId;
+				// Update tab with new database ID
+				tabs.updateScriptId(activeScriptId, scriptId, updatedScript);
+
+				tabs.markScriptSaved(scriptId, content);
 			} else {
 				await Commands.updateScript(
 					activeScriptId,
@@ -714,14 +531,15 @@
 				// Update local state
 				currentScript.query_text = content;
 				currentScript.updated_at = Date.now() / 1000;
-				scriptContents.set(activeScriptId, content);
-				unsavedChanges.delete(activeScriptId);
 
 				// Update scripts list
 				const scriptIndex = scripts.findIndex((s) => s.id === activeScriptId);
 				if (scriptIndex !== -1) {
 					scripts[scriptIndex] = { ...currentScript };
 				}
+
+				// Notify tab store that script is saved
+				tabs.markScriptSaved(activeScriptId, content);
 			}
 			markSessionDirty();
 		} catch (error) {
@@ -731,97 +549,50 @@
 
 	async function deleteScript(script: Script) {
 		try {
-			const isNewScript = newScripts.has(script.id);
+			const tabId = `script-${script.id}`;
+			const tab = tabs.all.find((t) => t.id === tabId);
+			const isNewScript =
+				tab?.type === 'script' ? (tab as ScriptTab).isNewScript : tabs.newScripts.has(script.id);
 
 			if (!isNewScript) {
 				// delete from SQLite only if it was there before
 				await Commands.deleteScript(script.id);
 			}
 
-			// drop from local state
-			scripts = scripts.filter((s) => s.id !== script.id);
+			// Remove from scripts array
+			const scriptIndex = tabs.scripts.findIndex((s) => s.id === script.id);
+			if (scriptIndex !== -1) {
+				tabs.scripts.splice(scriptIndex, 1);
+			}
 
 			// If the script is currently open in a tab, convert it to a new/unsaved script
-			const openScriptIndex = openScripts.findIndex((s) => s.id === script.id);
-			if (openScriptIndex !== -1) {
-				const tempId = nextTempId--;
+			if (tab?.type === 'script') {
+				const tempId = tabs.nextTempId;
+				tabs.nextTempId--;
 
 				const updatedScript = {
 					...script,
 					id: tempId
 				};
 
-				openScripts[openScriptIndex] = updatedScript;
+				const scriptTab = tab as ScriptTab;
+				scriptTab.scriptId = tempId;
+				scriptTab.script = updatedScript;
+				scriptTab.isNewScript = true;
+				scriptTab.id = `script-${tempId}`;
 
-				const currentContent = scriptContents.get(script.id) || script.query_text;
-				scriptContents.delete(script.id);
-				scriptContents.set(tempId, currentContent);
+				tabs.newScripts.add(tempId);
+				tabs.scripts.push(updatedScript);
 
-				if (unsavedChanges.has(script.id)) {
-					unsavedChanges.delete(script.id);
-					unsavedChanges.add(tempId);
-				}
-
-				newScripts.add(tempId);
-				if (activeScriptId === script.id) {
-					activeScriptId = tempId;
-				}
-
-				scripts.push(updatedScript);
-			} else {
-				// Script not open in tabs - clean up normally
-				if (activeScriptId === script.id) {
-					activeScriptId = null;
-					scriptContents.delete(script.id);
-					unsavedChanges.delete(script.id);
-					newScripts.delete(script.id);
+				// Update active tab ID if this was the active tab
+				if (tabs.activeId === tabId) {
+					tabs.switchToTab(scriptTab.id);
 				}
 			}
+
 			markSessionDirty();
 		} catch (error) {
 			console.error('Failed to delete script:', error);
-		}
-	}
-
-	async function renameScript(scriptId: number, newName: string) {
-		try {
-			const script = scripts.find((s) => s.id === scriptId);
-			if (!script) return;
-
-			const isNewScript = newScripts.has(scriptId);
-
-			if (!isNewScript) {
-				// Only update in SQLite if it was previously saved
-				await Commands.updateScript(
-					scriptId,
-					newName,
-					script.query_text,
-					script.connection_id || undefined,
-					script.description || undefined
-				);
-			}
-
-			// Update the script in the scripts array
-			const scriptIndex = scripts.findIndex((s) => s.id === scriptId);
-			if (scriptIndex !== -1) {
-				scripts[scriptIndex] = {
-					...script,
-					name: newName,
-					updated_at: Date.now() / 1000
-				};
-			}
-
-			const openScriptIndex = openScripts.findIndex((s) => s.id === scriptId);
-			if (openScriptIndex !== -1) {
-				openScripts[openScriptIndex] = {
-					...openScripts[openScriptIndex],
-					name: newName,
-					updated_at: Date.now() / 1000
-				};
-			}
-			markSessionDirty();
-		} catch (error) {
-			console.error('Failed to rename script:', error);
 		}
 	}
 </script>
@@ -843,7 +614,11 @@
 				{establishingConnections}
 				{scripts}
 				{activeScriptId}
-				{unsavedChanges}
+				unsavedChanges={new SvelteSet(
+					tabs.all
+						.filter((t) => t.isDirty)
+						.map((t) => (t.type === 'script' ? (t as ScriptTab).scriptId : 0))
+				)}
 				{databaseSchema}
 				{loadingSchema}
 				{queryHistory}
@@ -877,15 +652,7 @@
 				<!-- Editor and Results - same component instance always -->
 				<div class="flex flex-1 flex-col bg-gray-50/50 dark:bg-gray-800/50">
 					<!-- Script Tabs -->
-					<ScriptTabs
-						{openScripts}
-						{activeScriptId}
-						{unsavedChanges}
-						onTabSelect={switchToTab}
-						onTabClose={closeTab}
-						onNewScript={createNewScript}
-						onScriptRename={renameScript}
-					/>
+					<ScriptTabs />
 
 					<SqlEditor
 						selectedConnection={selectedConnection ?? null}
@@ -893,7 +660,7 @@
 						currentScript={activeScriptId !== null
 							? scripts.find((s) => s.id === activeScriptId) || null
 							: null}
-						hasUnsavedChanges={activeScriptId !== null && unsavedChanges.has(activeScriptId)}
+						hasUnsavedChanges={tabs.active?.isDirty ?? false}
 						bind:this={sqlEditorRef}
 						onContentChange={handleEditorContentChange}
 						onLoadFromHistory={createScriptFromHistory}

@@ -1,46 +1,55 @@
 <script lang="ts">
 	import TabBar from '$lib/components/ui/TabBar.svelte';
-	import type { Script } from '$lib/commands.svelte';
-	import type { SvelteSet } from 'svelte/reactivity';
+	import { tabs, type ScriptTab } from '$lib/stores/tabs.svelte';
 
-	interface Props {
-		openScripts: Script[];
-		activeScriptId: number | null;
-		unsavedChanges: SvelteSet<number>;
-		onTabSelect: (scriptId: number) => void;
-		onTabClose: (scriptId: number) => void;
-		onNewScript: () => void;
-		onScriptRename: (scriptId: number, newName: string) => void;
+	const scriptTabs = $derived(
+		tabs.all
+			.filter((tab) => tab.type === 'script')
+			.map((tab) => {
+				return {
+					id: tab.scriptId,
+					name: tab.title
+				};
+			})
+	);
+
+	const activeScriptId = $derived(
+		tabs.active?.type === 'script' ? (tabs.active as ScriptTab).scriptId : null
+	);
+
+	function handleTabSelect(scriptId: number) {
+		const tabId = `script-${scriptId}`;
+		tabs.switchToTab(tabId);
 	}
 
-	let {
-		openScripts,
-		activeScriptId,
-		unsavedChanges,
-		onTabSelect,
-		onTabClose,
-		onNewScript,
-		onScriptRename
-	}: Props = $props();
-
-	function hasUnsavedChanges(scriptId: number): boolean {
-		return (
-			unsavedChanges && typeof unsavedChanges.has === 'function' && unsavedChanges.has(scriptId)
-		);
+	function handleTabClose(scriptId: number) {
+		const tabId = `script-${scriptId}`;
+		tabs.closeTab(tabId);
 	}
 
-	function getScriptStatus(tab: Script): 'normal' | 'modified' | 'error' {
-		return hasUnsavedChanges(tab.id) ? 'modified' : 'normal';
+	function handleNewScript() {
+		tabs.createNewScript();
+	}
+
+	function handleScriptRename(scriptId: number, newName: string) {
+		const tabId = `script-${scriptId}`;
+		tabs.renameScript(tabId, newName);
+	}
+
+	function getScriptStatus(tab: { id: number; name: string }): 'normal' | 'modified' | 'error' {
+		const tabId = `script-${tab.id}`;
+		const storeTab = tabs.all.find((t) => t.id === tabId);
+		return storeTab?.isDirty ? 'modified' : 'normal';
 	}
 </script>
 
 <TabBar
-	tabs={openScripts}
+	tabs={scriptTabs}
 	activeTabId={activeScriptId}
-	{onTabSelect}
-	{onTabClose}
-	onNewTab={onNewScript}
-	onTabRename={onScriptRename}
+	onTabSelect={handleTabSelect}
+	onTabClose={handleTabClose}
+	onNewTab={handleNewScript}
+	onTabRename={handleScriptRename}
 	showCloseButton={true}
 	showNewTabButton={true}
 	allowRename={true}
