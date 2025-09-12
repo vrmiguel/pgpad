@@ -1,6 +1,8 @@
+#[cfg(target_os = "macos")]
+use tauri::menu::AboutMetadata;
 use tauri::menu::MenuItem;
 use tauri::{
-    menu::{AboutMetadata, Menu, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID},
+    menu::{Menu, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID},
     AppHandle, Emitter, WebviewWindowBuilder,
 };
 
@@ -59,6 +61,7 @@ pub fn build_window(app: &tauri::App) -> tauri::Result<()> {
 
 pub fn build_menu(app: &tauri::App) -> anyhow::Result<()> {
     let app_handle = app.handle();
+    #[cfg(target_os = "macos")]
     let pkg_info = app_handle.package_info();
     #[cfg(target_os = "macos")]
     let about_metadata = {
