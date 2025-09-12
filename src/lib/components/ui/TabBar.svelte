@@ -142,6 +142,7 @@
 						: 'text-muted-foreground hover:text-foreground'}"
 					onclick={() => handleTabClick(tab.id)}
 					ondblclick={() => startEditingName(tab.id, tab.name)}
+					onauxclick={(e) => handleTabClose(e, tab.id)}
 				>
 					<!-- Tab name -->
 					{#if editingTabId === tab.id}

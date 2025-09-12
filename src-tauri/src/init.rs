@@ -1,4 +1,15 @@
-use tauri::WebviewWindowBuilder;
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+)))]
+use tauri::menu::MenuItem;
+use tauri::{
+    menu::{AboutMetadata, Menu, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID},
+    AppHandle, Emitter, WebviewWindowBuilder,
+};
 
 fn init_script() -> String {
     format!(
@@ -50,5 +61,122 @@ pub fn build_window(app: &tauri::App) -> tauri::Result<()> {
 
     window_builder.build()?;
 
+    Ok(())
+}
+
+pub fn build_menu(app: &tauri::App) -> anyhow::Result<()> {
+    let app_handle = app.handle();
+    let pkg_info = app_handle.package_info();
+    let config = app_handle.config();
+    let about_metadata = AboutMetadata {
+        name: Some(pkg_info.name.clone()),
+        version: Some(pkg_info.version.to_string()),
+        copyright: config.bundle.copyright.clone(),
+        authors: config.bundle.publisher.clone().map(|p| vec![p]),
+        ..Default::default()
+    };
+
+    let window_menu = Submenu::with_id_and_items(
+        app_handle,
+        WINDOW_SUBMENU_ID,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app_handle, None)?,
+            &PredefinedMenuItem::maximize(app_handle, None)?,
+            #[cfg(target_os = "macos")]
+            &PredefinedMenuItem::separator(app_handle)?,
+            &PredefinedMenuItem::close_window(app_handle, None)?,
+        ],
+    )?;
+
+    let menu = Menu::with_items(
+        app_handle,
+        &[
+            #[cfg(target_os = "macos")]
+            &Submenu::with_items(
+                app_handle,
+                pkg_info.name.clone(),
+                true,
+                &[
+                    &PredefinedMenuItem::about(app_handle, None, Some(about_metadata))?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::services(app_handle, None)?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::hide(app_handle, None)?,
+                    &PredefinedMenuItem::hide_others(app_handle, None)?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::quit(app_handle, None)?,
+                ],
+            )?,
+            #[cfg(not(any(
+                target_os = "linux",
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "netbsd",
+                target_os = "openbsd"
+            )))]
+            &Submenu::with_items(
+                app_handle,
+                "File",
+                true,
+                &[
+                    &MenuItem::with_id(app_handle, "new_tab", "New Tab", true, Some("Cmd+N"))?,
+                    &MenuItem::with_id(app_handle, "close_tab", "Close Tab", true, Some("Cmd+W"))?,
+                    #[cfg(not(target_os = "macos"))]
+                    &PredefinedMenuItem::quit(app_handle, None)?,
+                ],
+            )?,
+            &Submenu::with_items(
+                app_handle,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app_handle, None)?,
+                    &PredefinedMenuItem::redo(app_handle, None)?,
+                    &PredefinedMenuItem::separator(app_handle)?,
+                    &PredefinedMenuItem::cut(app_handle, None)?,
+                    &PredefinedMenuItem::copy(app_handle, None)?,
+                    &PredefinedMenuItem::paste(app_handle, None)?,
+                    &PredefinedMenuItem::select_all(app_handle, None)?,
+                ],
+            )?,
+            #[cfg(target_os = "macos")]
+            &Submenu::with_items(
+                app_handle,
+                "View",
+                true,
+                &[&PredefinedMenuItem::fullscreen(app_handle, None)?],
+            )?,
+            &window_menu,
+        ],
+    )?;
+
+    app.set_menu(menu)?;
+    app.on_menu_event(move |handle: &tauri::AppHandle, event| {
+        let event = event.id().0.as_str();
+
+        log::debug!("[on_menu_event][{event}] Event triggered");
+
+        if let Err(err) = menu_event_handler(event, handle) {
+            log::error!("[on_menu_event] [{event}] {:?}", err);
+        }
+    });
+
+    Ok(())
+}
+
+fn menu_event_handler(event: &str, handle: &AppHandle) -> anyhow::Result<()> {
+    match event {
+        "new_tab" => {
+            handle.emit("new_tab", ())?;
+        }
+        "close_tab" => {
+            handle.emit("close_tab", ())?;
+        }
+        _ => {
+            log::info!("Unexpected menu event: {}", event);
+        }
+    }
     Ok(())
 }

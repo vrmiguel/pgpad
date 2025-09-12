@@ -70,6 +70,7 @@ pub fn run() {
             }
 
             init::build_window(app)?;
+            init::build_menu(app)?;
 
             let handle = app.handle();
             let monitor = ConnectionMonitor::new(handle.clone());
