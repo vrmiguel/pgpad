@@ -121,10 +121,20 @@ pub fn build_menu(app: &tauri::App) -> anyhow::Result<()> {
                 "File",
                 true,
                 &[
-                    &MenuItem::with_id(app_handle, "new_tab", "New Tab", true, Some("Cmd+N"))?,
-                    &MenuItem::with_id(app_handle, "close_tab", "Close Tab", true, Some("Cmd+W"))?,
-                    #[cfg(not(target_os = "macos"))]
-                    &PredefinedMenuItem::quit(app_handle, None)?,
+                    &MenuItem::with_id(
+                        app_handle,
+                        "new_tab",
+                        "New Tab",
+                        true,
+                        Some("CmdOrControl+N"),
+                    )?,
+                    &MenuItem::with_id(
+                        app_handle,
+                        "close_tab",
+                        "Close Tab",
+                        true,
+                        Some("CmdOrControl+W"),
+                    )?,
                 ],
             )?,
             &Submenu::with_items(
