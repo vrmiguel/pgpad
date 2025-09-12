@@ -60,13 +60,16 @@ pub fn build_window(app: &tauri::App) -> tauri::Result<()> {
 pub fn build_menu(app: &tauri::App) -> anyhow::Result<()> {
     let app_handle = app.handle();
     let pkg_info = app_handle.package_info();
-    let config = app_handle.config();
-    let about_metadata = AboutMetadata {
-        name: Some(pkg_info.name.clone()),
-        version: Some(pkg_info.version.to_string()),
-        copyright: config.bundle.copyright.clone(),
-        authors: config.bundle.publisher.clone().map(|p| vec![p]),
-        ..Default::default()
+    #[cfg(target_os = "macos")]
+    let about_metadata = {
+        let config = app_handle.config();
+        AboutMetadata {
+            name: Some(pkg_info.name.clone()),
+            version: Some(pkg_info.version.to_string()),
+            copyright: config.bundle.copyright.clone(),
+            authors: config.bundle.publisher.clone().map(|p| vec![p]),
+            ..Default::default()
+        }
     };
 
     let window_menu = Submenu::with_id_and_items(
@@ -102,13 +105,6 @@ pub fn build_menu(app: &tauri::App) -> anyhow::Result<()> {
                     &PredefinedMenuItem::quit(app_handle, None)?,
                 ],
             )?,
-            #[cfg(not(any(
-                target_os = "linux",
-                target_os = "dragonfly",
-                target_os = "freebsd",
-                target_os = "netbsd",
-                target_os = "openbsd"
-            )))]
             &Submenu::with_items(
                 app_handle,
                 "File",
