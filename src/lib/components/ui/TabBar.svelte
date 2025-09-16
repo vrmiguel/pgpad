@@ -142,6 +142,13 @@
 						: 'text-muted-foreground hover:text-foreground'}"
 					onclick={() => handleTabClick(tab.id)}
 					ondblclick={() => startEditingName(tab.id, tab.name)}
+					onauxclick={(e) => {
+						// https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button
+						// 1: middle button
+						if (e.button === 1) {
+							handleTabClose(e, tab.id);
+						}
+					}}
 				>
 					<!-- Tab name -->
 					{#if editingTabId === tab.id}
