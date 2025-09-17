@@ -53,10 +53,27 @@
 		sorting: [] as Array<{ columnIndex: number; desc: boolean }>
 	});
 
-	// TODO(vini): default width based on column's DB type
-	const defaultColumnWidth = 280;
+	function calculateColumnWidth(columnIndex: number, columnName: string, firstRow?: Row): number {
+		const MIN_WIDTH = 60;
+		const MAX_WIDTH = 400;
+		// Some guesstimate at an average character width in pixels
+		const CHAR_WIDTH = 7;
+		const PADDING = 20;
+
+		const headerWidth = columnName.length * CHAR_WIDTH;
+
+		let contentWidth = headerWidth;
+		if (firstRow && firstRow[columnIndex] != null) {
+			const cellContent = String(firstRow[columnIndex]);
+			contentWidth = Math.max(headerWidth, cellContent.length * CHAR_WIDTH);
+		}
+
+		const estimatedWidth = contentWidth + PADDING;
+		return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, estimatedWidth));
+	}
+
 	const getColumnWidth = (columnIndex: number): number => {
-		return tableState.columnSizing[columnIndex] || defaultColumnWidth;
+		return tableState.columnSizing[columnIndex] || 60;
 	};
 
 	$effect(() => {
@@ -171,7 +188,19 @@
 		void data;
 		selectedCell = null;
 		selectedCellData = null;
-		tableState.columnSizing = {};
+
+		if (data.length > 0 && columns.length > 0) {
+			const newColumnSizing: Record<string, number> = {};
+			const firstRow = data[0];
+
+			columns.forEach((columnName, columnIndex) => {
+				newColumnSizing[columnIndex] = calculateColumnWidth(columnIndex, columnName, firstRow);
+			});
+
+			tableState.columnSizing = newColumnSizing;
+		} else {
+			tableState.columnSizing = {};
+		}
 	});
 
 	function startColumnResize(columnIndex: number, event: MouseEvent) {
