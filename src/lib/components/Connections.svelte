@@ -161,63 +161,61 @@
 		role="menuitem"
 		tabindex="-1"
 	>
-		<div>
-			{#if connections.length === 0}
-				<div class="px-4 py-8 text-center">
-					<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
-						<Cable class="text-muted-foreground/50 h-6 w-6" />
-					</div>
-					<p class="text-muted-foreground mb-1 text-xs font-medium">No connections yet</p>
-					<p class="text-muted-foreground/70 text-xs">Add your first connection to get started</p>
+		{#if connections.length === 0}
+			<div class="px-4 py-8 text-center">
+				<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
+					<Cable class="text-muted-foreground/50 h-6 w-6" />
 				</div>
-			{:else}
-				{#each connections as connection (connection.id)}
-					<button
-						class="w-full justify-start rounded-sm p-1 transition-all duration-200 hover:shadow-none {selectedConnection ===
-						connection.id
-							? 'dark:bg-primary/20 bg-blue-50/50'
-							: 'hover:bg-background'}"
-						onclick={() => selectConnection(connection.id)}
-						ondblclick={() => connectToDatabase(connection.id)}
-						oncontextmenu={(event) => showContextMenu(event, connection)}
-						data-context-menu="true"
-					>
-						<div class="flex w-full items-center gap-2.5">
-							<div class="flex flex-shrink-0 items-center gap-2 pl-1">
-								<!-- Connection status dot -->
-								{#if connection.connected}
-									<div class="h-1.5 w-1.5 rounded-full bg-green-500 shadow-sm"></div>
-								{:else if establishingConnections.has(connection.id)}
-									<div class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500 shadow-sm"></div>
-								{:else}
-									<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
-								{/if}
+				<p class="text-muted-foreground mb-1 text-xs font-medium">No connections yet</p>
+				<p class="text-muted-foreground/70 text-xs">Add your first connection to get started</p>
+			</div>
+		{:else}
+			{#each connections as connection (connection.id)}
+				<button
+					class="w-full justify-start rounded-sm p-1 transition-all duration-200 hover:shadow-none {selectedConnection ===
+					connection.id
+						? 'dark:bg-primary/20 bg-blue-50/50'
+						: 'hover:bg-background'}"
+					onclick={() => selectConnection(connection.id)}
+					ondblclick={() => connectToDatabase(connection.id)}
+					oncontextmenu={(event) => showContextMenu(event, connection)}
+					data-context-menu="true"
+				>
+					<div class="flex w-full items-center gap-2.5">
+						<div class="flex flex-shrink-0 items-center gap-2 pl-1">
+							<!-- Connection status dot -->
+							{#if connection.connected}
+								<div class="h-1.5 w-1.5 rounded-full bg-green-500 shadow-sm"></div>
+							{:else if establishingConnections.has(connection.id)}
+								<div class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500 shadow-sm"></div>
+							{:else}
+								<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
+							{/if}
 
-								{#if 'Postgres' in connection.database_type}
-									<IconCibPostgresql class="h-4 w-4" />
-								{:else if 'SQLite' in connection.database_type}
-									<IconSimpleIconsSqlite class="h-4 w-4" />
-								{/if}
+							{#if 'Postgres' in connection.database_type}
+								<IconCibPostgresql class="h-4 w-4" />
+							{:else if 'SQLite' in connection.database_type}
+								<IconSimpleIconsSqlite class="h-4 w-4" />
+							{/if}
+						</div>
+						<div class="text-foreground truncate text-sm font-medium">
+							<div class="min-w-0 flex-1 text-left">
+								{connection.name}
 							</div>
-							<div class="text-foreground truncate text-sm font-medium">
-								<div class="min-w-0 flex-1 text-left">
-									{connection.name}
-								</div>
-								<div class="text-muted-foreground truncate font-mono text-xs">
-									{#if 'Postgres' in connection.database_type}
-										{connection.database_type.Postgres.connection_string
-											.replace(/^postgresql?:\/\/[^@]*@/, '')
-											.replace(/\/[^?]*/, '')}
-									{:else if 'SQLite' in connection.database_type}
-										{connection.database_type.SQLite.db_path.split('/').pop() ||
-											connection.database_type.SQLite.db_path}
-									{/if}
-								</div>
+							<div class="text-muted-foreground truncate font-mono text-xs">
+								{#if 'Postgres' in connection.database_type}
+									{connection.database_type.Postgres.connection_string
+										.replace(/^postgresql?:\/\/[^@]*@/, '')
+										.replace(/\/[^?]*/, '')}
+								{:else if 'SQLite' in connection.database_type}
+									{connection.database_type.SQLite.db_path.split('/').pop() ||
+										connection.database_type.SQLite.db_path}
+								{/if}
 							</div>
 						</div>
-					</button>
-				{/each}
-			{/if}
-		</div>
+					</div>
+				</button>
+			{/each}
+		{/if}
 	</div>
 </div>
