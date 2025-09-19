@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { TableProperties, Search } from '@lucide/svelte';
+	import { TableProperties, Search, ChevronRightIcon } from '@lucide/svelte';
 	import type { DatabaseSchema } from '$lib/commands.svelte';
 
 	interface Props {
@@ -53,8 +53,10 @@
 			{#each sortedTables as table (table.name)}
 				<details class="group">
 					<summary
-						class="relative flex cursor-pointer list-none items-center gap-3 rounded-none px-3 py-2 transition-all duration-200 hover:bg-black/3 dark:hover:bg-white/3"
+						class="relative flex list-none items-center gap-3 rounded-none p-1 transition-all duration-200 hover:bg-black/3 dark:hover:bg-white/3"
 					>
+						<ChevronRightIcon class="text-muted-foreground/80 h-4 w-4 group-open:rotate-90"
+						></ChevronRightIcon>
 						<div class="min-w-0 flex-1 text-left">
 							<div class="text-foreground truncate text-sm font-medium">
 								{table.name}
@@ -66,7 +68,7 @@
 						</div>
 						{#if onTableClick}
 							<button
-								class="text-muted-foreground/70 flex-shrink-0 rounded-md p-1.5 opacity-0 transition-all duration-200 group-hover:opacity-100 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+								class="text-muted-foreground/70 flex-shrink-0 cursor-pointer rounded-md p-1.5 opacity-0 transition-all duration-200 group-hover:opacity-100 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
 								onclick={(e) => {
 									e.preventDefault();
 									e.stopPropagation();

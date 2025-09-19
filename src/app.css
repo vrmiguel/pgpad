@@ -146,6 +146,7 @@
 }
 
 @theme inline {
+	--radius-xs: calc(var(--radius) - 8px);
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);
@@ -238,6 +239,8 @@
 		border-radius: 12px;
 		overflow: hidden;
 		background: transparent;
+		user-select: none;
+		-webkit-user-select: none;
 	}
 
 	html,
@@ -357,9 +360,4 @@
 		opacity: 1;
 		transform: translateY(0);
 	}
-}
-
-#app {
-	user-select: none;
-	-webkit-user-select: none;
 }
