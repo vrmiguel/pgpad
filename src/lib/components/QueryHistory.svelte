@@ -12,7 +12,7 @@
 </script>
 
 {#if queryHistory.length > 0}
-	<div class="space-y-2">
+	<div class="scrollable-container h-full space-y-2 overflow-y-auto">
 		{#each queryHistory as historyItem (historyItem.id)}
 			<button
 				type="button"

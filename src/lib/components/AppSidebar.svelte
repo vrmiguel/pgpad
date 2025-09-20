@@ -187,8 +187,8 @@
 			</button>
 		</div>
 
-		<div class="h-full flex-1">
-			<Tabs.Root value={sidebarTabState} class="flex flex-col">
+		<div class="min-h-0 flex-1">
+			<Tabs.Root value={sidebarTabState} class="flex h-full flex-col">
 				<!-- Triggers  -->
 				<div class="border-b p-2">
 					<Tabs.List
@@ -226,8 +226,8 @@
 				</div>
 
 				<!-- Contents -->
-				<div class="flex-1 p-2">
-					<Tabs.Content value="connections" class="min-h-0">
+				<div class="min-h-0 flex-1 p-2">
+					<Tabs.Content value="connections" class="h-full">
 						<Connections
 							{connections}
 							{establishingConnections}
@@ -240,7 +240,7 @@
 							{onSelectConnection}
 						/>
 					</Tabs.Content>
-					<Tabs.Content value="items">
+					<Tabs.Content value="items" class="h-full">
 						<DatabaseSchemaItems
 							{databaseSchema}
 							{loadingSchema}
@@ -248,7 +248,7 @@
 							onTableClick={handleTableClick}
 						/>
 					</Tabs.Content>
-					<Tabs.Content value="scripts" class="">
+					<Tabs.Content value="scripts" class="h-full">
 						<Scripts
 							{scripts}
 							{activeScriptId}
@@ -258,7 +258,7 @@
 							{onSelectScript}
 						/>
 					</Tabs.Content>
-					<Tabs.Content value="history">
+					<Tabs.Content value="history" class="h-full">
 						<QueryHistory {queryHistory} {onLoadFromHistory} />
 					</Tabs.Content>
 				</div>

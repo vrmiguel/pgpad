@@ -119,7 +119,7 @@
 	}
 </script>
 
-<div class="flex min-h-0 flex-col space-y-2">
+<div class="flex h-full flex-col space-y-2">
 	<!-- Actions -->
 	<div class="flex gap-1">
 		<button
@@ -156,7 +156,7 @@
 
 	<!-- List -->
 	<div
-		class="scrollable-container min-h-0 flex-1 overflow-y-auto"
+		class="scrollable-container flex-1 overflow-y-auto"
 		oncontextmenu={showContextMenu}
 		role="menuitem"
 		tabindex="-1"

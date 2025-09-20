@@ -66,7 +66,12 @@
 	}
 </script>
 
-<div class="space-y-1" oncontextmenu={(e) => showContextMenu(e)} role="menu" tabindex="-1">
+<div
+	class="scrollable-container h-full space-y-1 overflow-y-auto"
+	oncontextmenu={(e) => showContextMenu(e)}
+	role="menu"
+	tabindex="-1"
+>
 	{#if scripts.length === 0}
 		<div class="px-4 py-8 text-center">
 			<div class="bg-muted/30 border-border/50 mb-3 inline-flex rounded-lg border p-3">
