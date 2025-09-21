@@ -14,7 +14,7 @@
 	let saveScriptCallback: (() => void) | null = $state(null);
 </script>
 
-<div class="flex h-screen flex-col overflow-hidden">
+<div class="flex h-full flex-col overflow-hidden">
 	<TitleBar
 		{currentConnection}
 		{isConnecting}

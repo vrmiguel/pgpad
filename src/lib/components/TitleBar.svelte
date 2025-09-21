@@ -41,7 +41,7 @@
 </script>
 
 <div
-	class="border-sidebar-border flex h-12 items-center border-b select-none"
+	class="border-sidebar-border flex h-[42px] items-center border-b"
 	style="background-color: var(--titlebar-bg);"
 	data-tauri-drag-region
 >

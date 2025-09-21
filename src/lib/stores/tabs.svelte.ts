@@ -31,6 +31,8 @@ interface TableViewTab extends BaseTab {
 type TabType = 'script' | 'table-view';
 type AnyTab = ScriptTab | TableViewTab;
 
+export type SidebarTabState = 'connections' | 'items' | 'scripts' | 'history';
+
 interface SessionData {
 	nextTempId?: number;
 	tempScripts?: Array<{
