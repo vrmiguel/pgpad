@@ -5,6 +5,7 @@
 	import type { SvelteSet } from 'svelte/reactivity';
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+	import Button from './ui/button/button.svelte';
 
 	interface Props {
 		connections: ConnectionInfo[];
@@ -77,7 +78,6 @@
 				const editItem = await MenuItem.new({
 					text: 'Edit Connection',
 					action: () => {
-						console.log('Edit clicked');
 						editConnection(connection);
 					}
 				});
@@ -130,8 +130,9 @@
 			<Plus size="20" strokeWidth="1" />
 		</button>
 		<button
+			disabled={!selectedConnectionInfo}
 			title="Edit"
-			class="hover:bg-accent h-7 w-7 rounded-xs p-1 disabled:opacity-40"
+			class="enabled:hover:bg-accent h-7 w-7 rounded-xs p-1 disabled:opacity-40"
 			onclick={() => {
 				if (selectedConnectionInfo) {
 					editConnection(selectedConnectionInfo);
@@ -143,7 +144,7 @@
 		<button
 			disabled={!selectedConnectionInfo?.connected}
 			title="Disconnect"
-			class="enabled:hover:bg-accent enabled:text-error h-7 w-7 rounded-xs p-1 disabled:opacity-40"
+			class="enabled:hover:bg-error/20 enabled:text-error h-7 w-7 rounded-xs p-1 disabled:opacity-40"
 			onclick={() => {
 				if (selectedConnectionInfo) {
 					disconnectConnection(selectedConnectionInfo.id);
@@ -156,7 +157,7 @@
 
 	<!-- List -->
 	<div
-		class="scrollable-container flex-1 overflow-y-auto"
+		class="scrollable-container flex-1 space-y-1 overflow-y-auto"
 		oncontextmenu={showContextMenu}
 		role="menuitem"
 		tabindex="-1"
@@ -171,10 +172,11 @@
 			</div>
 		{:else}
 			{#each connections as connection (connection.id)}
-				<button
-					class="w-full justify-start rounded-sm p-1 transition-all duration-200 hover:shadow-none {selectedConnection ===
+				<Button
+					variant="ghost"
+					class="hover:bg-primary/20 w-full justify-start rounded-sm p-1 transition-all duration-200 {selectedConnection ===
 					connection.id
-						? 'dark:bg-primary/20 bg-blue-50/50'
+						? 'bg-primary/20'
 						: 'hover:bg-background'}"
 					onclick={() => selectConnection(connection.id)}
 					ondblclick={() => connectToDatabase(connection.id)}
@@ -214,7 +216,7 @@
 							</div>
 						</div>
 					</div>
-				</button>
+				</Button>
 			{/each}
 		{/if}
 	</div>

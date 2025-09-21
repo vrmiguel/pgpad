@@ -192,33 +192,33 @@
 				<!-- Triggers  -->
 				<div class="border-b p-2">
 					<Tabs.List
-						class="bg-dark-10 shadow-mini-inset dark:bg-background flex h-8 w-full flex-row justify-evenly gap-1 rounded-sm border-none p-0.5 text-sm leading-[0.01em] font-semibold dark:border dark:border-neutral-600/30"
+						class="bg-dark-10 shadow-mini-inset bg-background flex h-8 w-full flex-row justify-evenly gap-1 rounded-sm border-none p-0.5 text-sm leading-[0.01em] font-semibold dark:border dark:border-neutral-600/30"
 					>
 						<Tabs.Trigger
 							value="connections"
 							title="Connections"
-							class="data-[state=active]:shadow-mini dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white"
+							class="dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white data-[state=active]:shadow"
 						>
 							<Cable class="text-sidebar-foreground/70 w-4" />
 						</Tabs.Trigger>
 						<Tabs.Trigger
 							value="items"
 							title="Items"
-							class="data-[state=active]:shadow-mini dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white"
+							class="dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white data-[state=active]:shadow"
 						>
 							<TableProperties class="text-sidebar-foreground/70 w-4" />
 						</Tabs.Trigger>
 						<Tabs.Trigger
 							value="scripts"
 							title="Scripts"
-							class="data-[state=active]:shadow-mini dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white"
+							class="dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white data-[state=active]:shadow"
 						>
 							<FileJson class="text-sidebar-foreground/70 w-4" />
 						</Tabs.Trigger>
 						<Tabs.Trigger
 							value="history"
 							title="History"
-							class="data-[state=active]:shadow-mini dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white"
+							class="dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white data-[state=active]:shadow"
 						>
 							<History class="text-sidebar-foreground/70 w-4" />
 						</Tabs.Trigger>

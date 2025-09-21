@@ -85,9 +85,9 @@
 			<div class="group">
 				<Button
 					variant="ghost"
-					class="h-auto w-full justify-start rounded-sm p-1 transition-all duration-200 {activeScriptId ===
+					class="hover:bg-primary/20 h-auto w-full justify-start rounded-sm p-1 transition-all duration-200 {activeScriptId ===
 					script.id
-						? 'dark:bg-primary/20 bg-blue-50/50'
+						? 'bg-primary/20'
 						: 'hover:bg-background'}"
 					onclick={() => selectScript(script)}
 					oncontextmenu={(e) => showContextMenu(e, script)}
