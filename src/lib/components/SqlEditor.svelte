@@ -66,7 +66,7 @@
 	// Query execution state
 	let currentQuery = $state<string>('');
 
-	const isConnected = $derived(() => {
+	const isConnected = $derived.by(() => {
 		if (!selectedConnection) return false;
 		const connection = connections.find((c) => c.id === selectedConnection);
 		return connection?.connected || false;
