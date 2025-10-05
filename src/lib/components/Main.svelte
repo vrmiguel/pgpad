@@ -15,7 +15,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { listen } from '@tauri-apps/api/event';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { tabs, type ScriptTab } from '$lib/stores/tabs.svelte';
+	import { tabs, type ScriptTab, type SidebarTabState } from '$lib/stores/tabs.svelte';
 
 	interface Props {
 		currentConnection?: {
@@ -61,8 +61,6 @@
 	let queryHistory = $state<QueryHistoryEntry[]>([]);
 	let lastLoadedSchemaConnectionId = $state<string | null>(null);
 
-	let isItemsAccordionOpen = $state(false);
-
 	let unlistenDisconnect: (() => void) | null = null;
 
 	if (selectedConnection === undefined) {
@@ -81,9 +79,7 @@
 	if (saveScriptCallback !== undefined) {
 		saveScriptCallback = saveCurrentScript;
 	}
-	let isConnectionsAccordionOpen = $state(true);
-	let isScriptsAccordionOpen = $state(false);
-	let isHistoryAccordionOpen = $state(false);
+	let sidebarTabState: SidebarTabState = $state('connections');
 
 	// TODO(vini): turn into an $effect that updates with its dependencies
 	let shouldSaveSession = false;
@@ -112,10 +108,7 @@
 					...tabSessionData,
 					selectedConnection,
 					isSidebarCollapsed,
-					isConnectionsAccordionOpen,
-					isScriptsAccordionOpen,
-					isHistoryAccordionOpen,
-					isItemsAccordionOpen
+					sidebarTabState
 				};
 				await Commands.saveSessionState(JSON.stringify(fullSessionData));
 			});
@@ -133,14 +126,7 @@
 
 			if (saved.selectedConnection !== undefined) selectedConnection = saved.selectedConnection;
 			if (saved.isSidebarCollapsed !== undefined) isSidebarCollapsed = saved.isSidebarCollapsed;
-			if (saved.isConnectionsAccordionOpen !== undefined)
-				isConnectionsAccordionOpen = saved.isConnectionsAccordionOpen;
-			if (saved.isScriptsAccordionOpen !== undefined)
-				isScriptsAccordionOpen = saved.isScriptsAccordionOpen;
-			if (saved.isHistoryAccordionOpen !== undefined)
-				isHistoryAccordionOpen = saved.isHistoryAccordionOpen;
-			if (saved.isItemsAccordionOpen !== undefined)
-				isItemsAccordionOpen = saved.isItemsAccordionOpen;
+			if (saved.sidebarTabState !== undefined) sidebarTabState = saved.sidebarTabState;
 
 			const restored = await tabs.restoreSession(saved);
 			return restored;
@@ -623,10 +609,7 @@
 				{loadingSchema}
 				{queryHistory}
 				bind:isSidebarCollapsed
-				bind:isConnectionsAccordionOpen
-				bind:isScriptsAccordionOpen
-				bind:isHistoryAccordionOpen
-				bind:isItemsAccordionOpen
+				bind:sidebarTabState
 				onSelectConnection={selectConnection}
 				onConnectToDatabase={connectToDatabase}
 				onShowConnectionForm={() => {
