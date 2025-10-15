@@ -64,11 +64,38 @@ async fn execute_query_with_results(
         s.iter().map(|s| *s as _)
     }
 
-    match client.query_raw(query, slice_iter(&[])).await {
+    let prepared_stmt = match client.prepare(query).await {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            log::error!("Query preparation failed: {:?}", e);
+            let error_msg = format!("Query failed: {}", e);
+
+            channel
+                .send(QueryStreamEvent::StatementError {
+                    statement_index,
+                    statement: query.to_string(),
+                    error: error_msg.clone(),
+                })
+                .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
+
+            return Err(Error::Any(anyhow::anyhow!(error_msg)));
+        }
+    };
+
+    let columns = prepared_stmt.columns().iter().map(|col| col.name());
+    let columns = serialize_as_json_array(columns)?;
+
+    channel
+        .send(QueryStreamEvent::ResultStart {
+            statement_index,
+            columns,
+        })
+        .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
+
+    match client.query_raw(&prepared_stmt, slice_iter(&[])).await {
         Ok(stream) => {
             pin_mut!(stream);
 
-            let mut columns_sent = false;
             let mut batch_size = 50;
             let max_batch_size = 500;
             let mut total_rows = 0;
@@ -78,21 +105,6 @@ async fn execute_query_with_results(
             loop {
                 match stream.try_next().await {
                     Ok(Some(row)) => {
-                        // Send column info on first row
-                        if !columns_sent {
-                            let columns = row.columns().iter().map(|col| col.name());
-                            let columns = serialize_as_json_array(columns)?;
-
-                            channel
-                                .send(QueryStreamEvent::ResultStart {
-                                    statement_index,
-                                    columns,
-                                })
-                                .map_err(|e| Error::Any(anyhow::anyhow!(e)))?;
-
-                            columns_sent = true;
-                        }
-
                         writer.add_row(&row)?;
 
                         total_rows += 1;
