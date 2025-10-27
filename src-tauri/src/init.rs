@@ -1,9 +1,9 @@
+use tauri::WebviewWindowBuilder;
+
 #[cfg(target_os = "macos")]
-use tauri::menu::AboutMetadata;
-use tauri::menu::MenuItem;
 use tauri::{
-    menu::{Menu, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID},
-    AppHandle, Emitter, WebviewWindowBuilder,
+    menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID},
+    AppHandle, Emitter,
 };
 
 fn init_script() -> String {
@@ -59,11 +59,16 @@ pub fn build_window(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "macos"))]
+pub fn build_menu(_app: &tauri::App) -> anyhow::Result<()> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 pub fn build_menu(app: &tauri::App) -> anyhow::Result<()> {
     let app_handle = app.handle();
-    #[cfg(target_os = "macos")]
     let pkg_info = app_handle.package_info();
-    #[cfg(target_os = "macos")]
+
     let about_metadata = {
         let config = app_handle.config();
         AboutMetadata {
@@ -83,7 +88,6 @@ pub fn build_menu(app: &tauri::App) -> anyhow::Result<()> {
         &[
             &PredefinedMenuItem::minimize(app_handle, None)?,
             &PredefinedMenuItem::maximize(app_handle, None)?,
-            #[cfg(target_os = "macos")]
             &PredefinedMenuItem::separator(app_handle)?,
             &PredefinedMenuItem::close_window(app_handle, None)?,
         ],
@@ -92,7 +96,6 @@ pub fn build_menu(app: &tauri::App) -> anyhow::Result<()> {
     let menu = Menu::with_items(
         app_handle,
         &[
-            #[cfg(target_os = "macos")]
             &Submenu::with_items(
                 app_handle,
                 pkg_info.name.clone(),
@@ -143,7 +146,6 @@ pub fn build_menu(app: &tauri::App) -> anyhow::Result<()> {
                     &PredefinedMenuItem::select_all(app_handle, None)?,
                 ],
             )?,
-            #[cfg(target_os = "macos")]
             &Submenu::with_items(
                 app_handle,
                 "View",
@@ -168,6 +170,7 @@ pub fn build_menu(app: &tauri::App) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn menu_event_handler(event: &str, handle: &AppHandle) -> anyhow::Result<()> {
     match event {
         "new_tab" => {
