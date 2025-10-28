@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     database::{
+        stmt_manager::StatementManager,
         types::{DatabaseConnection, DatabaseSchema},
         ConnectionMonitor,
     },
@@ -26,6 +27,7 @@ pub struct AppState {
     pub connections: DashMap<Uuid, DatabaseConnection>,
     pub schemas: DashMap<Uuid, Arc<DatabaseSchema>>,
     pub storage: Storage,
+    pub stmt_manager: StatementManager,
 }
 
 impl AppState {
@@ -41,6 +43,7 @@ impl AppState {
             connections: DashMap::new(),
             schemas: DashMap::new(),
             storage,
+            stmt_manager: StatementManager::new(),
         })
     }
 }
@@ -83,7 +86,11 @@ pub fn run() {
             database::commands::update_connection,
             database::commands::connect_to_database,
             database::commands::disconnect_from_database,
-            database::commands::execute_query_stream,
+            database::commands::start_query,
+            database::commands::fetch_page,
+            database::commands::get_query_status,
+            database::commands::get_page_count,
+            database::commands::get_columns,
             database::commands::get_connections,
             database::commands::remove_connection,
             database::commands::initialize_connections,

@@ -5,6 +5,8 @@ use serde_json::value::RawValue;
 
 use uuid::Uuid;
 
+use crate::Error;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionInfo {
     pub id: Uuid,
@@ -27,11 +29,21 @@ pub struct DatabaseConnection {
     pub database: Database,
 }
 
+#[derive(Clone)]
+pub enum DatabaseClient {
+    Postgres {
+        client: Arc<tokio_postgres::Client>,
+    },
+    SQLite {
+        connection: Arc<Mutex<rusqlite::Connection>>,
+    },
+}
+
 #[derive(Debug)]
 pub enum Database {
     Postgres {
         connection_string: String,
-        client: Option<tokio_postgres::Client>,
+        client: Option<Arc<tokio_postgres::Client>>,
     },
     SQLite {
         db_path: String,
@@ -84,6 +96,36 @@ impl DatabaseConnection {
             Database::SQLite { connection, .. } => connection.is_some(),
         }
     }
+
+    /// Get the inner client object
+    pub fn get_client(&self) -> Result<DatabaseClient, Error> {
+        let client = match &self.database {
+            Database::Postgres {
+                client: Some(client),
+                ..
+            } => DatabaseClient::Postgres {
+                client: client.clone(),
+            },
+            Database::Postgres { client: None, .. } => {
+                return Err(Error::Any(anyhow::anyhow!(
+                    "Postgres connection not active"
+                )));
+            }
+            Database::SQLite {
+                connection: Some(sqlite_conn),
+                ..
+            } => DatabaseClient::SQLite {
+                connection: sqlite_conn.clone(),
+            },
+            Database::SQLite {
+                connection: None, ..
+            } => {
+                return Err(Error::Any(anyhow::anyhow!("SQLite connection not active")));
+            }
+        };
+
+        Ok(client)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +158,7 @@ pub struct DatabaseSchema {
     tag = "event",
     content = "data"
 )]
+#[expect(unused)]
 pub enum QueryStreamEvent {
     StatementStart {
         statement_index: usize,

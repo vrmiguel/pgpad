@@ -270,7 +270,7 @@ mod tests {
             .await
             .unwrap();
 
-        tauri::async_runtime::spawn(async move {
+        tokio::task::spawn(async move {
             if let Err(e) = conn.await {
                 eprintln!("Connection error: {}", e);
             }
