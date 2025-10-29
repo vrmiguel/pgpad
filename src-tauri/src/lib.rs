@@ -87,6 +87,7 @@ pub fn run() {
             database::commands::connect_to_database,
             database::commands::disconnect_from_database,
             database::commands::start_query,
+            database::commands::fetch_query,
             database::commands::fetch_page,
             database::commands::get_query_status,
             database::commands::get_page_count,

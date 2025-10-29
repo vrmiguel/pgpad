@@ -3,7 +3,7 @@ use tokio_postgres::{types::ToSql, Client};
 
 use crate::{
     database::{
-        parser::ParsedStatement, postgres::row_writer::RowWriter, ExecSender, QueryExecEvent,
+        parser::ParsedStatement, postgres::row_writer::RowWriter, types::ExecSender, QueryExecEvent,
     },
     utils::serialize_as_json_array,
     Error,
@@ -150,7 +150,7 @@ async fn execute_modification_query(
         Ok(rows_affected) => {
             sender.send(QueryExecEvent::Finished {
                 elapsed_ms: started_at.elapsed().as_millis() as u64,
-                affected_rows: rows_affected,
+                affected_rows: rows_affected as usize,
                 error: None,
             })?;
 
@@ -178,7 +178,7 @@ mod tests {
     use pgtemp::PgTempDB;
 
     use super::execute_query;
-    use crate::database::{channel, postgres::parser::parse_statements, QueryExecEvent};
+    use crate::database::{postgres::parser::parse_statements, types::channel, QueryExecEvent};
 
     async fn run_query(
         conn: Arc<tokio_postgres::Client>,
@@ -208,7 +208,7 @@ mod tests {
     async fn run_modification_query(
         conn: Arc<tokio_postgres::Client>,
         query: &str,
-    ) -> anyhow::Result<u64> {
+    ) -> anyhow::Result<usize> {
         let mut parsed_stmt = parse_statements(query).unwrap();
         assert_eq!(parsed_stmt.len(), 1);
         assert!(parsed_stmt[0].returns_values.not());

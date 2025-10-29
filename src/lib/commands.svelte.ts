@@ -1,4 +1,4 @@
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 
 // What Rust sends us after processing query results (basically, JSON)
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
@@ -6,8 +6,16 @@ export type Json = string | number | boolean | null | Json[] | { [key: string]: 
 export type Row = Json[];
 
 export type QueryId = number;
-export type QueryStatus = 'pending' | 'running' | 'completed' | 'error';
+export type QueryStatus = 'Pending' | 'Running' | 'Completed' | 'Error';
 export type Page = Json[][];
+
+export interface StatementInfo {
+	returns_values: boolean;
+	status: QueryStatus;
+	first_page: Page | null;
+	affected_rows: number | null;
+	error: string | null;
+}
 
 export type DatabaseInfo =
 	| { Postgres: { connection_string: string } }
@@ -78,7 +86,7 @@ export class Commands {
 	static async disconnectFromDatabase(connectionId: string): Promise<void> {
 		return await invoke('disconnect_from_database', { connectionId });
 	}
-	
+
 	static async getConnections(): Promise<ConnectionInfo[]> {
 		return await invoke('get_connections');
 	}
@@ -189,6 +197,10 @@ export class Commands {
 
 	static async startQuery(connectionId: string, query: string): Promise<QueryId[]> {
 		return await invoke('start_query', { connectionId, query });
+	}
+
+	static async fetchQuery(queryId: QueryId): Promise<StatementInfo> {
+		return await invoke('fetch_query', { queryId });
 	}
 
 	static async fetchPage(queryId: QueryId, pageIndex: number): Promise<Page | null> {

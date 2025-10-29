@@ -10,11 +10,11 @@
 		Commands,
 		type ConnectionInfo,
 		type Script,
-		type Row,
 		type Json,
 		type QueryId,
 		type Page,
-		type QueryStatus
+		type QueryStatus,
+		type StatementInfo
 	} from '$lib/commands.svelte';
 	import { createEditor } from '$lib/codemirror';
 	import { onMount } from 'svelte';
@@ -71,7 +71,7 @@
 
 	// Query execution state
 	let currentQuery = $state<string>('');
-	
+
 	let pageCountPolls = $state<Map<QueryId, ReturnType<typeof setInterval>>>(new Map());
 
 	const isConnected = $derived.by(() => {
@@ -168,7 +168,7 @@
 		currentTableBrowse = { tableName, schema };
 
 		console.log('Table browse started for:', tableName, 'with query:', query);
-		
+
 		handleExecuteQuery(query);
 	}
 
@@ -181,7 +181,7 @@
 			name: `Query ${queryId}`,
 			query: currentQuery,
 			timestamp: Date.now(),
-			status: 'running',
+			status: 'Running',
 			currentPageIndex: 0,
 			currentPageData: null,
 			totalPages: null
@@ -189,18 +189,19 @@
 
 		resultTabs = [...resultTabs, newTab];
 		activeResultTabId = tabId;
-		
-		const columns = await pollForColumns(queryId);
-		if (!columns) {
-			const tabIndex = resultTabs.findIndex(t => t.id === tabId);
-			if (tabIndex >= 0) {
-				resultTabs[tabIndex] = {
-					...resultTabs[tabIndex],
-					status: 'error',
-					error: 'Failed to get column information'
-				};
-				resultTabs = [...resultTabs];
-			}
+
+		const info = await pollFirstQueryData(queryId);
+
+		const tabIndex = resultTabs.findIndex((t) => t.id === tabId);
+		if (tabIndex < 0) return;
+
+		if (info.error) {
+			resultTabs[tabIndex] = {
+				...resultTabs[tabIndex],
+				status: 'Error',
+				error: info.error
+			};
+			resultTabs = [...resultTabs];
 			return;
 		}
 
@@ -214,21 +215,87 @@
 			currentTableBrowse = null;
 		}
 
-		const page0 = await pollForPage(queryId, 0);
-		console.log('Fetched page 0:', page0 ? `${page0.length} rows` : 'null');
-
-		const tabIndex = resultTabs.findIndex(t => t.id === tabId);
-		if (tabIndex >= 0) {
+		if (!info.returns_values) {
 			resultTabs[tabIndex] = {
 				...resultTabs[tabIndex],
-				columns,
+				status: info.status,
 				name: tabName,
-				currentPageData: page0
+				queryReturnsResults: false,
+				affectedRows: info.affected_rows ?? undefined
 			};
 			resultTabs = [...resultTabs];
+
+			if (info.status === 'Completed' && selectedConnection) {
+				Commands.saveQueryToHistory(
+					selectedConnection,
+					currentQuery,
+					undefined,
+					'success',
+					info.affected_rows ?? 0,
+					undefined
+				);
+				onHistoryUpdate?.();
+			}
+
+			return;
 		}
 
-		pollForPageCount(queryId);
+		const columns = await pollForColumns(queryId);
+		if (!columns) {
+			resultTabs[tabIndex] = {
+				...resultTabs[tabIndex],
+				status: 'Error',
+				error: 'Failed to get column information'
+			};
+			resultTabs = [...resultTabs];
+			return;
+		}
+
+		resultTabs[tabIndex] = {
+			...resultTabs[tabIndex],
+			columns,
+			name: tabName,
+			currentPageData: info.first_page,
+			status: info.status,
+			queryReturnsResults: true
+		};
+		resultTabs = [...resultTabs];
+
+		if (info.status === 'Completed') {
+			const pageCount = await Commands.getPageCount(queryId);
+			const tabIdx = resultTabs.findIndex((t) => t.id === tabId);
+			if (tabIdx >= 0) {
+				resultTabs[tabIdx] = { ...resultTabs[tabIdx], totalPages: pageCount };
+				resultTabs = [...resultTabs];
+			}
+		} else {
+			pollForPageCount(queryId);
+		}
+	}
+
+	async function pollFirstQueryData(queryId: QueryId): Promise<StatementInfo> {
+		for (let i = 0; i < 100; i++) {
+			const info = await Commands.fetchQuery(queryId);
+
+			// Return if:
+			// 1. Query has first page (we got the data we need)
+			// 2. Query is completed/error (no more data coming)
+			// 3. Query doesn't return values (no pages to wait for)
+			// 4. Query errored
+			if (
+				info.first_page ||
+				info.status === 'Completed' ||
+				info.status === 'Error' ||
+				!info.returns_values ||
+				info.error
+			) {
+				return info;
+			}
+
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+
+		return await Commands.fetchQuery(queryId);
 	}
 
 	// TODO(vini): replace with channel/listener
@@ -237,23 +304,20 @@
 		for (let i = 0; i < 50; i++) {
 			const columns = await Commands.getColumns(queryId);
 			if (columns) {
-				console.log('Got columns for queryId:', queryId, columns);
 				return columns;
 			}
-			await new Promise(resolve => setTimeout(resolve, 100));
+			await new Promise((resolve) => setTimeout(resolve, 100));
 		}
 		return null;
 	}
 
 	async function pollForPage(queryId: QueryId, pageIndex: number): Promise<Page | null> {
-		// Poll for up to 10 seconds
 		for (let i = 0; i < 100; i++) {
 			const page = await Commands.fetchPage(queryId, pageIndex);
 			if (page) {
-				console.log('Got page', pageIndex, 'for queryId:', queryId, '(', page.length, 'rows)');
 				return page;
 			}
-			await new Promise(resolve => setTimeout(resolve, 100));
+			await new Promise((resolve) => setTimeout(resolve, 100));
 		}
 		console.error('Timeout waiting for page', pageIndex, 'for queryId:', queryId);
 		return null;
@@ -265,14 +329,14 @@
 			try {
 				const status = await Commands.getQueryStatus(queryId);
 				const pageCount = await Commands.getPageCount(queryId);
-				
-				const tab = resultTabs.find(t => t.queryId === queryId);
+
+				const tab = resultTabs.find((t) => t.queryId === queryId);
 				if (!tab) return;
 
 				let changed = false;
 
 				if (tab.totalPages !== pageCount) {
-					const tabIndex = resultTabs.findIndex(t => t.queryId === queryId);
+					const tabIndex = resultTabs.findIndex((t) => t.queryId === queryId);
 					if (tabIndex >= 0) {
 						resultTabs[tabIndex] = { ...resultTabs[tabIndex], totalPages: pageCount };
 						changed = true;
@@ -280,7 +344,7 @@
 				}
 
 				if (tab.status !== status) {
-					const tabIndex = resultTabs.findIndex(t => t.queryId === queryId);
+					const tabIndex = resultTabs.findIndex((t) => t.queryId === queryId);
 					if (tabIndex >= 0) {
 						resultTabs[tabIndex] = { ...resultTabs[tabIndex], status };
 						changed = true;
@@ -292,7 +356,7 @@
 					resultTabs = [...resultTabs];
 				}
 
-				if (status === 'completed' && selectedConnection) {
+				if (status === 'Completed' && selectedConnection) {
 					const interval = pageCountPolls.get(queryId);
 					if (interval) {
 						clearInterval(interval);
@@ -323,7 +387,7 @@
 	}
 
 	async function loadPage(queryId: QueryId, pageIndex: number) {
-		const tabIndex = resultTabs.findIndex(t => t.queryId === queryId);
+		const tabIndex = resultTabs.findIndex((t) => t.queryId === queryId);
 		if (tabIndex < 0) return;
 
 		console.log('Loading page', pageIndex, 'for queryId', queryId);
@@ -363,9 +427,9 @@
 
 	function getTabStatus(tab: QueryResultTab): 'normal' | 'modified' | 'error' {
 		switch (tab.status) {
-			case 'error':
+			case 'Error':
 				return 'error';
-			case 'running':
+			case 'Running':
 				return 'modified';
 			default:
 				return 'normal';
@@ -473,7 +537,9 @@
 									</CardContent>
 
 									{#if activeTab.totalPages && activeTab.totalPages > 1}
-										<div class="border-border/30 bg-muted/20 flex flex-shrink-0 items-center border-t px-3 py-2">
+										<div
+											class="border-border/30 bg-muted/20 flex flex-shrink-0 items-center border-t px-3 py-2"
+										>
 											<div class="text-muted-foreground flex items-center gap-2 text-xs">
 												<span>Page {activeTab.currentPageIndex + 1} of {activeTab.totalPages}</span>
 											</div>
@@ -484,7 +550,8 @@
 												<Button
 													variant="ghost"
 													size="sm"
-													onclick={() => loadPage(activeTab.queryId, activeTab.currentPageIndex - 1)}
+													onclick={() =>
+														loadPage(activeTab.queryId, activeTab.currentPageIndex - 1)}
 													disabled={activeTab.currentPageIndex === 0}
 													class="h-6 w-6 p-0"
 												>
@@ -509,7 +576,8 @@
 													<Button
 														variant="ghost"
 														size="sm"
-														onclick={() => loadPage(activeTab.queryId, activeTab.currentPageIndex - 1)}
+														onclick={() =>
+															loadPage(activeTab.queryId, activeTab.currentPageIndex - 1)}
 														class="h-6 px-2 text-xs"
 													>
 														{activeTab.currentPageIndex}
@@ -524,7 +592,8 @@
 													<Button
 														variant="ghost"
 														size="sm"
-														onclick={() => loadPage(activeTab.queryId, activeTab.currentPageIndex + 1)}
+														onclick={() =>
+															loadPage(activeTab.queryId, activeTab.currentPageIndex + 1)}
 														class="h-6 px-2 text-xs"
 													>
 														{activeTab.currentPageIndex + 2}
@@ -538,7 +607,9 @@
 													<Button
 														variant="ghost"
 														size="sm"
-														onclick={() => activeTab.totalPages && loadPage(activeTab.queryId, activeTab.totalPages - 1)}
+														onclick={() =>
+															activeTab.totalPages &&
+															loadPage(activeTab.queryId, activeTab.totalPages - 1)}
 														class="h-6 px-2 text-xs"
 													>
 														{activeTab.totalPages}
@@ -548,7 +619,8 @@
 												<Button
 													variant="ghost"
 													size="sm"
-													onclick={() => loadPage(activeTab.queryId, activeTab.currentPageIndex + 1)}
+													onclick={() =>
+														loadPage(activeTab.queryId, activeTab.currentPageIndex + 1)}
 													disabled={activeTab.currentPageIndex >= activeTab.totalPages - 1}
 													class="h-6 w-6 p-0"
 												>
@@ -576,21 +648,19 @@
 												<div class="text-sm text-red-600">❌ {activeTab.error}</div>
 											</div>
 										</div>
-									{:else if activeTab.queryReturnsResults}
+									{:else if activeTab.queryReturnsResults === false}
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
-												{#if activeTab.status === 'running'}
-													<div class="text-muted-foreground text-sm">
-														Executing modification query...
-													</div>
-												{:else if activeTab.status === 'completed'}
+												{#if activeTab.status === 'Running'}
+													<div class="text-muted-foreground text-sm">Executing query...</div>
+												{:else if activeTab.status === 'Completed'}
 													<div class="text-sm font-medium text-green-600">
 														✓ {activeTab.affectedRows || 0} rows affected
 													</div>
 												{/if}
 											</div>
 										</div>
-									{:else if activeTab.status === 'running'}
+									{:else if activeTab.status === 'Running'}
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
 												<div class="text-muted-foreground text-sm">Loading results...</div>

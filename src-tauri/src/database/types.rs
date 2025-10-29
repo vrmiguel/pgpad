@@ -3,9 +3,51 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use uuid::Uuid;
 
 use crate::Error;
+
+pub type QueryId = usize;
+
+/// A row of data serialized by one of our writers
+/// You can conceptually think of this as a Vec<Vec<Json>>.
+///
+/// Example:
+/// - Query: `SELECT 1,2,3 UNION ALL SELECT 4,5,6`
+/// - Page: `[[1,2,3],[4,5,6]]`
+pub type Page = Box<RawValue>;
+
+pub type ExecSender = UnboundedSender<QueryExecEvent>;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StatementInfo {
+    pub returns_values: bool,
+    pub status: QueryStatus,
+    pub first_page: Option<Box<RawValue>>,
+    pub affected_rows: Option<usize>,
+    pub error: Option<String>,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub enum QueryStatus {
+    Pending = 0,
+    Running = 1,
+    Completed = 2,
+    Error = 3,
+}
+
+impl From<u8> for QueryStatus {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Pending,
+            1 => Self::Running,
+            2 => Self::Completed,
+            _ => Self::Error,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionInfo {
@@ -149,4 +191,37 @@ pub struct DatabaseSchema {
     pub schemas: Vec<String>,
     // Deduplicated list of column names across all tables, for autocomplete purposes
     pub unique_columns: Vec<String>,
+}
+
+pub fn channel() -> (
+    UnboundedSender<QueryExecEvent>,
+    UnboundedReceiver<QueryExecEvent>,
+) {
+    mpsc::unbounded_channel()
+}
+
+#[derive(Debug)]
+/// An event sent by a query executor to the main thread
+pub enum QueryExecEvent {
+    /// Sent by a query executor when the column types of a query are now known
+    TypesResolved {
+        // Serialized Vec<String>, because I can't help myself
+        columns: Box<RawValue>,
+    },
+    /// Sent by a query executor when a page of results is available
+    Page {
+        #[allow(unused)]
+        page_amount: usize,
+        /// JSON-serialized Vec<Vec<Json>>
+        page: Page,
+    },
+    Finished {
+        #[allow(unused)]
+        elapsed_ms: u64,
+        /// Number of rows affected by the query
+        /// Relevant only for modification queries
+        affected_rows: usize,
+        /// If the query failed, this will contain the error message
+        error: Option<String>,
+    },
 }

@@ -4,7 +4,7 @@ use rusqlite::Connection;
 
 use crate::{
     database::{
-        parser::ParsedStatement, sqlite::row_writer::RowWriter, ExecSender, QueryExecEvent,
+        parser::ParsedStatement, sqlite::row_writer::RowWriter, types::ExecSender, QueryExecEvent,
     },
     utils::serialize_as_json_array,
     Error,
@@ -150,7 +150,7 @@ fn execute_modification_query(
         Ok(rows_affected) => {
             sender.send(QueryExecEvent::Finished {
                 elapsed_ms: started_at.elapsed().as_millis() as u64,
-                affected_rows: rows_affected as u64,
+                affected_rows: rows_affected,
                 error: None,
             })?;
             Ok(())
@@ -179,7 +179,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::execute_query;
-    use crate::database::{channel, sqlite::parser::parse_statements, QueryExecEvent};
+    use crate::database::{sqlite::parser::parse_statements, types::channel, QueryExecEvent};
 
     async fn run_query(
         conn: Arc<Mutex<Connection>>,
@@ -210,7 +210,7 @@ mod tests {
     async fn run_modification_query(
         conn: Arc<Mutex<Connection>>,
         query: &str,
-    ) -> anyhow::Result<u64> {
+    ) -> anyhow::Result<usize> {
         let mut parsed_stmt = parse_statements(query).unwrap();
         assert_eq!(parsed_stmt.len(), 1);
         assert!(parsed_stmt[0].returns_values.not());
@@ -279,7 +279,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_queries() -> anyhow::Result<()> {
+    async fn test_mixed_queries() -> anyhow::Result<()> {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         let conn = Arc::new(Mutex::new(conn));
         let affected_rows = run_modification_query(
@@ -340,6 +340,82 @@ mod tests {
             } => {
                 // This particular query does run fast enough in my machine to be 0ms, so it's hard to assert anything about it
                 let _ = elapsed_ms;
+                assert!(error.is_none());
+                assert_eq!(affected_rows, 0);
+            }
+            other => panic!("Expected Finished event, got {:?}", other),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_query_with_many_rows() -> anyhow::Result<()> {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let conn = Arc::new(Mutex::new(conn));
+
+        // Returns 1, 2, 3, .., 155
+        let query = "WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t WHERE x < 155) SELECT * FROM t;";
+        let mut events = run_query(conn.clone(), query).await?.into_iter();
+        let types_resolved = events.next().unwrap();
+        match types_resolved {
+            QueryExecEvent::TypesResolved { columns } => {
+                assert_eq!(serde_json::to_string(&columns).unwrap(), r#"["x"]"#);
+            }
+            other => panic!("Expected TypesResolved event, got {:?}", other),
+        }
+
+        let page_1 = events.next().unwrap();
+        match page_1 {
+            QueryExecEvent::Page { page_amount, page } => {
+                assert_eq!(page_amount, 50);
+                let page = serde_json::to_string(&page).unwrap();
+                assert!(page.starts_with("[[1],[2]"));
+                assert!(page.ends_with("49],[50]]"));
+            }
+            other => panic!("Expected Page event, got {:?}", other),
+        }
+
+        let page_2 = events.next().unwrap();
+        match page_2 {
+            QueryExecEvent::Page { page_amount, page } => {
+                assert_eq!(page_amount, 50);
+                let page = serde_json::to_string(&page).unwrap();
+                assert!(page.starts_with("[[51],[52]"));
+                assert!(page.ends_with("99],[100]]"));
+            }
+            other => panic!("Expected Page event, got {:?}", other),
+        }
+
+        let page_3 = events.next().unwrap();
+        match page_3 {
+            QueryExecEvent::Page { page_amount, page } => {
+                assert_eq!(page_amount, 50);
+                let page = serde_json::to_string(&page).unwrap();
+                assert!(page.starts_with("[[101],[102]"));
+                assert!(page.ends_with("149],[150]]"));
+            }
+            other => panic!("Expected Page event, got {:?}", other),
+        }
+
+        let page_4 = events.next().unwrap();
+        match page_4 {
+            QueryExecEvent::Page { page_amount, page } => {
+                assert_eq!(page_amount, 5);
+                assert_eq!(
+                    serde_json::to_string(&page).unwrap(),
+                    "[[151],[152],[153],[154],[155]]"
+                );
+            }
+            other => panic!("Expected Page event, got {:?}", other),
+        }
+
+        let finished = events.next().unwrap();
+        match finished {
+            QueryExecEvent::Finished {
+                affected_rows,
+                error,
+                ..
+            } => {
                 assert!(error.is_none());
                 assert_eq!(affected_rows, 0);
             }

@@ -1,13 +1,26 @@
-use std::{sync::{Arc, Mutex}, time::Instant};
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use anyhow::Context;
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
 use crate::{
-    AppState, credentials, database::{
-        Certificates, ConnectionMonitor, postgres::{self, connect::connect}, sqlite, stmt_manager::QueryStatus, types::{ConnectionInfo, Database, DatabaseConnection, DatabaseInfo, DatabaseSchema}
-    }, error::Error, storage::{QueryHistoryEntry, SavedQuery}
+    credentials,
+    database::{
+        postgres::{self, connect::connect},
+        sqlite,
+        types::{
+            ConnectionInfo, Database, DatabaseConnection, DatabaseInfo, DatabaseSchema,
+            QueryStatus, StatementInfo,
+        },
+        Certificates, ConnectionMonitor,
+    },
+    error::Error,
+    storage::{QueryHistoryEntry, SavedQuery},
+    AppState,
 };
 
 #[tauri::command]
@@ -222,6 +235,14 @@ pub async fn start_query(
     let query_ids = state.stmt_manager.submit_query(client, query)?;
 
     Ok(query_ids)
+}
+
+#[tauri::command]
+pub async fn fetch_query(
+    query_id: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<StatementInfo, Error> {
+    state.stmt_manager.fetch_query(query_id)
 }
 
 #[tauri::command]
