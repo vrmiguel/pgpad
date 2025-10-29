@@ -158,13 +158,13 @@
 		processedData = sortedData;
 	});
 
-	const pageCount = $derived(() => {
+	const pageCount = $derived.by(() => {
 		const totalRows = processedData.length;
 		const pageSize = tableState.pagination.pageSize;
 		return Math.ceil(totalRows / pageSize);
 	});
 
-	const currentPageIndex = $derived(() => tableState.pagination.pageIndex);
+	const currentPageIndex = $derived(tableState.pagination.pageIndex);
 
 	const visibleRowData = $derived.by(() => {
 		const pageSize = tableState.pagination.pageSize;
@@ -331,10 +331,10 @@
 
 	const customNavigation = {
 		setPageIndex: (pageIndex: number) => {
-			tableState.pagination.pageIndex = Math.max(0, Math.min(pageIndex, pageCount() - 1));
+			tableState.pagination.pageIndex = Math.max(0, Math.min(pageIndex, pageCount - 1));
 		},
 		nextPage: () => {
-			if (tableState.pagination.pageIndex < pageCount() - 1) {
+			if (tableState.pagination.pageIndex < pageCount - 1) {
 				tableState.pagination.pageIndex++;
 			}
 		},
@@ -343,7 +343,7 @@
 				tableState.pagination.pageIndex--;
 			}
 		},
-		canNextPage: () => tableState.pagination.pageIndex < pageCount() - 1,
+		canNextPage: () => tableState.pagination.pageIndex < pageCount - 1,
 		canPreviousPage: () => tableState.pagination.pageIndex > 0
 	};
 
@@ -488,7 +488,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each visibleRowData as rowData, index (currentPageIndex() * tableState.pagination.pageSize + index)}
+					{#each visibleRowData as rowData, index (currentPageIndex * tableState.pagination.pageSize + index)}
 						<tr
 							class="border-border/40 hover:bg-muted/50 group border-b transition-colors {index %
 								2 ===
@@ -497,8 +497,7 @@
 								: 'bg-card/30'}"
 						>
 							{#each rowData as cellValue, colIndex (colIndex)}
-								{@const globalRowIndex =
-									currentPageIndex() * tableState.pagination.pageSize + index}
+								{@const globalRowIndex = currentPageIndex * tableState.pagination.pageSize + index}
 								{@const columnId = colIndex}
 								{@const rowId = globalRowIndex}
 								{@const isSelected = selectedCell
@@ -588,16 +587,16 @@
 
 	{console.log(
 		'Pagination render - pageCount:',
-		pageCount(),
+		pageCount,
 		'dataLength:',
 		data.length,
 		'pageSize:',
 		tableState.pagination.pageSize
 	)}
-	{#if pageCount() > 1}
+	{#if pageCount > 1}
 		<div class="border-border/30 bg-muted/20 flex flex-shrink-0 items-center border-t px-3 py-2">
 			<div class="text-muted-foreground flex items-center gap-2 text-xs">
-				<span>Page {currentPageIndex() + 1} of {pageCount()}</span>
+				<span>Page {currentPageIndex + 1} of {pageCount}</span>
 				<span>•</span>
 				<select
 					bind:value={tableState.pagination.pageSize}
@@ -623,7 +622,7 @@
 					<ChevronLeft class="h-3 w-3" />
 				</Button>
 
-				{#if currentPageIndex() > 1}
+				{#if currentPageIndex > 1}
 					<Button
 						variant="ghost"
 						size="sm"
@@ -632,48 +631,48 @@
 					>
 						1
 					</Button>
-					{#if currentPageIndex() > 2}
+					{#if currentPageIndex > 2}
 						<span class="text-muted-foreground text-xs">...</span>
 					{/if}
 				{/if}
 
-				{#if currentPageIndex() > 0}
+				{#if currentPageIndex > 0}
 					<Button
 						variant="ghost"
 						size="sm"
 						onclick={() => customNavigation.previousPage()}
 						class="h-6 px-2 text-xs"
 					>
-						{currentPageIndex()}
+						{currentPageIndex}
 					</Button>
 				{/if}
 
 				<Button variant="default" size="sm" class="h-6 px-2 text-xs">
-					{currentPageIndex() + 1}
+					{currentPageIndex + 1}
 				</Button>
 
-				{#if currentPageIndex() < pageCount() - 1}
+				{#if currentPageIndex < pageCount - 1}
 					<Button
 						variant="ghost"
 						size="sm"
 						onclick={() => customNavigation.nextPage()}
 						class="h-6 px-2 text-xs"
 					>
-						{currentPageIndex() + 2}
+						{currentPageIndex + 2}
 					</Button>
 				{/if}
 
-				{#if currentPageIndex() < pageCount() - 2}
-					{#if currentPageIndex() < pageCount() - 3}
+				{#if currentPageIndex < pageCount - 2}
+					{#if currentPageIndex < pageCount - 3}
 						<span class="text-muted-foreground text-xs">...</span>
 					{/if}
 					<Button
 						variant="ghost"
 						size="sm"
-						onclick={() => customNavigation.setPageIndex(pageCount() - 1)}
+						onclick={() => customNavigation.setPageIndex(pageCount - 1)}
 						class="h-6 px-2 text-xs"
 					>
-						{pageCount()}
+						{pageCount}
 					</Button>
 				{/if}
 
