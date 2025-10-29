@@ -3,7 +3,51 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use uuid::Uuid;
+
+use crate::Error;
+
+pub type QueryId = usize;
+
+/// A row of data serialized by one of our writers
+/// You can conceptually think of this as a Vec<Vec<Json>>.
+///
+/// Example:
+/// - Query: `SELECT 1,2,3 UNION ALL SELECT 4,5,6`
+/// - Page: `[[1,2,3],[4,5,6]]`
+pub type Page = Box<RawValue>;
+
+pub type ExecSender = UnboundedSender<QueryExecEvent>;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StatementInfo {
+    pub returns_values: bool,
+    pub status: QueryStatus,
+    pub first_page: Option<Box<RawValue>>,
+    pub affected_rows: Option<usize>,
+    pub error: Option<String>,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub enum QueryStatus {
+    Pending = 0,
+    Running = 1,
+    Completed = 2,
+    Error = 3,
+}
+
+impl From<u8> for QueryStatus {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Pending,
+            1 => Self::Running,
+            2 => Self::Completed,
+            _ => Self::Error,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionInfo {
@@ -27,11 +71,21 @@ pub struct DatabaseConnection {
     pub database: Database,
 }
 
+#[derive(Clone)]
+pub enum DatabaseClient {
+    Postgres {
+        client: Arc<tokio_postgres::Client>,
+    },
+    SQLite {
+        connection: Arc<Mutex<rusqlite::Connection>>,
+    },
+}
+
 #[derive(Debug)]
 pub enum Database {
     Postgres {
         connection_string: String,
-        client: Option<tokio_postgres::Client>,
+        client: Option<Arc<tokio_postgres::Client>>,
     },
     SQLite {
         db_path: String,
@@ -84,6 +138,36 @@ impl DatabaseConnection {
             Database::SQLite { connection, .. } => connection.is_some(),
         }
     }
+
+    /// Get the inner client object
+    pub fn get_client(&self) -> Result<DatabaseClient, Error> {
+        let client = match &self.database {
+            Database::Postgres {
+                client: Some(client),
+                ..
+            } => DatabaseClient::Postgres {
+                client: client.clone(),
+            },
+            Database::Postgres { client: None, .. } => {
+                return Err(Error::Any(anyhow::anyhow!(
+                    "Postgres connection not active"
+                )));
+            }
+            Database::SQLite {
+                connection: Some(sqlite_conn),
+                ..
+            } => DatabaseClient::SQLite {
+                connection: sqlite_conn.clone(),
+            },
+            Database::SQLite {
+                connection: None, ..
+            } => {
+                return Err(Error::Any(anyhow::anyhow!("SQLite connection not active")));
+            }
+        };
+
+        Ok(client)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,46 +193,35 @@ pub struct DatabaseSchema {
     pub unique_columns: Vec<String>,
 }
 
-#[derive(Serialize)]
-#[serde(
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase",
-    tag = "event",
-    content = "data"
-)]
-pub enum QueryStreamEvent {
-    StatementStart {
-        statement_index: usize,
-        total_statements: usize,
-        statement: String,
-        returns_values: bool,
-    },
+pub fn channel() -> (
+    UnboundedSender<QueryExecEvent>,
+    UnboundedReceiver<QueryExecEvent>,
+) {
+    mpsc::unbounded_channel()
+}
 
-    /// For queries that return data
-    ResultStart {
-        statement_index: usize,
+#[derive(Debug)]
+/// An event sent by a query executor to the main thread
+pub enum QueryExecEvent {
+    /// Sent by a query executor when the column types of a query are now known
+    TypesResolved {
         // Serialized Vec<String>, because I can't help myself
         columns: Box<RawValue>,
     },
-    ResultBatch {
-        statement_index: usize,
-        rows: Box<RawValue>,
+    /// Sent by a query executor when a page of results is available
+    Page {
+        #[allow(unused)]
+        page_amount: usize,
+        /// JSON-serialized Vec<Vec<Json>>
+        page: Page,
     },
-
-    /// For queries that do not return data
-    StatementComplete {
-        statement_index: usize,
-        affected_rows: u64,
-    },
-    StatementFinish {
-        statement_index: usize,
-    },
-
-    /// All statements completed
-    AllFinished {},
-    StatementError {
-        statement_index: usize,
-        statement: String,
-        error: String,
+    Finished {
+        #[allow(unused)]
+        elapsed_ms: u64,
+        /// Number of rows affected by the query
+        /// Relevant only for modification queries
+        affected_rows: usize,
+        /// If the query failed, this will contain the error message
+        error: Option<String>,
     },
 }

@@ -1,16 +1,20 @@
 <script lang="ts">
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { Card, CardContent } from '$lib/components/ui/card';
+	import { Button } from '$lib/components/ui/button';
+	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import Table from './Table.svelte';
 	import JsonInspector from './JsonInspector.svelte';
-	import StatementExecutor from './StatementExecutor.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import {
 		Commands,
 		type ConnectionInfo,
 		type Script,
-		type Row,
-		type Json
+		type Json,
+		type QueryId,
+		type Page,
+		type QueryStatus,
+		type StatementInfo
 	} from '$lib/commands.svelte';
 	import { createEditor } from '$lib/codemirror';
 	import { onMount } from 'svelte';
@@ -46,15 +50,17 @@
 
 	interface QueryResultTab {
 		id: number;
+		queryId: QueryId;
 		name: string;
 		query: string;
 		timestamp: number;
-		status: 'running' | 'completed' | 'error';
-		statementIndex?: number;
+		status: QueryStatus;
 		queryReturnsResults?: boolean;
 		affectedRows?: number;
 		columns?: string[];
-		rows?: Row[];
+		currentPageIndex: number;
+		currentPageData: Page | null;
+		totalPages: number | null; // null = unknown (still running), number = known (complete)
 		error?: string;
 	}
 
@@ -65,6 +71,8 @@
 
 	// Query execution state
 	let currentQuery = $state<string>('');
+
+	let pageCountPolls = $state<Map<QueryId, ReturnType<typeof setInterval>>>(new Map());
 
 	const isConnected = $derived.by(() => {
 		if (!selectedConnection) return false;
@@ -104,26 +112,36 @@
 		}
 	}
 
-	let executionTrigger = $state(0);
-
-	export function handleExecuteQuery(queryToExecute?: string) {
+	export async function handleExecuteQuery(queryToExecute?: string) {
 		const query = queryToExecute || sqlQuery;
 		if (!selectedConnection || !query.trim()) return;
 
 		if (!isConnected) {
+			// TODO(vini): make this into a toast
 			console.warn('Cannot execute query: No active database connection');
 			return;
 		}
 
 		currentQuery = query.trim();
 
+		for (const interval of pageCountPolls.values()) {
+			clearInterval(interval);
+		}
+		pageCountPolls.clear();
 		resultTabs = [];
 		activeResultTabId = null;
 
-		// Trigger new execution
-		executionTrigger++;
+		try {
+			const queryIds = await Commands.startQuery(selectedConnection, currentQuery);
+			console.log('Received queryIds:', queryIds);
 
-		console.log('HandleExecuteQuery called with:', currentQuery, 'trigger:', executionTrigger);
+			// create a tab per statement
+			for (const queryId of queryIds) {
+				await initializeQueryTab(queryId);
+			}
+		} catch (error) {
+			console.error('Failed to execute query:', error);
+		}
 	}
 
 	let currentTableBrowse: { tableName: string; schema: string } | null = $state(null);
@@ -149,22 +167,45 @@
 
 		currentTableBrowse = { tableName, schema };
 
-		resultTabs = [];
-		activeResultTabId = null;
-		currentQuery = query.trim();
-		executionTrigger++;
-
 		console.log('Table browse started for:', tableName, 'with query:', query);
+
+		handleExecuteQuery(query);
 	}
 
-	function handleStatementStart(
-		statementIndex: number,
-		statement: string,
-		returnsValues: boolean
-	): number {
+	async function initializeQueryTab(queryId: QueryId) {
 		const tabId = nextResultTabId++;
 
-		let tabName = generateTabTitle(statement);
+		const newTab: QueryResultTab = {
+			id: tabId,
+			queryId,
+			name: `Query ${queryId}`,
+			query: currentQuery,
+			timestamp: Date.now(),
+			status: 'Running',
+			currentPageIndex: 0,
+			currentPageData: null,
+			totalPages: null
+		};
+
+		resultTabs = [...resultTabs, newTab];
+		activeResultTabId = tabId;
+
+		const info = await pollFirstQueryData(queryId);
+
+		const tabIndex = resultTabs.findIndex((t) => t.id === tabId);
+		if (tabIndex < 0) return;
+
+		if (info.error) {
+			resultTabs[tabIndex] = {
+				...resultTabs[tabIndex],
+				status: 'Error',
+				error: info.error
+			};
+			resultTabs = [...resultTabs];
+			return;
+		}
+
+		let tabName = generateTabTitle(currentQuery);
 		if (currentTableBrowse) {
 			const tableDisplayName =
 				!currentTableBrowse.schema || currentTableBrowse.schema === 'public'
@@ -174,82 +215,191 @@
 			currentTableBrowse = null;
 		}
 
-		if (returnsValues) {
-			const newTab: QueryResultTab = {
-				id: tabId,
+		if (!info.returns_values) {
+			resultTabs[tabIndex] = {
+				...resultTabs[tabIndex],
+				status: info.status,
 				name: tabName,
-				query: statement,
-				timestamp: Date.now(),
-				status: 'running',
-				statementIndex
+				queryReturnsResults: false,
+				affectedRows: info.affected_rows ?? undefined
 			};
+			resultTabs = [...resultTabs];
 
-			resultTabs.push(newTab);
-			activeResultTabId = tabId;
+			if (info.status === 'Completed' && selectedConnection) {
+				Commands.saveQueryToHistory(
+					selectedConnection,
+					currentQuery,
+					undefined,
+					'success',
+					info.affected_rows ?? 0,
+					undefined
+				);
+				onHistoryUpdate?.();
+			}
+
+			return;
+		}
+
+		const columns = await pollForColumns(queryId);
+		if (!columns) {
+			resultTabs[tabIndex] = {
+				...resultTabs[tabIndex],
+				status: 'Error',
+				error: 'Failed to get column information'
+			};
+			resultTabs = [...resultTabs];
+			return;
+		}
+
+		resultTabs[tabIndex] = {
+			...resultTabs[tabIndex],
+			columns,
+			name: tabName,
+			currentPageData: info.first_page,
+			status: info.status,
+			queryReturnsResults: true
+		};
+		resultTabs = [...resultTabs];
+
+		if (info.status === 'Completed') {
+			const pageCount = await Commands.getPageCount(queryId);
+			const tabIdx = resultTabs.findIndex((t) => t.id === tabId);
+			if (tabIdx >= 0) {
+				resultTabs[tabIdx] = { ...resultTabs[tabIdx], totalPages: pageCount };
+				resultTabs = [...resultTabs];
+			}
 		} else {
-			const newTab: QueryResultTab = {
-				id: tabId,
-				name: tabName,
-				query: statement,
-				timestamp: Date.now(),
-				status: 'running',
-				statementIndex,
-				queryReturnsResults: true
+			pollForPageCount(queryId);
+		}
+	}
+
+	async function pollFirstQueryData(queryId: QueryId): Promise<StatementInfo> {
+		for (let i = 0; i < 100; i++) {
+			const info = await Commands.fetchQuery(queryId);
+
+			// Return if:
+			// 1. Query has first page (we got the data we need)
+			// 2. Query is completed/error (no more data coming)
+			// 3. Query doesn't return values (no pages to wait for)
+			// 4. Query errored
+			if (
+				info.first_page ||
+				info.status === 'Completed' ||
+				info.status === 'Error' ||
+				!info.returns_values ||
+				info.error
+			) {
+				return info;
+			}
+
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+
+		return await Commands.fetchQuery(queryId);
+	}
+
+	// TODO(vini): replace with channel/listener
+	async function pollForColumns(queryId: QueryId): Promise<string[] | null> {
+		// Poll for up to 5 seconds
+		for (let i = 0; i < 50; i++) {
+			const columns = await Commands.getColumns(queryId);
+			if (columns) {
+				return columns;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+		return null;
+	}
+
+	async function pollForPage(queryId: QueryId, pageIndex: number): Promise<Page | null> {
+		for (let i = 0; i < 100; i++) {
+			const page = await Commands.fetchPage(queryId, pageIndex);
+			if (page) {
+				return page;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+		console.error('Timeout waiting for page', pageIndex, 'for queryId:', queryId);
+		return null;
+	}
+
+	// TODO(vini): drop this for a channel
+	function pollForPageCount(queryId: QueryId) {
+		const poll = async () => {
+			try {
+				const status = await Commands.getQueryStatus(queryId);
+				const pageCount = await Commands.getPageCount(queryId);
+
+				const tab = resultTabs.find((t) => t.queryId === queryId);
+				if (!tab) return;
+
+				let changed = false;
+
+				if (tab.totalPages !== pageCount) {
+					const tabIndex = resultTabs.findIndex((t) => t.queryId === queryId);
+					if (tabIndex >= 0) {
+						resultTabs[tabIndex] = { ...resultTabs[tabIndex], totalPages: pageCount };
+						changed = true;
+					}
+				}
+
+				if (tab.status !== status) {
+					const tabIndex = resultTabs.findIndex((t) => t.queryId === queryId);
+					if (tabIndex >= 0) {
+						resultTabs[tabIndex] = { ...resultTabs[tabIndex], status };
+						changed = true;
+					}
+				}
+
+				if (changed) {
+					// Reactivity trigger
+					resultTabs = [...resultTabs];
+				}
+
+				if (status === 'Completed' && selectedConnection) {
+					const interval = pageCountPolls.get(queryId);
+					if (interval) {
+						clearInterval(interval);
+						pageCountPolls.delete(queryId);
+					}
+
+					const totalRows = (tab.totalPages || 0) * 50;
+
+					Commands.saveQueryToHistory(
+						selectedConnection,
+						tab.query,
+						undefined,
+						'success',
+						totalRows,
+						undefined
+					);
+					onHistoryUpdate?.();
+				}
+			} catch (error) {
+				console.error('Error polling for page count:', error);
+			}
+		};
+
+		// Poll right now, then at every 200ms
+		poll();
+		const interval = setInterval(poll, 200);
+		pageCountPolls.set(queryId, interval);
+	}
+
+	async function loadPage(queryId: QueryId, pageIndex: number) {
+		const tabIndex = resultTabs.findIndex((t) => t.queryId === queryId);
+		if (tabIndex < 0) return;
+
+		console.log('Loading page', pageIndex, 'for queryId', queryId);
+
+		const page = await pollForPage(queryId, pageIndex);
+		if (page) {
+			resultTabs[tabIndex] = {
+				...resultTabs[tabIndex],
+				currentPageIndex: pageIndex,
+				currentPageData: page
 			};
-
-			resultTabs.push(newTab);
-			activeResultTabId = tabId;
-		}
-
-		return tabId;
-	}
-
-	function handleStatementComplete(tabId: number, rowCount: number, duration: number) {
-		const tab = resultTabs.find((t) => t.id === tabId);
-		if (tab) {
-			if (tab.queryReturnsResults) {
-				tab.affectedRows = rowCount;
-			}
-			tab.status = 'completed';
-		}
-
-		if (selectedConnection && tab) {
-			Commands.saveQueryToHistory(
-				selectedConnection,
-				tab.query,
-				duration,
-				'success',
-				rowCount,
-				undefined
-			);
-			onHistoryUpdate?.();
-		}
-	}
-
-	function handleStatementError(tabId: number, error: string) {
-		const tab = resultTabs.find((t) => t.id === tabId);
-		if (tab) {
-			tab.status = 'error';
-			tab.error = error;
-		}
-
-		if (selectedConnection && tab) {
-			Commands.saveQueryToHistory(selectedConnection, tab.query, 0, 'error', 0, error);
-			onHistoryUpdate?.();
-		}
-	}
-
-	function handleTabUpdate(tabId: number, updates: Partial<QueryResultTab>) {
-		const tabIndex = resultTabs.findIndex((t) => t.id === tabId);
-		if (tabIndex !== -1) {
-			const tab = resultTabs[tabIndex];
-
-			if (updates.rows && tab.rows) {
-				tab.rows.push(...updates.rows);
-			} else {
-				// Apply other updates
-				Object.assign(tab, updates);
-			}
+			resultTabs = [...resultTabs];
 		}
 	}
 
@@ -277,9 +427,9 @@
 
 	function getTabStatus(tab: QueryResultTab): 'normal' | 'modified' | 'error' {
 		switch (tab.status) {
-			case 'error':
+			case 'Error':
 				return 'error';
-			case 'running':
+			case 'Running':
 				return 'modified';
 			default:
 				return 'normal';
@@ -373,11 +523,11 @@
 					{#if activeResultTabId}
 						{@const activeTab = resultTabs.find((t) => t.id === activeResultTabId)}
 						{#if activeTab}
-							{#if activeTab.columns && activeTab.rows && activeTab.rows.length > 0}
-								<div class="relative flex min-h-0 flex-1">
+							{#if activeTab.columns && activeTab.currentPageData && activeTab.currentPageData.length > 0}
+								<div class="relative flex min-h-0 flex-1 flex-col">
 									<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
 										<Table
-											data={activeTab.rows}
+											data={activeTab.currentPageData}
 											columns={activeTab.columns}
 											bind:selectedCellData
 											onJsonInspect={(data, position) => {
@@ -385,6 +535,100 @@
 											}}
 										/>
 									</CardContent>
+
+									{#if activeTab.totalPages && activeTab.totalPages > 1}
+										<div
+											class="border-border/30 bg-muted/20 flex flex-shrink-0 items-center border-t px-3 py-2"
+										>
+											<div class="text-muted-foreground flex items-center gap-2 text-xs">
+												<span>Page {activeTab.currentPageIndex + 1} of {activeTab.totalPages}</span>
+											</div>
+
+											<div class="flex-1"></div>
+
+											<div class="flex items-center gap-1">
+												<Button
+													variant="ghost"
+													size="sm"
+													onclick={() =>
+														loadPage(activeTab.queryId, activeTab.currentPageIndex - 1)}
+													disabled={activeTab.currentPageIndex === 0}
+													class="h-6 w-6 p-0"
+												>
+													<ChevronLeft class="h-3 w-3" />
+												</Button>
+
+												{#if activeTab.currentPageIndex > 1}
+													<Button
+														variant="ghost"
+														size="sm"
+														onclick={() => loadPage(activeTab.queryId, 0)}
+														class="h-6 px-2 text-xs"
+													>
+														1
+													</Button>
+													{#if activeTab.currentPageIndex > 2}
+														<span class="text-muted-foreground text-xs">...</span>
+													{/if}
+												{/if}
+
+												{#if activeTab.currentPageIndex > 0}
+													<Button
+														variant="ghost"
+														size="sm"
+														onclick={() =>
+															loadPage(activeTab.queryId, activeTab.currentPageIndex - 1)}
+														class="h-6 px-2 text-xs"
+													>
+														{activeTab.currentPageIndex}
+													</Button>
+												{/if}
+
+												<Button variant="default" size="sm" class="h-6 px-2 text-xs">
+													{activeTab.currentPageIndex + 1}
+												</Button>
+
+												{#if activeTab.currentPageIndex < activeTab.totalPages - 1}
+													<Button
+														variant="ghost"
+														size="sm"
+														onclick={() =>
+															loadPage(activeTab.queryId, activeTab.currentPageIndex + 1)}
+														class="h-6 px-2 text-xs"
+													>
+														{activeTab.currentPageIndex + 2}
+													</Button>
+												{/if}
+
+												{#if activeTab.totalPages && activeTab.currentPageIndex < activeTab.totalPages - 2}
+													{#if activeTab.currentPageIndex < activeTab.totalPages - 3}
+														<span class="text-muted-foreground text-xs">...</span>
+													{/if}
+													<Button
+														variant="ghost"
+														size="sm"
+														onclick={() =>
+															activeTab.totalPages &&
+															loadPage(activeTab.queryId, activeTab.totalPages - 1)}
+														class="h-6 px-2 text-xs"
+													>
+														{activeTab.totalPages}
+													</Button>
+												{/if}
+
+												<Button
+													variant="ghost"
+													size="sm"
+													onclick={() =>
+														loadPage(activeTab.queryId, activeTab.currentPageIndex + 1)}
+													disabled={activeTab.currentPageIndex >= activeTab.totalPages - 1}
+													class="h-6 w-6 p-0"
+												>
+													<ChevronRight class="h-3 w-3" />
+												</Button>
+											</div>
+										</div>
+									{/if}
 
 									{#if jsonInspectorData}
 										<JsonInspector
@@ -404,27 +648,25 @@
 												<div class="text-sm text-red-600">❌ {activeTab.error}</div>
 											</div>
 										</div>
-									{:else if activeTab.queryReturnsResults}
+									{:else if activeTab.queryReturnsResults === false}
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
-												{#if activeTab.status === 'running'}
-													<div class="text-muted-foreground text-sm">
-														Executing modification query...
-													</div>
-												{:else if activeTab.status === 'completed'}
+												{#if activeTab.status === 'Running'}
+													<div class="text-muted-foreground text-sm">Executing query...</div>
+												{:else if activeTab.status === 'Completed'}
 													<div class="text-sm font-medium text-green-600">
 														✓ {activeTab.affectedRows || 0} rows affected
 													</div>
 												{/if}
 											</div>
 										</div>
-									{:else if activeTab.status === 'running'}
+									{:else if activeTab.status === 'Running'}
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
 												<div class="text-muted-foreground text-sm">Loading results...</div>
 											</div>
 										</div>
-									{:else if activeTab.rows && activeTab.rows.length === 0}
+									{:else if activeTab.currentPageData && activeTab.currentPageData.length === 0}
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
 												<div class="text-muted-foreground text-sm">No rows returned.</div>
@@ -462,16 +704,4 @@
 			</div>
 		</ResizablePane>
 	</ResizablePaneGroup>
-
-	{#if currentQuery && selectedConnection}
-		<StatementExecutor
-			connectionId={selectedConnection}
-			query={currentQuery}
-			{executionTrigger}
-			onStatementStart={handleStatementStart}
-			onStatementComplete={handleStatementComplete}
-			onStatementError={handleStatementError}
-			onTabUpdate={handleTabUpdate}
-		/>
-	{/if}
 </div>

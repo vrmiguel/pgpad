@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
 // TODO: this really can't be the best way to use anyhow
@@ -13,6 +15,15 @@ pub enum Error {
     Fmt(#[from] std::fmt::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+}
+
+impl<T: Debug> From<tokio::sync::mpsc::error::SendError<T>> for Error {
+    fn from(error: tokio::sync::mpsc::error::SendError<T>) -> Self {
+        Error::Any(anyhow::anyhow!(
+            "Tried sending {:?} over channel, but it was closed. This should not happen, please report at https://github.com/vrmiguel/pgpad/issues",
+            error
+        ))
+    }
 }
 
 #[derive(serde::Serialize)]

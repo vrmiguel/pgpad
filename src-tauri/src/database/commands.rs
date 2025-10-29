@@ -1,7 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use anyhow::Context;
-use tauri::ipc::Channel;
+use serde_json::value::RawValue;
 use uuid::Uuid;
 
 use crate::{
@@ -11,7 +14,7 @@ use crate::{
         sqlite,
         types::{
             ConnectionInfo, Database, DatabaseConnection, DatabaseInfo, DatabaseSchema,
-            QueryStreamEvent,
+            QueryStatus, StatementInfo,
         },
         Certificates, ConnectionMonitor,
     },
@@ -151,7 +154,7 @@ pub async fn connect_to_database(
 
             match connect(&config, &certificates).await {
                 Ok((pg_client, conn_check)) => {
-                    *client = Some(pg_client);
+                    *client = Some(Arc::new(pg_client));
                     connection.connected = true;
 
                     if let Err(e) = state.storage.update_last_connected(&connection_id) {
@@ -216,12 +219,11 @@ pub async fn disconnect_from_database(
 }
 
 #[tauri::command]
-pub async fn execute_query_stream(
+pub async fn start_query(
     connection_id: Uuid,
     query: &str,
     state: tauri::State<'_, AppState>,
-    channel: Channel<QueryStreamEvent>,
-) -> Result<(), Error> {
+) -> Result<Vec<usize>, Error> {
     let connection_entry = state
         .connections
         .get(&connection_id)
@@ -229,32 +231,56 @@ pub async fn execute_query_stream(
 
     let connection = connection_entry.value();
 
-    match &connection.database {
-        Database::Postgres {
-            client: Some(client),
-            ..
-        } => {
-            postgres::execute::execute_query(client, query, &channel).await?;
-        }
-        Database::Postgres { client: None, .. } => {
-            return Err(Error::Any(anyhow::anyhow!(
-                "Postgres connection not active"
-            )));
-        }
-        Database::SQLite {
-            connection: Some(sqlite_conn),
-            ..
-        } => {
-            sqlite::execute::execute_query(Arc::clone(sqlite_conn), query, channel).await?;
-        }
-        Database::SQLite {
-            connection: None, ..
-        } => {
-            return Err(Error::Any(anyhow::anyhow!("SQLite connection not active")));
-        }
-    }
+    let client = connection.get_client()?;
+    let query_ids = state.stmt_manager.submit_query(client, query)?;
 
-    Ok(())
+    Ok(query_ids)
+}
+
+#[tauri::command]
+pub async fn fetch_query(
+    query_id: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<StatementInfo, Error> {
+    state.stmt_manager.fetch_query(query_id)
+}
+
+#[tauri::command]
+pub async fn fetch_page(
+    query_id: usize,
+    page_index: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<Box<RawValue>>, Error> {
+    let now = Instant::now();
+    let page = state.stmt_manager.fetch_page(query_id, page_index)?;
+    let elapsed = now.elapsed();
+    log::info!("Took {}us to get page {page_index}", elapsed.as_micros());
+
+    Ok(page)
+}
+
+#[tauri::command]
+pub async fn get_query_status(
+    query_id: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<QueryStatus, Error> {
+    state.stmt_manager.get_query_status(query_id)
+}
+
+#[tauri::command]
+pub async fn get_page_count(
+    query_id: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<usize, Error> {
+    state.stmt_manager.get_page_count(query_id)
+}
+
+#[tauri::command]
+pub async fn get_columns(
+    query_id: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<Box<RawValue>>, Error> {
+    state.stmt_manager.get_columns(query_id)
 }
 
 #[tauri::command]
