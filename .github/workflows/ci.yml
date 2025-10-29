@@ -33,6 +33,9 @@ jobs:
 
   rust:
     name: Rust - fmt, clippy & unit testing
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0 # Disable incremental compilation for faster from-scratch builds
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -56,6 +59,8 @@ jobs:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
 
       - name: Run rustfmt
         run: cargo fmt --all -- --check
