@@ -65,6 +65,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - uses: Swatinem/rust-cache@v2
+
       - name: Run rustfmt
         run: cargo fmt --all -- --check
       - name: Run clippy
