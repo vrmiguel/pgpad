@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, time::Instant};
 
 use anyhow::Context;
 use serde_json::value::RawValue;
@@ -230,7 +230,11 @@ pub async fn fetch_page(
     page_index: usize,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<Box<RawValue>>, Error> {
+    let now = Instant::now();
     let page = state.stmt_manager.fetch_page(query_id, page_index)?;
+    let elapsed = now.elapsed();
+    log::info!("Took {}us to get page {page_index}", elapsed.as_micros());
+
     Ok(page)
 }
 

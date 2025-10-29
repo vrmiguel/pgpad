@@ -5,6 +5,10 @@ export type Json = string | number | boolean | null | Json[] | { [key: string]: 
 
 export type Row = Json[];
 
+export type QueryId = number;
+export type QueryStatus = 'pending' | 'running' | 'completed' | 'error';
+export type Page = Json[][];
+
 export type DatabaseInfo =
 	| { Postgres: { connection_string: string } }
 	| { SQLite: { db_path: string } };
@@ -15,56 +19,6 @@ export interface ConnectionInfo {
 	connected: boolean;
 	database_type: DatabaseInfo;
 }
-
-export type QueryStreamEvent =
-	| {
-			event: 'statementStart';
-			data: {
-				statementIndex: number;
-				totalStatements: number;
-				statement: string;
-				returnsValues: boolean;
-			};
-	  }
-	| {
-			event: 'resultStart';
-			data: {
-				statementIndex: number;
-				columns: string[];
-			};
-	  }
-	| {
-			event: 'resultBatch';
-			data: {
-				statementIndex: number;
-				rows: Json[][];
-			};
-	  }
-	| {
-			event: 'statementComplete';
-			data: {
-				statementIndex: number;
-				affectedRows: number;
-			};
-	  }
-	| {
-			event: 'statementFinish';
-			data: {
-				statementIndex: number;
-			};
-	  }
-	| {
-			event: 'allFinished';
-			data: Record<string, never>;
-	  }
-	| {
-			event: 'statementError';
-			data: {
-				statementIndex: number;
-				statement: string;
-				error: string;
-			};
-	  };
 
 export interface QueryHistoryEntry {
 	id: number;
@@ -124,22 +78,7 @@ export class Commands {
 	static async disconnectFromDatabase(connectionId: string): Promise<void> {
 		return await invoke('disconnect_from_database', { connectionId });
 	}
-
-	static async executeQueryStream(
-		connectionId: string,
-		query: string,
-		onEvent: (event: QueryStreamEvent) => void
-	): Promise<void> {
-		const channel = new Channel<QueryStreamEvent>();
-		channel.onmessage = onEvent;
-
-		return await invoke('execute_query_stream', {
-			connectionId,
-			query,
-			channel
-		});
-	}
-
+	
 	static async getConnections(): Promise<ConnectionInfo[]> {
 		return await invoke('get_connections');
 	}
@@ -246,5 +185,25 @@ export class Commands {
 
 	static async openFileDialog(): Promise<string | null> {
 		return await invoke('open_file_dialog');
+	}
+
+	static async startQuery(connectionId: string, query: string): Promise<QueryId[]> {
+		return await invoke('start_query', { connectionId, query });
+	}
+
+	static async fetchPage(queryId: QueryId, pageIndex: number): Promise<Page | null> {
+		return await invoke('fetch_page', { queryId, pageIndex });
+	}
+
+	static async getQueryStatus(queryId: QueryId): Promise<QueryStatus> {
+		return await invoke('get_query_status', { queryId });
+	}
+
+	static async getPageCount(queryId: QueryId): Promise<number> {
+		return await invoke('get_page_count', { queryId });
+	}
+
+	static async getColumns(queryId: QueryId): Promise<string[] | null> {
+		return await invoke('get_columns', { queryId });
 	}
 }
