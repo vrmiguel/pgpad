@@ -32,7 +32,10 @@ jobs:
           fi
 
   rust:
-    name: Rust - fmt & clippy
+    name: Rust - fmt, clippy & unit testing
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0 # Disable incremental compilation for faster from-scratch builds
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -55,15 +58,16 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          workspaces: './src-tauri -> target'
 
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - uses: ikalnytskyi/action-setup-postgres@v8
+        id: postgres
+      - name: Run unit tests
+        run: cargo test --locked
