@@ -50,7 +50,7 @@ jobs:
             librsvg2-dev \
             libglib2.0-dev
           sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
-          sudo apt-get install postgresql postgresql-client
+          sudo apt-get install -y postgresql postgresql-client
       - name: Update path to include postgres
         run: find /usr/lib/postgresql/ -type d -name "bin" >> $GITHUB_PATH
 
