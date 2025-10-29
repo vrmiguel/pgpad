@@ -32,7 +32,7 @@ jobs:
           fi
 
   rust:
-    name: Rust - fmt & clippy
+    name: Rust - fmt, clippy & unit testing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -50,6 +50,9 @@ jobs:
             librsvg2-dev \
             libglib2.0-dev
           sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
+          sudo apt-get install postgresql postgresql-client
+      - name: Update path to include postgres
+        run: find /usr/lib/postgresql/ -type d -name "bin" >> $GITHUB_PATH
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -65,5 +68,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run unit tests
+        run: cargo test --locked
