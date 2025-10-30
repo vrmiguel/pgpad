@@ -50,7 +50,7 @@ pub fn build_window(app: &tauri::App) -> tauri::Result<()> {
                 radius: Some(12.0),
                 color: None,
             })
-            .traffic_light_position(tauri::Position::Logical(LogicalPosition::new(16.0, 23.0)))
+            .traffic_light_position(tauri::Position::Logical(LogicalPosition::new(16.0, 18.5)))
             .hidden_title(true)
     };
 
