@@ -145,6 +145,11 @@ impl RowWriter {
                 self.buf.push_str(&value.to_string());
             }
 
+            Type::UUID => {
+                let value: uuid::Uuid = row.try_get(column_index)?;
+                self.write_json_string(&value.to_string());
+            }
+
             Type::TEXT_ARRAY => {
                 let value: Vec<String> = row.try_get(column_index)?;
                 self.buf.push('[');
@@ -294,7 +299,8 @@ mod tests {
                 '{"x": 10}'::json AS json_col,
                 '192.168.0.1'::inet AS inet_col,
                 'happy'::pg_temp.mood AS enum_col,
-                ROW(1, 'foo') AS record_col
+                ROW(1, 'foo') AS record_col,
+                '550e8400-e29b-41d4-a716-446655440000'::uuid AS uuid_col
         "#;
 
         let rows = client.query(sql, &[]).await.unwrap();
@@ -320,7 +326,8 @@ mod tests {
                     {"x": 10},
                     "192.168.0.1",
                     "happy",
-                    [1, "foo"]
+                    [1, "foo"],
+                    "550e8400-e29b-41d4-a716-446655440000"
                 ]
             ])
         );
