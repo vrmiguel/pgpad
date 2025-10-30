@@ -26,6 +26,7 @@ pub use error::{Error, Result};
 pub struct AppState {
     pub connections: DashMap<Uuid, DatabaseConnection>,
     pub schemas: DashMap<Uuid, Arc<DatabaseSchema>>,
+    /// SQLite database for application data
     pub storage: Storage,
     pub stmt_manager: StatementManager,
 }
@@ -34,8 +35,6 @@ impl AppState {
     pub fn new() -> Result<Self> {
         let data_dir = dirs::data_dir().expect("Failed to get data directory");
         let db_path = data_dir.join("pgpad").join("pgpad.db");
-
-        dbg!(&db_path);
 
         let storage = Storage::new(db_path)?;
 

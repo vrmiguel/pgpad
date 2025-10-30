@@ -104,5 +104,3 @@ impl fmt::Display for PgInterval {
         Ok(())
     }
 }
-
-// '1 microsecond'::interval AS microsecond_interval
