@@ -106,7 +106,8 @@ pub fn run() {
             window::commands::minimize_window,
             window::commands::maximize_window,
             window::commands::close_window,
-            window::commands::open_file_dialog,
+            window::commands::open_sqlite_db,
+            window::commands::save_sqlite_db,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -191,8 +191,12 @@ export class Commands {
 		return await invoke('get_session_state');
 	}
 
-	static async openFileDialog(): Promise<string | null> {
-		return await invoke('open_file_dialog');
+	static async pickSqliteDbDialog(): Promise<string | null> {
+		return await invoke('open_sqlite_db');
+	}
+
+	static async saveSqliteDbDialog(): Promise<string | null> {
+		return await invoke('save_sqlite_db');
 	}
 
 	static async startQuery(connectionId: string, query: string): Promise<QueryId[]> {

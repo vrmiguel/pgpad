@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Cable, X, CheckCircle, AlertCircle, Info, FolderOpen } from '@lucide/svelte';
+	import { Cable, X, CheckCircle, AlertCircle, Info, FolderOpen, FilePlus } from '@lucide/svelte';
 
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
@@ -17,7 +17,6 @@
 
 	let { onSubmit, onCancel, editingConnection = null }: Props = $props();
 
-	// Initialize form fields based on editing connection
 	let connectionName = $state(editingConnection?.name || '');
 
 	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
@@ -48,12 +47,10 @@
 			errors.name = 'Connection name is required';
 		}
 
-		// Only validate connection string for PostgreSQL
 		if (databaseType === 'postgres' && !connectionString.trim()) {
 			errors.connectionString = 'Connection string is required';
 		}
 
-		// For SQLite, validate file path
 		if (databaseType === 'sqlite' && !sqliteFilePath.trim()) {
 			errors.sqliteFilePath = 'SQLite database file is required';
 		}
@@ -61,12 +58,12 @@
 		return Object.keys(errors).length === 0;
 	}
 
-	async function openFileDialog() {
+	async function openExistingDatabase() {
 		try {
-			const selectedPath = await Commands.openFileDialog();
+			const selectedPath = await Commands.pickSqliteDbDialog();
 			if (selectedPath) {
 				sqliteFilePath = selectedPath;
-				// Clear any existing errors when a file is selected
+
 				if (errors.sqliteFilePath) {
 					errors = { ...errors };
 					delete errors.sqliteFilePath;
@@ -74,6 +71,22 @@
 			}
 		} catch (error) {
 			console.error('Failed to open file dialog:', error);
+		}
+	}
+
+	async function createNewDatabase() {
+		try {
+			const selectedPath = await Commands.saveSqliteDbDialog();
+			if (selectedPath) {
+				sqliteFilePath = selectedPath;
+
+				if (errors.sqliteFilePath) {
+					errors = { ...errors };
+					delete errors.sqliteFilePath;
+				}
+			}
+		} catch (error) {
+			console.error('Failed to create database:', error);
 		}
 	}
 
@@ -219,25 +232,36 @@
 							Database File <span class="text-error">*</span>
 						</label>
 
-						<div class="flex gap-3">
+						<div class="space-y-3">
 							<Input
 								id="sqliteFilePath"
 								type="text"
 								bind:value={sqliteFilePath}
-								placeholder="Select a SQLite database file..."
+								placeholder="No database selected..."
 								readonly
-								class={`flex-1 cursor-pointer shadow-sm transition-shadow focus:shadow-md ${errors.sqliteFilePath ? 'border-error' : ''}`}
-								onclick={openFileDialog}
+								class={`shadow-sm transition-shadow ${errors.sqliteFilePath ? 'border-error' : ''}`}
 							/>
-							<Button
-								type="button"
-								variant="outline"
-								onclick={openFileDialog}
-								class="gap-2 shadow-sm hover:shadow-md"
-							>
-								<FolderOpen class="h-4 w-4" />
-								Browse
-							</Button>
+
+							<div class="flex gap-2">
+								<Button
+									type="button"
+									variant="outline"
+									onclick={openExistingDatabase}
+									class="flex-1 gap-2 shadow-sm hover:shadow-md"
+								>
+									<FolderOpen class="h-4 w-4" />
+									Open Existing
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									onclick={createNewDatabase}
+									class="flex-1 gap-2 shadow-sm hover:shadow-md"
+								>
+									<FilePlus class="h-4 w-4" />
+									Create New
+								</Button>
+							</div>
 						</div>
 
 						{#if errors.sqliteFilePath}
@@ -252,8 +276,10 @@
 								<Info class="text-primary mt-0.5 h-4 w-4 flex-shrink-0" />
 								<div class="text-muted-foreground min-w-0 flex-1 text-sm">
 									<p class="mb-2 leading-relaxed">
-										Select an existing SQLite database file or choose a location to create a new
-										one.
+										Use <span class="text-foreground font-medium">Open Existing</span> to connect to
+										an existing database, or
+										<span class="text-foreground font-medium">Create New</span> to set up a new SQLite
+										database file.
 									</p>
 									<p class="text-xs leading-relaxed">
 										SQLite databases are single files with <span class="text-foreground font-medium"
