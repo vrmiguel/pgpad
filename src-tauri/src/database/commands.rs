@@ -219,7 +219,7 @@ pub async fn disconnect_from_database(
 }
 
 #[tauri::command]
-pub async fn start_query(
+pub async fn submit_query(
     connection_id: Uuid,
     query: &str,
     state: tauri::State<'_, AppState>,
@@ -238,11 +238,17 @@ pub async fn start_query(
 }
 
 #[tauri::command]
-pub async fn fetch_query(
+pub async fn wait_until_renderable(
     query_id: usize,
     state: tauri::State<'_, AppState>,
 ) -> Result<StatementInfo, Error> {
-    state.stmt_manager.fetch_query(query_id)
+    let now = Instant::now();
+    let renderable = state.stmt_manager.get_renderable(query_id)?;
+    renderable.wait().await;
+    let info = state.stmt_manager.fetch_query(query_id)?;
+    let elapsed = now.elapsed();
+    log::info!("Wait until renderable took {}ms", elapsed.as_millis());
+    Ok(info)
 }
 
 #[tauri::command]

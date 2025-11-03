@@ -199,12 +199,12 @@ export class Commands {
 		return await invoke('save_sqlite_db');
 	}
 
-	static async startQuery(connectionId: string, query: string): Promise<QueryId[]> {
-		return await invoke('start_query', { connectionId, query });
+	static async submitQuery(connectionId: string, query: string): Promise<QueryId[]> {
+		return await invoke('submit_query', { connectionId, query });
 	}
 
-	static async fetchQuery(queryId: QueryId): Promise<StatementInfo> {
-		return await invoke('fetch_query', { queryId });
+	static async waitUntilRenderable(queryId: QueryId): Promise<StatementInfo> {
+		return await invoke('wait_until_renderable', { queryId });
 	}
 
 	static async fetchPage(queryId: QueryId, pageIndex: number): Promise<Page | null> {

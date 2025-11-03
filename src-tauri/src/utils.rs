@@ -5,6 +5,10 @@ use serde_json::value::RawValue;
 
 use crate::Error;
 
+mod condvar;
+
+pub use condvar::Condvar;
+
 pub fn serialize_as_json_array<'a, I: ExactSizeIterator<Item = &'a str>>(
     iter: I,
 ) -> Result<Box<RawValue>, Error> {

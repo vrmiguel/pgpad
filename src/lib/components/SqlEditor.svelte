@@ -132,7 +132,7 @@
 		activeResultTabId = null;
 
 		try {
-			const queryIds = await Commands.startQuery(selectedConnection, currentQuery);
+			const queryIds = await Commands.submitQuery(selectedConnection, currentQuery);
 			console.log('Received queryIds:', queryIds);
 
 			// create a tab per statement
@@ -141,6 +141,26 @@
 			}
 		} catch (error) {
 			console.error('Failed to execute query:', error);
+
+			const errorObj = error as { message: string };
+
+			const tabId = nextResultTabId++;
+
+			const errorTab: QueryResultTab = {
+				id: tabId,
+				queryId: -1,
+				name: generateTabTitle(currentQuery),
+				query: currentQuery,
+				timestamp: Date.now(),
+				status: 'Error',
+				currentPageIndex: 0,
+				currentPageData: null,
+				totalPages: null,
+				error: errorObj.message
+			};
+
+			resultTabs = [errorTab];
+			activeResultTabId = tabId;
 		}
 	}
 
@@ -190,7 +210,7 @@
 		resultTabs = [...resultTabs, newTab];
 		activeResultTabId = tabId;
 
-		const info = await pollFirstQueryData(queryId);
+		const info = await waitUntilRenderable(queryId);
 
 		const tabIndex = resultTabs.findIndex((t) => t.id === tabId);
 		if (tabIndex < 0) return;
@@ -273,27 +293,13 @@
 		}
 	}
 
-	async function pollFirstQueryData(queryId: QueryId): Promise<StatementInfo> {
-		for (let i = 0; i < 100; i++) {
-			const info = await Commands.fetchQuery(queryId);
+	async function waitUntilRenderable(queryId: QueryId): Promise<StatementInfo> {
+		const now = performance.now();
 
-			// Return if:
-			// 1. Query errored
-			// 2. Query status is Error or Completed
-			// 3. Query returns values AND we have the first page
-			if (
-				info.error ||
-				info.status === 'Error' ||
-				info.status === 'Completed' ||
-				(info.returns_values && info.first_page)
-			) {
-				return info;
-			}
-
-			await new Promise((resolve) => setTimeout(resolve, 100));
-		}
-
-		return await Commands.fetchQuery(queryId);
+		const res = await Commands.waitUntilRenderable(queryId);
+		const elapsed = performance.now() - now;
+		console.log('Wait until renderable took', elapsed, 'ms');
+		return res;
 	}
 
 	// TODO(vini): replace with channel/listener
@@ -643,7 +649,7 @@
 									{#if activeTab.error}
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
-												<div class="text-sm text-red-600">❌ {activeTab.error}</div>
+												<div class="text-sm text-red-600">{activeTab.error}</div>
 											</div>
 										</div>
 									{:else if activeTab.queryReturnsResults === false}

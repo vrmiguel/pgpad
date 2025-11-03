@@ -16,6 +16,7 @@ use crate::{
         types::{channel, DatabaseClient, Page, QueryId, QueryStatus, StatementInfo},
         QueryExecEvent,
     },
+    utils::Condvar,
     Error,
 };
 
@@ -30,6 +31,10 @@ struct ExecState {
     // TODO(vini): we could refactor this into an enum with a variant with `pages`, `columns`, and one with just `rows_affected`
     returns_values: bool,
     rows_affected: RwLock<Option<usize>>,
+
+    /// If set, the UI can now render the results of this query,
+    /// even if it's still on-going (e.g. we already have enough data to render the first page)
+    renderable: Condvar,
 }
 
 /// Executes and keeps track of the execution of queries.
@@ -104,6 +109,11 @@ impl StatementManager {
         Ok(pages.get(page_idx).cloned())
     }
 
+    pub fn get_renderable(&self, query_id: QueryId) -> Result<Condvar, Error> {
+        let exec_state = self.get(query_id)?;
+        Ok(exec_state.renderable.clone())
+    }
+
     pub fn get_query_status(&self, query_id: QueryId) -> Result<QueryStatus, Error> {
         let exec_state = self.get(query_id)?;
 
@@ -135,6 +145,7 @@ impl StatementManager {
             columns: RwLock::new(None),
             returns_values: stmt.returns_values,
             rows_affected: RwLock::new(None),
+            renderable: Condvar::new(),
         };
 
         let exec_storage = Arc::new(exec_storage);
@@ -178,8 +189,7 @@ impl StatementManager {
                         page,
                     } => {
                         exec_storage.pages.write().unwrap().push(page);
-
-                        // TODO(vini): emit progress event to frontend?
+                        exec_storage.renderable.set();
                     }
                     QueryExecEvent::Finished {
                         elapsed_ms: _,
@@ -199,8 +209,7 @@ impl StatementManager {
                             *exec_storage.rows_affected.write().unwrap() = Some(affected_rows);
                         }
 
-                        // TODO(vini): emit completion event to frontend?
-
+                        exec_storage.renderable.set();
                         break;
                     }
                 }
