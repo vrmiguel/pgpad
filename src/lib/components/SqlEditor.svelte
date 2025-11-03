@@ -278,16 +278,14 @@
 			const info = await Commands.fetchQuery(queryId);
 
 			// Return if:
-			// 1. Query has first page (we got the data we need)
-			// 2. Query is completed/error (no more data coming)
-			// 3. Query doesn't return values (no pages to wait for)
-			// 4. Query errored
+			// 1. Query errored
+			// 2. Query status is Error or Completed
+			// 3. Query returns values AND we have the first page
 			if (
-				info.first_page ||
-				info.status === 'Completed' ||
+				info.error ||
 				info.status === 'Error' ||
-				!info.returns_values ||
-				info.error
+				info.status === 'Completed' ||
+				(info.returns_values && info.first_page)
 			) {
 				return info;
 			}
@@ -666,7 +664,7 @@
 												<div class="text-muted-foreground text-sm">Loading results...</div>
 											</div>
 										</div>
-									{:else if activeTab.currentPageData && activeTab.currentPageData.length === 0}
+									{:else if activeTab.columns && activeTab.status === 'Completed' && (!activeTab.currentPageData || activeTab.currentPageData.length === 0)}
 										<div class="flex h-full flex-1 items-center justify-center">
 											<div class="text-center">
 												<div class="text-muted-foreground text-sm">No rows returned.</div>
