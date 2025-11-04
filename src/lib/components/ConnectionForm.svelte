@@ -14,6 +14,7 @@
 
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+	import IconCibMysql from '~icons/cib/mysql';
 
 	import { Commands, type DatabaseInfo, type ConnectionInfo } from '$lib/commands.svelte';
 	import { Tabs } from 'bits-ui';
@@ -28,9 +29,11 @@
 
 	let connectionName = $state(editingConnection?.name || '');
 
-	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
+	let databaseType = $state<'postgres' | 'sqlite' | 'mysql'>('postgres');
 	let connectionString = $state('');
 	let caCertPath = $state<string>('');
+	let mysqlConnectionString = $state('');
+	let mysqlCaCertPath = $state<string>('');
 	let sqliteFilePath = $state('');
 
 	if (editingConnection) {
@@ -41,6 +44,10 @@
 		} else if ('SQLite' in editingConnection.database_type) {
 			databaseType = 'sqlite';
 			sqliteFilePath = editingConnection.database_type.SQLite.db_path;
+		} else if ('MySQL' in editingConnection.database_type) {
+			databaseType = 'mysql';
+			mysqlConnectionString = editingConnection.database_type.MySQL.connection_string;
+			mysqlCaCertPath = editingConnection.database_type.MySQL.ca_cert_path || '';
 		}
 	}
 	let errors = $state<Record<string, string>>({});
@@ -64,6 +71,10 @@
 
 		if (databaseType === 'sqlite' && !sqliteFilePath.trim()) {
 			errors.sqliteFilePath = 'SQLite database file is required';
+		}
+
+		if (databaseType === 'mysql' && !mysqlConnectionString.trim()) {
+			errors.mysqlConnectionString = 'MySQL connection string is required';
 		}
 
 		return Object.keys(errors).length === 0;
@@ -116,6 +127,21 @@
 		caCertPath = '';
 	}
 
+	async function selectMysqlCaCert() {
+		try {
+			const selectedPath = await Commands.pickCaCert();
+			if (selectedPath) {
+				mysqlCaCertPath = selectedPath;
+			}
+		} catch (error) {
+			console.error('Failed to select CA certificate:', error);
+		}
+	}
+
+	function clearMysqlCaCert() {
+		mysqlCaCertPath = '';
+	}
+
 	async function testConnection() {
 		if (!validateForm()) return;
 
@@ -130,7 +156,14 @@
 							ca_cert_path: caCertPath.trim() || null
 						}
 					}
-				: { SQLite: { db_path: sqliteFilePath.trim() } };
+				: databaseType === 'mysql'
+					? {
+							MySQL: {
+								connection_string: mysqlConnectionString.trim(),
+								ca_cert_path: mysqlCaCertPath.trim() || null
+							}
+						}
+					: { SQLite: { db_path: sqliteFilePath.trim() } };
 
 		try {
 			const success = await Commands.testConnection(databaseInfo);
@@ -155,7 +188,14 @@
 								ca_cert_path: caCertPath.trim() || null
 							}
 						}
-					: { SQLite: { db_path: sqliteFilePath.trim() } };
+					: databaseType === 'mysql'
+						? {
+								MySQL: {
+									connection_string: mysqlConnectionString.trim(),
+									ca_cert_path: mysqlCaCertPath.trim() || null
+								}
+							}
+						: { SQLite: { db_path: sqliteFilePath.trim() } };
 
 			onSubmit(connectionName.trim(), databaseInfo);
 		}
@@ -202,13 +242,20 @@
 			</div>
 
 			<Tabs.Root bind:value={databaseType} class="w-full">
-				<Tabs.List class="bg-muted/20 grid w-full grid-cols-2 gap-1 rounded-lg p-1">
+				<Tabs.List class="bg-muted/20 grid w-full grid-cols-3 gap-1 rounded-lg p-1">
 					<Tabs.Trigger
 						value="postgres"
 						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
 					>
 						<IconCibPostgresql class="h-4 w-4" />
 						PostgreSQL
+					</Tabs.Trigger>
+					<Tabs.Trigger
+						value="mysql"
+						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
+					>
+						<IconCibMysql class="h-4 w-4" />
+						MySQL
 					</Tabs.Trigger>
 					<Tabs.Trigger
 						value="sqlite"
@@ -269,6 +316,81 @@
 											variant="ghost"
 											size="sm"
 											onclick={clearCaCert}
+											title="Clear certificate"
+											class="px-2"
+										>
+											<X class="h-4 w-4" />
+										</Button>
+									{/if}
+								</div>
+
+								<div class="bg-muted/20 border-muted/40 rounded-lg border p-2.5">
+									<div class="flex items-start gap-2">
+										<Info class="text-muted-foreground mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+										<p class="text-muted-foreground text-xs leading-relaxed">
+											Provide a custom CA certificate file (.pem, .crt, .cer) for SSL/TLS
+											connections if required.
+										</p>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</Tabs.Content>
+
+				<Tabs.Content value="mysql" class="mt-3">
+					<div class="bg-card rounded-xl border p-5 shadow-sm">
+						<label
+							for="mysqlConnectionString"
+							class="text-foreground mb-2 block text-sm font-semibold"
+						>
+							Connection String <span class="text-error">*</span>
+						</label>
+						<Input
+							id="mysqlConnectionString"
+							type="text"
+							bind:value={mysqlConnectionString}
+							placeholder="mysql://username:password@localhost:3306/database"
+							class={`shadow-sm transition-shadow focus:shadow-md ${errors.mysqlConnectionString ? 'border-error focus:ring-error/30' : 'focus:ring-primary/30'}`}
+						/>
+						{#if errors.mysqlConnectionString}
+							<p class="text-error mt-2 flex items-center gap-2 text-sm">
+								<AlertCircle class="h-4 w-4" />
+								{errors.mysqlConnectionString}
+							</p>
+						{/if}
+
+						<div class="mt-4">
+							<label for="mysqlCaCertPath" class="text-foreground mb-2 block text-sm font-semibold">
+								CA Certificate
+							</label>
+
+							<div class="space-y-2">
+								<div class="flex gap-2">
+									<Input
+										id="mysqlCaCertPath"
+										type="text"
+										bind:value={mysqlCaCertPath}
+										placeholder="No certificate selected..."
+										readonly
+										class="flex-1 shadow-sm transition-shadow"
+									/>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onclick={selectMysqlCaCert}
+										class="gap-2 shadow-sm hover:shadow-md"
+									>
+										<FileCheck class="h-4 w-4" />
+										Select
+									</Button>
+									{#if mysqlCaCertPath}
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={clearMysqlCaCert}
 											title="Clear certificate"
 											class="px-2"
 										>

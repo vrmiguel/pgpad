@@ -19,7 +19,8 @@ export interface StatementInfo {
 
 export type DatabaseInfo =
 	| { Postgres: { connection_string: string; ca_cert_path?: string | null } }
-	| { SQLite: { db_path: string } };
+	| { SQLite: { db_path: string } }
+	| { MySQL: { connection_string: string; ca_cert_path?: string | null } };
 
 export interface ConnectionInfo {
 	id: string;
