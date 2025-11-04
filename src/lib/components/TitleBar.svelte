@@ -44,8 +44,11 @@
 	class="border-sidebar-border flex h-[42px] items-center border-b"
 	style="background-color: var(--titlebar-bg);"
 	data-tauri-drag-region
->	
-	<div class={`flex flex-1 items-center gap-3 ${isMacOS ?"justify-center pr-4 pl-20" : "px-4"}`} data-tauri-drag-region>
+>
+	<div
+		class={`flex flex-1 items-center gap-3 ${isMacOS ? 'justify-center pr-4 pl-20' : 'px-4'}`}
+		data-tauri-drag-region
+	>
 		<!-- Action buttons - NOT draggable -->
 		<div class="flex items-center gap-1.5">
 			<Button
