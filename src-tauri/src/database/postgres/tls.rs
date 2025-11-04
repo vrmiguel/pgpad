@@ -53,6 +53,52 @@ impl Certificates {
         // Safety: `initialized` just returned true
         Ok(self.certs.get().unwrap().clone())
     }
+
+    pub async fn with_custom_cert(
+        &self,
+        cert_path: &str,
+    ) -> anyhow::Result<Arc<rustls::RootCertStore>> {
+        use std::fs::File;
+        use std::io::BufReader;
+
+        let base_store = self.read().await?;
+        let mut cert_store = (*base_store).clone();
+
+        let cert_file = File::open(cert_path).map_err(|e| {
+            anyhow::anyhow!("Failed to open certificate file '{}': {}", cert_path, e)
+        })?;
+
+        let mut reader = BufReader::new(cert_file);
+        let certs = rustls_pemfile::certs(&mut reader);
+
+        let mut cert_count = 0;
+        for cert_result in certs {
+            match cert_result {
+                Ok(cert) => {
+                    cert_store.add_parsable_certificates([cert]);
+                    cert_count += 1;
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse certificate in file '{}': {}", cert_path, e);
+                }
+            }
+        }
+
+        if cert_count == 0 {
+            anyhow::bail!(
+                "No valid certificates found in file '{}'. Please ensure the file is in PEM format.",
+                cert_path
+            );
+        }
+
+        log::info!(
+            "Loaded {} custom certificate(s) from '{}'",
+            cert_count,
+            cert_path
+        );
+
+        Ok(Arc::new(cert_store))
+    }
 }
 
 async fn load_certificates() -> rustls::RootCertStore {

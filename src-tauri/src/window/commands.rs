@@ -61,6 +61,20 @@ pub async fn save_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>, Err
     Ok(chosen_file)
 }
 
+#[tauri::command]
+pub async fn pick_ca_cert(app: tauri::AppHandle) -> Result<Option<String>, Error> {
+    let chosen_file = run_dialog(app, || {
+        AsyncFileDialog::new()
+            .set_title("Pick a certificate file")
+            .add_filter("Certificate files", &["pem", "crt", "cer", "ca-bundle"])
+            .pick_file()
+    })
+    .await?
+    .map(|file| file.path().to_string_lossy().to_string());
+
+    Ok(chosen_file)
+}
+
 async fn run_dialog<F, Fut, T>(app: tauri::AppHandle, make_future: F) -> Result<Option<T>, Error>
 where
     F: FnOnce() -> Fut + Send + 'static,

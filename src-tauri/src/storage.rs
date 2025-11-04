@@ -19,7 +19,10 @@ struct Migrator {
 impl Migrator {
     fn new() -> Self {
         Self {
-            migrations: &[include_str!("../migrations/001.sql")],
+            migrations: &[
+                include_str!("../migrations/001.sql"),
+                include_str!("../migrations/002.sql"),
+            ],
         }
     }
 
@@ -146,25 +149,31 @@ impl Storage {
         let now = chrono::Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
 
-        let (db_type_id, connection_data) = match &connection.database_type {
-            crate::database::types::DatabaseInfo::Postgres { connection_string } => {
-                (DB_TYPE_POSTGRES, connection_string.as_str())
-            }
+        let (db_type_id, connection_data, ca_cert_path) = match &connection.database_type {
+            crate::database::types::DatabaseInfo::Postgres {
+                connection_string,
+                ca_cert_path,
+            } => (
+                DB_TYPE_POSTGRES,
+                connection_string.as_str(),
+                ca_cert_path.as_deref(),
+            ),
             crate::database::types::DatabaseInfo::SQLite { db_path } => {
-                (DB_TYPE_SQLITE, db_path.as_str())
+                (DB_TYPE_SQLITE, db_path.as_str(), None)
             }
         };
 
         conn.execute(
             "INSERT OR REPLACE INTO connections 
-             (id, name, connection_data, database_type_id, created_at, updated_at, sort_order) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 
+             (id, name, connection_data, database_type_id, ca_cert_path, created_at, updated_at, sort_order) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 
                 (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM connections))",
             (
                 &connection.id.to_string(),
                 &connection.name,
                 connection_data,
                 db_type_id,
+                ca_cert_path,
                 now,
                 now,
             ),
@@ -178,25 +187,31 @@ impl Storage {
         let now = chrono::Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
 
-        let (db_type_id, connection_data) = match &connection.database_type {
-            crate::database::types::DatabaseInfo::Postgres { connection_string } => {
-                (DB_TYPE_POSTGRES, connection_string.as_str())
-            }
+        let (db_type_id, connection_data, ca_cert_path) = match &connection.database_type {
+            crate::database::types::DatabaseInfo::Postgres {
+                connection_string,
+                ca_cert_path,
+            } => (
+                DB_TYPE_POSTGRES,
+                connection_string.as_str(),
+                ca_cert_path.as_deref(),
+            ),
             crate::database::types::DatabaseInfo::SQLite { db_path } => {
-                (DB_TYPE_SQLITE, db_path.as_str())
+                (DB_TYPE_SQLITE, db_path.as_str(), None)
             }
         };
 
         let updated_rows = conn
             .execute(
                 "UPDATE connections 
-             SET name = ?2, connection_data = ?3, database_type_id = ?4, updated_at = ?5
+             SET name = ?2, connection_data = ?3, database_type_id = ?4, ca_cert_path = ?5, updated_at = ?6
              WHERE id = ?1",
                 (
                     &connection.id.to_string(),
                     &connection.name,
                     connection_data,
                     db_type_id,
+                    ca_cert_path,
                     now,
                 ),
             )
@@ -218,7 +233,8 @@ impl Storage {
         let mut stmt = conn
             .prepare(
                 "SELECT c.id, c.name, c.connection_data, 
-                        COALESCE(dt.name, 'postgres') as db_type
+                        COALESCE(dt.name, 'postgres') as db_type,
+                        c.ca_cert_path
                  FROM connections c
                  LEFT JOIN database_types dt ON c.database_type_id = dt.id
                  ORDER BY c.sort_order, c.name",
@@ -229,16 +245,19 @@ impl Storage {
             .query_map([], |row| {
                 let connection_data: String = row.get(2)?;
                 let db_type: String = row.get(3)?;
+                let ca_cert_path: Option<String> = row.get(4)?;
 
                 let database_type = match db_type.as_str() {
                     "postgres" => crate::database::types::DatabaseInfo::Postgres {
                         connection_string: connection_data,
+                        ca_cert_path,
                     },
                     "sqlite" => crate::database::types::DatabaseInfo::SQLite {
                         db_path: connection_data,
                     },
                     _ => crate::database::types::DatabaseInfo::Postgres {
                         connection_string: connection_data, // Default to postgres for unknown types
+                        ca_cert_path,
                     },
                 };
 

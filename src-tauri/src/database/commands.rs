@@ -67,12 +67,14 @@ pub async fn update_connection(
             (
                 Database::Postgres {
                     connection_string: old,
+                    ca_cert_path: old_cert,
                     ..
                 },
                 DatabaseInfo::Postgres {
                     connection_string: new,
+                    ca_cert_path: new_cert,
                 },
-            ) => old != new,
+            ) => old != new || old_cert != new_cert,
             (Database::SQLite { db_path: old, .. }, DatabaseInfo::SQLite { db_path: new }) => {
                 old != new
             }
@@ -91,8 +93,12 @@ pub async fn update_connection(
 
         connection.name = name;
         connection.database = match database_info {
-            DatabaseInfo::Postgres { connection_string } => Database::Postgres {
+            DatabaseInfo::Postgres {
                 connection_string,
+                ca_cert_path,
+            } => Database::Postgres {
+                connection_string,
+                ca_cert_path,
                 client: None,
             },
             DatabaseInfo::SQLite { db_path } => Database::SQLite {
@@ -142,6 +148,7 @@ pub async fn connect_to_database(
     match &mut connection.database {
         Database::Postgres {
             connection_string,
+            ca_cert_path,
             client,
         } => {
             let mut config: tokio_postgres::Config =
@@ -152,7 +159,7 @@ pub async fn connect_to_database(
                 credentials::get_password(&connection_id)?.map(|pw| config.password(pw));
             }
 
-            match connect(&config, &certificates).await {
+            match connect(&config, &certificates, ca_cert_path.as_deref()).await {
                 Ok((pg_client, conn_check)) => {
                     *client = Some(Arc::new(pg_client));
                     connection.connected = true;
@@ -331,12 +338,15 @@ pub async fn test_connection(
     certificates: tauri::State<'_, Certificates>,
 ) -> Result<bool, Error> {
     match database_info {
-        DatabaseInfo::Postgres { connection_string } => {
+        DatabaseInfo::Postgres {
+            connection_string,
+            ca_cert_path,
+        } => {
             let config: tokio_postgres::Config = connection_string.parse().with_context(|| {
                 format!("Failed to parse connection string: {}", connection_string)
             })?;
             log::info!("Testing Postgres connection: {config:?}");
-            match connect(&config, &certificates).await {
+            match connect(&config, &certificates, ca_cert_path.as_deref()).await {
                 Ok(_) => Ok(true),
                 Err(e) => {
                     log::error!("Postgres connection test failed: {}", e);

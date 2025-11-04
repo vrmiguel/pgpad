@@ -59,8 +59,13 @@ pub struct ConnectionInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DatabaseInfo {
-    Postgres { connection_string: String },
-    SQLite { db_path: String },
+    Postgres {
+        connection_string: String,
+        ca_cert_path: Option<String>,
+    },
+    SQLite {
+        db_path: String,
+    },
 }
 
 #[derive(Debug)]
@@ -85,6 +90,7 @@ pub enum DatabaseClient {
 pub enum Database {
     Postgres {
         connection_string: String,
+        ca_cert_path: Option<String>,
         client: Option<Arc<tokio_postgres::Client>>,
     },
     SQLite {
@@ -101,9 +107,12 @@ impl DatabaseConnection {
             connected: self.connected,
             database_type: match &self.database {
                 Database::Postgres {
-                    connection_string, ..
+                    connection_string,
+                    ca_cert_path,
+                    ..
                 } => DatabaseInfo::Postgres {
                     connection_string: connection_string.clone(),
+                    ca_cert_path: ca_cert_path.clone(),
                 },
                 Database::SQLite { db_path, .. } => DatabaseInfo::SQLite {
                     db_path: db_path.clone(),
@@ -114,8 +123,12 @@ impl DatabaseConnection {
 
     pub fn new(id: Uuid, name: String, database_info: DatabaseInfo) -> Self {
         let database = match database_info {
-            DatabaseInfo::Postgres { connection_string } => Database::Postgres {
+            DatabaseInfo::Postgres {
                 connection_string,
+                ca_cert_path,
+            } => Database::Postgres {
+                connection_string,
+                ca_cert_path,
                 client: None,
             },
             DatabaseInfo::SQLite { db_path } => Database::SQLite {

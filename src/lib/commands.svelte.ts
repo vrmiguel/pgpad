@@ -18,7 +18,7 @@ export interface StatementInfo {
 }
 
 export type DatabaseInfo =
-	| { Postgres: { connection_string: string } }
+	| { Postgres: { connection_string: string; ca_cert_path?: string | null } }
 	| { SQLite: { db_path: string } };
 
 export interface ConnectionInfo {
@@ -197,6 +197,10 @@ export class Commands {
 
 	static async saveSqliteDbDialog(): Promise<string | null> {
 		return await invoke('save_sqlite_db');
+	}
+
+	static async pickCaCert(): Promise<string | null> {
+		return await invoke('pick_ca_cert');
 	}
 
 	static async submitQuery(connectionId: string, query: string): Promise<QueryId[]> {

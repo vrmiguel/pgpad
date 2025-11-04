@@ -10,12 +10,18 @@ pub type ConnectionCheck = JoinHandle<()>;
 pub async fn connect(
     config: &tokio_postgres::Config,
     certificates: &Certificates,
+    ca_cert_path: Option<&str>,
 ) -> Result<(Client, ConnectionCheck), Error> {
     use tokio_postgres::config::SslMode;
 
     let client = match config.get_ssl_mode() {
         SslMode::Require | SslMode::Prefer => {
-            let certificate_store = certificates.read().await?;
+            let certificate_store = if let Some(cert_path) = ca_cert_path {
+                certificates.with_custom_cert(cert_path).await?
+            } else {
+                certificates.read().await?
+            };
+
             let rustls_config = rustls::ClientConfig::builder()
                 .with_root_certificates(certificate_store)
                 .with_no_client_auth();

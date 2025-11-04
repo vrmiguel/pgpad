@@ -1,7 +1,16 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Cable, X, CheckCircle, AlertCircle, Info, FolderOpen, FilePlus } from '@lucide/svelte';
+	import {
+		Cable,
+		X,
+		CheckCircle,
+		AlertCircle,
+		Info,
+		FolderOpen,
+		FilePlus,
+		FileCheck
+	} from '@lucide/svelte';
 
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
@@ -21,12 +30,14 @@
 
 	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
 	let connectionString = $state('');
+	let caCertPath = $state<string>('');
 	let sqliteFilePath = $state('');
 
 	if (editingConnection) {
 		if ('Postgres' in editingConnection.database_type) {
 			databaseType = 'postgres';
 			connectionString = editingConnection.database_type.Postgres.connection_string;
+			caCertPath = editingConnection.database_type.Postgres.ca_cert_path || '';
 		} else if ('SQLite' in editingConnection.database_type) {
 			databaseType = 'sqlite';
 			sqliteFilePath = editingConnection.database_type.SQLite.db_path;
@@ -90,6 +101,21 @@
 		}
 	}
 
+	async function selectCaCert() {
+		try {
+			const selectedPath = await Commands.pickCaCert();
+			if (selectedPath) {
+				caCertPath = selectedPath;
+			}
+		} catch (error) {
+			console.error('Failed to select CA certificate:', error);
+		}
+	}
+
+	function clearCaCert() {
+		caCertPath = '';
+	}
+
 	async function testConnection() {
 		if (!validateForm()) return;
 
@@ -98,7 +124,12 @@
 
 		const databaseInfo: DatabaseInfo =
 			databaseType === 'postgres'
-				? { Postgres: { connection_string: connectionString.trim() } }
+				? {
+						Postgres: {
+							connection_string: connectionString.trim(),
+							ca_cert_path: caCertPath.trim() || null
+						}
+					}
 				: { SQLite: { db_path: sqliteFilePath.trim() } };
 
 		try {
@@ -118,7 +149,12 @@
 		if (validateForm()) {
 			const databaseInfo: DatabaseInfo =
 				databaseType === 'postgres'
-					? { Postgres: { connection_string: connectionString.trim() } }
+					? {
+							Postgres: {
+								connection_string: connectionString.trim(),
+								ca_cert_path: caCertPath.trim() || null
+							}
+						}
 					: { SQLite: { db_path: sqliteFilePath.trim() } };
 
 			onSubmit(connectionName.trim(), databaseInfo);
@@ -202,24 +238,53 @@
 							</p>
 						{/if}
 
-						<div class="bg-primary/5 border-primary/20 mt-3 rounded-lg border p-3">
-							<div class="flex items-start gap-3">
-								<Info class="text-primary mt-0.5 h-4 w-4 flex-shrink-0" />
-								<div class="text-muted-foreground min-w-0 flex-1 text-sm">
-									<p class="mb-2">Use the following format for your Postgres connection:</p>
-									<div class="bg-muted/50 overflow-x-auto rounded border p-2 font-mono text-xs">
-										<code class="whitespace-nowrap">
-											postgresql://username:password@host:port/database
-										</code>
+						<div class="mt-4">
+							<label for="caCertPath" class="text-foreground mb-2 block text-sm font-semibold">
+								CA Certificate
+							</label>
+
+							<div class="space-y-2">
+								<div class="flex gap-2">
+									<Input
+										id="caCertPath"
+										type="text"
+										bind:value={caCertPath}
+										placeholder="No certificate selected..."
+										readonly
+										class="flex-1 shadow-sm transition-shadow"
+									/>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onclick={selectCaCert}
+										class="gap-2 shadow-sm hover:shadow-md"
+									>
+										<FileCheck class="h-4 w-4" />
+										Select
+									</Button>
+									{#if caCertPath}
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={clearCaCert}
+											title="Clear certificate"
+											class="px-2"
+										>
+											<X class="h-4 w-4" />
+										</Button>
+									{/if}
+								</div>
+
+								<div class="bg-muted/20 border-muted/40 rounded-lg border p-2.5">
+									<div class="flex items-start gap-2">
+										<Info class="text-muted-foreground mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+										<p class="text-muted-foreground text-xs leading-relaxed">
+											Provide a custom CA certificate file (.pem, .crt, .cer) for SSL/TLS
+											connections if required.
+										</p>
 									</div>
-									<p class="mt-2 text-xs leading-relaxed">
-										Replace <span class="text-foreground font-medium">username</span>,
-										<span class="text-foreground font-medium">password</span>,
-										<span class="text-foreground font-medium">host</span>,
-										<span class="text-foreground font-medium">port</span>, and
-										<span class="text-foreground font-medium">database</span> with your actual connection
-										details.
-									</p>
 								</div>
 							</div>
 						</div>
