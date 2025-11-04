@@ -40,6 +40,7 @@ pub trait SqlDialectExt {
             | ShowTables { .. }
             | ShowViews { .. }
             | ShowCollation { .. }
+            | ShowCharset(_)
             | List(_) => true,
 
             Case(_)
@@ -63,8 +64,11 @@ pub trait SqlDialectExt {
             Copy { .. } => false,
             CopyIntoSnowflake { .. } => false,
             Unload { .. } => false,
+            ExportData(_) => false,
             Directory { .. } => false,
-            Analyze { .. } | Msck { .. } | OptimizeTable { .. } | Comment { .. } => false,
+            Analyze { .. } | Msck { .. } | OptimizeTable { .. } | Vacuum(_) | Comment { .. } => {
+                false
+            }
             CreateView { .. }
             | CreateTable(_)
             | CreateVirtualTable { .. }
@@ -74,6 +78,7 @@ pub trait SqlDialectExt {
             | CreateServer(_)
             | CreatePolicy { .. }
             | CreateConnector(_)
+            | CreateUser(_)
             | AlterTable { .. }
             | AlterIndex { .. }
             | AlterView { .. }
@@ -82,6 +87,7 @@ pub trait SqlDialectExt {
             | AlterPolicy { .. }
             | AlterConnector { .. }
             | AlterSession { .. }
+            | AlterSchema(_)
             | AttachDatabase { .. }
             | AttachDuckDBDatabase { .. }
             | DetachDuckDBDatabase { .. }
