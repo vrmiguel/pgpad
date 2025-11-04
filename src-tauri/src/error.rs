@@ -29,7 +29,7 @@ impl<T: Debug> From<tokio::sync::mpsc::error::SendError<T>> for Error {
 #[derive(serde::Serialize)]
 #[serde(tag = "name", content = "message")]
 #[serde(rename_all = "camelCase")]
-enum ErrorName {
+enum JsError {
     Error(String),
 }
 
@@ -39,7 +39,7 @@ impl serde::Serialize for Error {
         S: serde::ser::Serializer,
     {
         let message = self.to_string();
-        let name = ErrorName::Error(message);
+        let name = JsError::Error(message);
         name.serialize(serializer)
     }
 }

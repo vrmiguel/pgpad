@@ -64,11 +64,10 @@ pub fn run() {
         .manage(certificates)
         .setup(|app| {
             if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
+                env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(
+                    "trace,tokio_postgres=info,tao=info,sqlparser=info,rustls=info",
+                ))
+                .init();
             }
 
             init::build_window(app)?;
