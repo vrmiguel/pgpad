@@ -56,6 +56,7 @@ interface TabStore {
 		saveState(): EditorState | undefined;
 		restoreState(state: EditorState): void;
 		setContent(content: string): void;
+		syncFontSize(): void;
 	} | null;
 }
 
@@ -159,8 +160,11 @@ export const tabs = {
 
 			tabStore.currentEditorContent = content;
 
-			if (tabStore.sqlEditorRef && scriptTab.editorState) {
-				tabStore.sqlEditorRef.restoreState(scriptTab.editorState);
+			if (tabStore.sqlEditorRef) {
+				if (scriptTab.editorState) {
+					tabStore.sqlEditorRef.restoreState(scriptTab.editorState);
+				}
+				tabStore.sqlEditorRef.syncFontSize();
 			}
 		}
 
