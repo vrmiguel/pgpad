@@ -24,6 +24,7 @@ import { indentWithTab, history, historyKeymap, defaultKeymap } from '@codemirro
 
 import type { DatabaseSchema } from './commands.svelte';
 import { registerEditorThemeCallback, theme } from './stores/theme';
+import { fontSize, fontSizeUtils } from './stores/fontSize';
 import { get } from 'svelte/store';
 
 interface ExtendedCompletion extends Completion {
@@ -116,7 +117,6 @@ function createTheme(theme: 'light' | 'dark') {
 				borderBottom: 'none',
 				borderLeft: 'none',
 				minHeight: '100%',
-				fontSize: '13px',
 				margin: '0',
 				padding: '0',
 				borderTopRightRadius: '0',
@@ -127,7 +127,6 @@ function createTheme(theme: 'light' | 'dark') {
 			},
 			'.cm-lineNumbers': {
 				minHeight: '100%',
-				fontSize: '12px',
 				margin: '0',
 				padding: '0 0px 0 6px'
 			},
@@ -455,6 +454,20 @@ function createSqlAutocompletion(schema: DatabaseSchema | null) {
 	});
 }
 
+function createFontSizeTheme(size: number) {
+	return EditorView.theme({
+		'.cm-content': {
+			fontSize: `${size}px`
+		},
+		'.cm-gutters': {
+			fontSize: `${size}px`
+		},
+		'.cm-lineNumbers': {
+			fontSize: `${size - 1}px`
+		}
+	});
+}
+
 export interface CreateEditorOptions {
 	container: HTMLElement;
 	value: string;
@@ -484,11 +497,13 @@ export function createEditorInstance(options: CreateEditorOptions) {
 	}
 
 	let currentSchema = schema;
+	let currentFontSize = get(fontSize);
 
 	// Create compartments for dynamic reconfiguration
 	const themeCompartment = new Compartment();
 	const readOnlyCompartment = new Compartment();
 	const schemaCompartment = new Compartment();
+	const fontSizeCompartment = new Compartment();
 
 	const extensions: Extension[] = [
 		keymap.of([
@@ -514,6 +529,22 @@ export function createEditorInstance(options: CreateEditorOptions) {
 				mac: 'Cmd-r',
 				run: () => {
 					onExecute?.();
+					return true;
+				}
+			},
+			{
+				key: 'Ctrl-+',
+				mac: 'Cmd-+',
+				run: () => {
+					fontSizeUtils.increase();
+					return true;
+				}
+			},
+			{
+				key: 'Ctrl--',
+				mac: 'Cmd--',
+				run: () => {
+					fontSizeUtils.decrease();
 					return true;
 				}
 			},
@@ -564,7 +595,8 @@ export function createEditorInstance(options: CreateEditorOptions) {
 			}
 		}),
 		themeCompartment.of([createTheme(currentTheme), ...createThemeExtensions(currentTheme)]),
-		readOnlyCompartment.of(disabled ? EditorState.readOnly.of(true) : [])
+		readOnlyCompartment.of(disabled ? EditorState.readOnly.of(true) : []),
+		fontSizeCompartment.of(createFontSizeTheme(currentFontSize))
 	];
 
 	const state = EditorState.create({
@@ -595,6 +627,11 @@ export function createEditorInstance(options: CreateEditorOptions) {
 
 	const restoreState = (savedState: EditorState) => {
 		view.setState(savedState);
+		const sharedFontSize = get(fontSize);
+		currentFontSize = sharedFontSize;
+		view.dispatch({
+			effects: fontSizeCompartment.reconfigure(createFontSizeTheme(currentFontSize))
+		});
 	};
 
 	const updateDisabled = (isDisabled: boolean) => {
@@ -613,7 +650,32 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		});
 	};
 
+	const zoomIn = () => fontSizeUtils.increase();
+
+	const zoomOut = () => fontSizeUtils.decrease();
+
+	const setFontSize = (size: number) => fontSizeUtils.set(size);
+
+	const syncFontSize = () => {
+		const sharedFontSize = get(fontSize);
+		if (sharedFontSize !== currentFontSize) {
+			currentFontSize = sharedFontSize;
+			view.dispatch({
+				effects: fontSizeCompartment.reconfigure(createFontSizeTheme(currentFontSize))
+			});
+		}
+	};
+
 	const unregisterThemeCallback = registerEditorThemeCallback(updateTheme);
+
+	const unsubscribeFontSize = fontSize.subscribe((newSize) => {
+		if (newSize !== currentFontSize) {
+			currentFontSize = newSize;
+			view.dispatch({
+				effects: fontSizeCompartment.reconfigure(createFontSizeTheme(currentFontSize))
+			});
+		}
+	});
 
 	const getExecutableText = () => {
 		const selection = view.state.selection.main;
@@ -653,8 +715,14 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		updateSchema,
 		saveState,
 		restoreState,
+		zoomIn,
+		zoomOut,
+		setFontSize,
+		syncFontSize,
+		getFontSize: () => currentFontSize,
 		dispose: () => {
 			unregisterThemeCallback();
+			unsubscribeFontSize();
 			view.destroy();
 		}
 	};
