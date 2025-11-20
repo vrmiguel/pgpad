@@ -108,7 +108,14 @@
 		if (sqlEditor && state) {
 			sqlEditor.restoreState(state);
 			sqlQuery = sqlEditor.view.state.doc.toString();
+			sqlEditor.syncFontSize();
 			onContentChange?.(sqlQuery);
+		}
+	}
+
+	export function syncFontSize() {
+		if (sqlEditor) {
+			sqlEditor.syncFontSize();
 		}
 	}
 
