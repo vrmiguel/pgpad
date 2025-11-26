@@ -534,7 +534,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 			},
 			{
 				key: 'Ctrl-+',
-				mac: 'Cmd-+',
+				mac: 'Cmd-=',
 				run: () => {
 					fontSizeUtils.increase();
 					return true;
