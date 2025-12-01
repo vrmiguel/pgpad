@@ -12,9 +12,10 @@ use crate::{
     database::{
         postgres::{self, connect::connect},
         sqlite,
+        oracle,
         types::{
             ConnectionInfo, Database, DatabaseConnection, DatabaseInfo, DatabaseSchema,
-            QueryStatus, StatementInfo,
+            QueryStatus, StatementInfo, OracleSettings,
         },
         Certificates, ConnectionMonitor,
     },
@@ -91,6 +92,7 @@ pub async fn update_connection(
                     connection: conn, ..
                 } => *conn = None,
                 Database::DuckDB { connection: conn, .. } => *conn = None,
+                Database::Oracle { connection: conn, .. } => *conn = None,
             }
             connection.connected = false;
         }
@@ -111,6 +113,12 @@ pub async fn update_connection(
             },
             DatabaseInfo::DuckDB { db_path } => Database::DuckDB {
                 db_path,
+                connection: None,
+            },
+            DatabaseInfo::Oracle { connection_string, wallet_path, tns_alias } => Database::Oracle {
+                connection_string,
+                wallet_path,
+                tns_alias,
                 connection: None,
             },
         };
@@ -200,6 +208,7 @@ pub async fn connect_to_database(
                 }
 
                 log::info!("Successfully connected to SQLite database: {}", db_path);
+                monitor.spawn_sqlite_ping(connection_id, sqlite_conn.as_ref().unwrap().clone()).await;
                 Ok(true)
             }
             Err(e) => {
@@ -221,6 +230,7 @@ pub async fn connect_to_database(
                 }
 
                 log::info!("Successfully connected to DuckDB database: {}", db_path);
+                monitor.spawn_duckdb_ping(connection_id, duck_conn.as_ref().unwrap().clone()).await;
                 Ok(true)
             }
             Err(e) => {
@@ -229,6 +239,126 @@ pub async fn connect_to_database(
                 Ok(false)
             }
         },
+        Database::Oracle {
+            connection_string,
+            wallet_path,
+            tns_alias,
+            connection: ora_conn,
+        } => {
+            let url = url::Url::parse(connection_string).with_context(|| {
+                format!("Failed to parse connection string: {}", connection_string)
+            })?;
+            let user = url.username().to_string();
+            let password = credentials::get_password(&connection_id)?.unwrap_or_default();
+            let host = url.host_str().unwrap_or("localhost");
+            let port = url.port().unwrap_or(1521);
+            let service = url.path().trim_start_matches('/');
+            let prev_tns = std::env::var("TNS_ADMIN").ok();
+            if let Some(path) = wallet_path.as_deref() { std::env::set_var("TNS_ADMIN", path); }
+            let scheme = url.scheme();
+            let connect_str = if wallet_path.is_some() {
+                if let Some(alias) = tns_alias.as_deref() { alias.to_string() } else { format!("//{}:{}/{}", host, port, service) }
+            } else if scheme.eq_ignore_ascii_case("tcps") {
+                format!("tcps://{}:{}/{}", host, port, service)
+            } else {
+                format!("//{}:{}/{}", host, port, service)
+            };
+
+            let connect_res = oracle::connect::connect(&user, &password, &connect_str);
+            match &prev_tns { Some(v) => std::env::set_var("TNS_ADMIN", v), None => std::env::remove_var("TNS_ADMIN") }
+            match connect_res {
+                Ok(conn) => {
+                    *ora_conn = Some(Arc::new(Mutex::new(conn)));
+                    connection.connected = true;
+
+                    if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                        log::warn!("Failed to update last connected timestamp: {}", e);
+                    }
+
+                    log::info!("Successfully connected to Oracle database: {}", connect_str);
+                    monitor.spawn_oracle_ping(connection_id, ora_conn.as_ref().unwrap().clone()).await;
+                    Ok(true)
+                }
+                Err(e) => {
+                    let msg = crate::database::oracle::execute::map_oracle_error(&e.to_string());
+                    log::error!("Failed to connect to Oracle database {}: {}", connect_str, msg);
+                    connection.connected = false;
+                    Ok(false)
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+#[allow(dead_code)]
+pub async fn oracle_ping_now(
+    connection_id: Uuid,
+    _monitor: tauri::State<'_, ConnectionMonitor>,
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, Error> {
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::Oracle { connection: Some(conn), .. } => Ok(ConnectionMonitor::oracle_ping_once(conn.clone())),
+        _ => Err(Error::Any(anyhow::anyhow!("Oracle connection not active"))),
+    }
+}
+
+#[tauri::command]
+#[allow(dead_code)]
+pub async fn oracle_reconnect(
+    connection_id: Uuid,
+    state: tauri::State<'_, AppState>,
+    monitor: tauri::State<'_, ConnectionMonitor>,
+) -> Result<bool, Error> {
+    let mut connection_entry = state
+        .connections
+        .get_mut(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value_mut();
+    match &mut connection.database {
+        Database::Oracle { connection: ora_conn, connection_string, wallet_path, tns_alias } => {
+            *ora_conn = None;
+            let url = url::Url::parse(connection_string).with_context(|| {
+                format!("Failed to parse connection string: {}", connection_string)
+            })?;
+            let user = url.username().to_string();
+            let password = credentials::get_password(&connection_id)?.unwrap_or_default();
+            let host = url.host_str().unwrap_or("localhost");
+            let port = url.port().unwrap_or(1521);
+            let service = url.path().trim_start_matches('/');
+            let prev_tns = std::env::var("TNS_ADMIN").ok();
+            if let Some(path) = wallet_path.as_deref() { std::env::set_var("TNS_ADMIN", path); }
+            let scheme = url.scheme();
+            let connect_str = if wallet_path.is_some() {
+                if let Some(alias) = tns_alias.as_deref() { alias.to_string() } else { format!("//{}:{}/{}", host, port, service) }
+            } else if scheme.eq_ignore_ascii_case("tcps") {
+                format!("tcps://{}:{}/{}", host, port, service)
+            } else {
+                format!("//{}:{}/{}", host, port, service)
+            };
+
+            let connect_res = oracle::connect::connect(&user, &password, &connect_str);
+            match &prev_tns { Some(v) => std::env::set_var("TNS_ADMIN", v), None => std::env::remove_var("TNS_ADMIN") }
+            match connect_res {
+                Ok(conn) => {
+                    *ora_conn = Some(Arc::new(Mutex::new(conn)));
+                    connection.connected = true;
+                    monitor.spawn_oracle_ping(connection_id, ora_conn.as_ref().unwrap().clone()).await;
+                    Ok(true)
+                }
+                Err(e) => {
+                    log::error!("Failed to reconnect to Oracle database {}: {}", connect_str, e);
+                    connection.connected = false;
+                    Ok(false)
+                }
+            }
+        }
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not Oracle"))),
     }
 }
 
@@ -253,6 +383,10 @@ pub async fn disconnect_from_database(
             connection: duck_conn,
             ..
         } => *duck_conn = None,
+        Database::Oracle {
+            connection: ora_conn,
+            ..
+        } => *ora_conn = None,
     }
     connection.connected = false;
     Ok(())
@@ -272,9 +406,53 @@ pub async fn submit_query(
     let connection = connection_entry.value();
 
     let client = connection.get_client()?;
-    let query_ids = state.stmt_manager.submit_query(client, query)?;
+    let settings = {
+        let key = oracle_settings_key(Some(connection_id));
+        match state.storage.get_setting(&key)? {
+            Some(s) => serde_json::from_str::<OracleSettings>(&s).unwrap_or_else(|_| default_oracle_settings()),
+            None => match state.storage.get_setting("oracle_settings")? {
+                Some(s) => serde_json::from_str::<OracleSettings>(&s).unwrap_or_else(|_| default_oracle_settings()),
+                None => default_oracle_settings(),
+            },
+        }
+    };
+    let query_ids = state.stmt_manager.submit_query_with_settings(client, query, Some(settings))?;
 
     Ok(query_ids)
+}
+
+#[allow(dead_code)]
+#[tauri::command]
+pub async fn submit_query_with_params(
+    connection_id: Uuid,
+    query: &str,
+    params: serde_json::Map<String, serde_json::Value>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<usize>, Error> {
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+
+    let connection = connection_entry.value();
+    let client = connection.get_client()?;
+    let settings = {
+        let key = oracle_settings_key(Some(connection_id));
+        match state.storage.get_setting(&key)? {
+            Some(s) => serde_json::from_str::<OracleSettings>(&s).unwrap_or_else(|_| default_oracle_settings()),
+            None => match state.storage.get_setting("oracle_settings")? {
+                Some(s) => serde_json::from_str::<OracleSettings>(&s).unwrap_or_else(|_| default_oracle_settings()),
+                None => default_oracle_settings(),
+            },
+        }
+    };
+
+    match client {
+        crate::database::types::DatabaseClient::Oracle { .. } => {
+            state.stmt_manager.submit_query_with_params_settings(client, query, params, Some(settings))
+        }
+        _ => state.stmt_manager.submit_query_with_settings(client, query, Some(settings)),
+    }
 }
 
 #[tauri::command]
@@ -327,6 +505,14 @@ pub async fn get_columns(
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<Box<RawValue>>, Error> {
     state.stmt_manager.get_columns(query_id)
+}
+
+#[tauri::command]
+pub async fn cancel_query(
+    query_id: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    state.stmt_manager.cancel_query(query_id)
 }
 
 #[tauri::command]
@@ -401,6 +587,34 @@ pub async fn test_connection(
                 Ok(false)
             }
         },
+        DatabaseInfo::Oracle { connection_string, wallet_path, tns_alias } => {
+            let url = url::Url::parse(&connection_string).with_context(|| {
+                format!("Failed to parse connection string: {}", connection_string)
+            })?;
+            let user = url.username().to_string();
+            let host = url.host_str().unwrap_or("localhost");
+            let port = url.port().unwrap_or(1521);
+            let service = url.path().trim_start_matches('/');
+            let prev_tns = std::env::var("TNS_ADMIN").ok();
+            if let Some(path) = wallet_path.as_deref() { std::env::set_var("TNS_ADMIN", path); }
+            let connect_str = if wallet_path.is_some() {
+                if let Some(alias) = tns_alias.as_deref() { alias.to_string() } else { format!("//{}:{}/{}", host, port, service) }
+            } else {
+                format!("//{}:{}/{}", host, port, service)
+            };
+
+            log::info!("Testing Oracle connection: {}", connect_str);
+            let connect_res = oracle::connect::connect(&user, url.password().unwrap_or(""), &connect_str);
+            match &prev_tns { Some(v) => std::env::set_var("TNS_ADMIN", v), None => std::env::remove_var("TNS_ADMIN") }
+            match connect_res {
+                Ok(_) => Ok(true),
+                Err(e) => {
+                    let msg = crate::database::oracle::execute::map_oracle_error(&e.to_string());
+                    log::error!("Oracle connection test failed: {}", msg);
+                    Ok(false)
+                }
+            }
+        }
     }
 }
 
@@ -500,6 +714,13 @@ pub async fn get_database_schema(
         Database::DuckDB {
             connection: None, ..
         } => return Err(Error::Any(anyhow::anyhow!("DuckDB connection not active"))),
+        Database::Oracle {
+            connection: Some(conn),
+            ..
+        } => oracle::schema::get_database_schema(Arc::clone(conn)).await?,
+        Database::Oracle {
+            connection: None, ..
+        } => return Err(Error::Any(anyhow::anyhow!("Oracle connection not active"))),
     };
 
     let schema = Arc::new(schema);
@@ -586,4 +807,75 @@ pub async fn save_session_state(
 pub async fn get_session_state(state: tauri::State<'_, AppState>) -> Result<Option<String>, Error> {
     let session_data = state.storage.get_setting("session_state")?;
     Ok(session_data)
+}
+
+
+fn apply_oracle_settings_env(s: &OracleSettings) {
+    if let Some(v) = &s.raw_format { std::env::set_var("ORACLE_RAW_FORMAT", v); }
+    if let Some(v) = s.raw_chunk_size { std::env::set_var("ORACLE_RAW_CHUNK_SIZE", v.to_string()); }
+    if let Some(v) = &s.blob_stream { std::env::set_var("ORACLE_BLOB_STREAM", v); }
+    if let Some(v) = s.blob_chunk_size { std::env::set_var("ORACLE_BLOB_CHUNK_SIZE", v.to_string()); }
+    if let Some(v) = s.allow_db_link_ping { std::env::set_var("ORACLE_ALLOW_DB_LINK_PING", if v { "true" } else { "false" }); }
+    if let Some(v) = &s.xplan_format { std::env::set_var("ORACLE_XPLAN_FORMAT", v); }
+    if let Some(v) = s.reconnect_max_retries { std::env::set_var("ORACLE_RECONNECT_MAX_RETRIES", v.to_string()); }
+    if let Some(v) = s.reconnect_backoff_ms { std::env::set_var("ORACLE_RECONNECT_BACKOFF_MS", v.to_string()); }
+    if let Some(v) = s.stmt_cache_size { std::env::set_var("ORACLE_STMT_CACHE_SIZE", v.to_string()); }
+}
+
+fn default_oracle_settings() -> OracleSettings {
+    OracleSettings {
+        raw_format: Some(std::env::var("ORACLE_RAW_FORMAT").unwrap_or_else(|_| "preview".into())),
+        raw_chunk_size: Some(std::env::var("ORACLE_RAW_CHUNK_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(16)),
+        blob_stream: Some(std::env::var("ORACLE_BLOB_STREAM").unwrap_or_else(|_| "len".into())),
+        blob_chunk_size: Some(std::env::var("ORACLE_BLOB_CHUNK_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(4096)),
+        allow_db_link_ping: Some(std::env::var("ORACLE_ALLOW_DB_LINK_PING").ok().map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)),
+        xplan_format: Some(std::env::var("ORACLE_XPLAN_FORMAT").unwrap_or_else(|_| "TYPICAL".into())),
+        xplan_mode: Some(String::from("display")),
+        // Optional mode: DISPLAY (plan table) or DISPLAY_CURSOR (last cursor). Default DISPLAY
+        // `xplan_mode` lives in settings only; env fallback not required
+        reconnect_max_retries: Some(std::env::var("ORACLE_RECONNECT_MAX_RETRIES").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0)),
+        reconnect_backoff_ms: Some(std::env::var("ORACLE_RECONNECT_BACKOFF_MS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(1000)),
+        stmt_cache_size: Some(std::env::var("ORACLE_STMT_CACHE_SIZE").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(64)),
+        batch_size: Some(std::env::var("PGPAD_BATCH_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0).unwrap_or(50)),
+        bytes_format: Some(std::env::var("PGPAD_BYTES_FORMAT").unwrap_or_else(|_| "len".into())),
+        bytes_chunk_size: Some(std::env::var("PGPAD_BYTES_CHUNK_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0).unwrap_or(4096)),
+        timestamp_tz_mode: Some(std::env::var("PGPAD_TIMESTAMP_TZ_MODE").unwrap_or_else(|_| "utc".into())),
+        numeric_string_policy: Some(std::env::var("PGPAD_NUMERIC_STRING_POLICY").unwrap_or_else(|_| "precision_threshold".into())),
+        numeric_precision_threshold: Some(std::env::var("PGPAD_NUMERIC_PRECISION_THRESHOLD").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0).unwrap_or(18)),
+        json_detection: Some(std::env::var("PGPAD_JSON_DETECTION").unwrap_or_else(|_| "auto".into())),
+        json_min_length: Some(std::env::var("PGPAD_JSON_MIN_LENGTH").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(1)),
+    }
+}
+
+fn oracle_settings_key(connection_id: Option<uuid::Uuid>) -> String {
+    match connection_id {
+        Some(id) => format!("oracle_settings:{}", id),
+        None => "oracle_settings".into(),
+    }
+}
+
+#[allow(dead_code)]
+#[tauri::command]
+pub async fn get_oracle_settings(connection_id: Option<uuid::Uuid>, state: tauri::State<'_, AppState>) -> Result<OracleSettings, Error> {
+    // Try per-connection first, fall back to global, then defaults
+    let conn_key = oracle_settings_key(connection_id);
+    if let Some(s) = state.storage.get_setting(&conn_key)? {
+        let set: OracleSettings = serde_json::from_str(&s).unwrap_or_else(|_| default_oracle_settings());
+        return Ok(set);
+    }
+    if let Some(s) = state.storage.get_setting("oracle_settings")? {
+        let set: OracleSettings = serde_json::from_str(&s).unwrap_or_else(|_| default_oracle_settings());
+        return Ok(set);
+    }
+    Ok(default_oracle_settings())
+}
+
+#[allow(dead_code)]
+#[tauri::command]
+pub async fn set_oracle_settings(connection_id: Option<uuid::Uuid>, settings: OracleSettings, state: tauri::State<'_, AppState>) -> Result<(), Error> {
+    apply_oracle_settings_env(&settings);
+    let s = serde_json::to_string(&settings).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+    let key = oracle_settings_key(connection_id);
+    state.storage.set_setting(&key, &s)?;
+    Ok(())
 }

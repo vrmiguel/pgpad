@@ -18,7 +18,7 @@ pub async fn get_database_schema(conn: Arc<Mutex<Connection>>) -> Result<Databas
             .map_err(|e| Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
         let mut tables_stmt = conn.prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%'",
         )?;
         let table_names: Vec<String> = tables_stmt
             .query_map([], |row| row.get::<_, String>(0))?

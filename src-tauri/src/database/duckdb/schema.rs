@@ -12,7 +12,7 @@ pub async fn get_database_schema(conn: Arc<Mutex<Connection>>) -> Result<Databas
         let conn = conn.lock().map_err(|e| Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
         let mut tables_stmt = conn.prepare(
-            "SELECT table_schema, table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE'",
+            "SELECT table_schema, table_name FROM information_schema.tables WHERE table_type IN ('BASE TABLE','VIEW')",
         )?;
 
         let mut rows = tables_stmt.query([])?;

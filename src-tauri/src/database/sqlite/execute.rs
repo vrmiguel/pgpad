@@ -13,14 +13,15 @@ use crate::{
 
 /// Make sure to run this on a task where blocking is allowed.
 pub fn execute_query(
-    client: &Connection,
+    client: &rusqlite::Connection,
     stmt: ParsedStatement,
     sender: &ExecSender,
+    settings: Option<&crate::database::types::OracleSettings>,
 ) -> Result<(), Error> {
     let start = std::time::Instant::now();
 
     if stmt.returns_values {
-        execute_query_with_results(client, &stmt.statement, sender, start)?;
+        execute_query_with_results(client, &stmt.statement, sender, start, settings)?;
     } else {
         execute_modification_query(client, &stmt.statement, sender, start)?;
     }
@@ -29,10 +30,11 @@ pub fn execute_query(
 }
 
 fn execute_query_with_results(
-    client: &Connection,
+    client: &rusqlite::Connection,
     query: &str,
     sender: &ExecSender,
     started_at: Instant,
+    settings: Option<&crate::database::types::OracleSettings>,
 ) -> Result<(), Error> {
     log::info!("Starting SQLite query: {}", query);
 
@@ -51,15 +53,8 @@ fn execute_query_with_results(
                     sender.send(QueryExecEvent::TypesResolved { columns })?;
 
                     let mut total_rows = 0;
-                    fn batch_size() -> usize {
-                        env::var("PGPAD_BATCH_SIZE")
-                            .ok()
-                            .and_then(|v| v.parse::<usize>().ok())
-                            .filter(|&n| n > 0)
-                            .unwrap_or(50)
-                    }
-                    let batch_size = batch_size();
-                    let mut writer = RowWriter::new(column_types);
+            let batch_size = settings.and_then(|s| s.batch_size).or_else(|| env::var("PGPAD_BATCH_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0)).unwrap_or(50);
+            let mut writer = match settings { Some(s) => RowWriter::with_settings(column_types, Some(s)), None => RowWriter::new(column_types) };
 
                     loop {
                         match rows.next() {
@@ -201,7 +196,7 @@ mod tests {
 
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().unwrap();
-            execute_query(&conn, stmt, &sender).unwrap();
+            execute_query(&conn, stmt, &sender, None).unwrap();
         });
 
         let mut events = Vec::new();
@@ -227,7 +222,7 @@ mod tests {
 
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().unwrap();
-            execute_query(&conn, stmt, &sender).unwrap();
+            execute_query(&conn, stmt, &sender, None).unwrap();
         });
 
         let event = recv
@@ -261,7 +256,7 @@ mod tests {
         let (sender, mut recv) = channel();
 
         tokio::task::spawn_blocking(move || {
-            execute_query(&conn, stmt, &sender).unwrap();
+            execute_query(&conn, stmt, &sender, None).unwrap();
         });
 
         let event = recv.recv().await.unwrap();

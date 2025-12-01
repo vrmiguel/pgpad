@@ -13,11 +13,12 @@ pub fn execute_query(
     client: &Connection,
     stmt: ParsedStatement,
     sender: &ExecSender,
+    settings: Option<&crate::database::types::OracleSettings>,
 ) -> Result<(), Error> {
     let start = std::time::Instant::now();
 
     if stmt.returns_values {
-        execute_query_with_results(client, &stmt.statement, sender, start)?;
+        execute_query_with_results(client, &stmt.statement, sender, start, settings)?;
     } else {
         execute_modification_query(client, &stmt.statement, sender, start)?;
     }
@@ -30,6 +31,7 @@ fn execute_query_with_results(
     query: &str,
     sender: &ExecSender,
     started_at: Instant,
+    settings: Option<&crate::database::types::OracleSettings>,
 ) -> Result<(), Error> {
     log::info!("Starting DuckDB query: {}", query);
 
@@ -47,18 +49,11 @@ fn execute_query_with_results(
             sender.send(QueryExecEvent::TypesResolved { columns })?;
 
             let mut total_rows = 0;
-            fn batch_size() -> usize {
-                env::var("PGPAD_BATCH_SIZE")
-                    .ok()
-                    .and_then(|v| v.parse::<usize>().ok())
-                    .filter(|&n| n > 0)
-                    .unwrap_or(50)
-            }
-            let batch_size = batch_size();
+            let batch_size = settings.and_then(|s| s.batch_size).or_else(|| env::var("PGPAD_BATCH_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0)).unwrap_or(50);
 
             // DuckDB does not expose decl types like SQLite; pass None for each
             let column_decltypes = (0..column_count).map(|_| None).collect();
-            let mut writer = RowWriter::new(column_decltypes);
+            let mut writer = match settings { Some(s) => RowWriter::with_settings(column_decltypes, Some(s)), None => RowWriter::new(column_decltypes) };
 
             while let Some(row) = rows.next()? {
                 writer.add_row(row)?;
@@ -133,7 +128,7 @@ mod tests {
         let (sender, mut recv) = channel();
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().unwrap();
-            execute_query(&conn, stmt, &sender).unwrap();
+            execute_query(&conn, stmt, &sender, None).unwrap();
         });
 
         let mut events = Vec::new();
@@ -150,7 +145,7 @@ mod tests {
         let (sender, mut recv) = channel();
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().unwrap();
-            execute_query(&conn, stmt, &sender).unwrap();
+            execute_query(&conn, stmt, &sender, None).unwrap();
         });
 
         let event = recv.recv().await.ok_or(anyhow::anyhow!("Channel closed"))?;
@@ -184,6 +179,47 @@ mod tests {
         assert_eq!(inserted, 2);
         let updated = run_modification_query(conn.clone(), "UPDATE users SET name='Alice2' WHERE id=1").await?;
         assert_eq!(updated, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_duckdb_float_specials() -> anyhow::Result<()> {
+        let conn = Connection::open_in_memory().unwrap();
+        let conn = Arc::new(Mutex::new(conn));
+        let query = "SELECT CAST('NaN' AS DOUBLE) AS nan_val, CAST('Infinity' AS DOUBLE) AS inf_val, CAST('-Infinity' AS DOUBLE) AS neg_inf_val, 0.0::DOUBLE AS zero_val";
+        let mut events = run_query(conn.clone(), query).await?.into_iter();
+        let _types = events.next().unwrap();
+        let page = events.next().unwrap();
+        match page {
+            QueryExecEvent::Page { page, .. } => {
+                let v: serde_json::Value = serde_json::from_str(page.get())?;
+                assert_eq!(v, serde_json::json!([["NaN", "inf", "-inf", 0.0]]));
+            }
+            _ => anyhow::bail!("Expected Page"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_duckdb_temporal_and_decimal() -> anyhow::Result<()> {
+        let conn = Connection::open_in_memory().unwrap();
+        let conn = Arc::new(Mutex::new(conn));
+        let query = "SELECT TIMESTAMP '1992-03-22 01:02:03' AS ts, DATE '1992-03-22' AS d, TIME '01:02:03.000004' AS t, INTERVAL '1 year 2 months 3 days 04:05:06.000007' AS iv, CAST('123.456' AS DECIMAL(18,3)) AS dec";
+        let mut events = run_query(conn.clone(), query).await?.into_iter();
+        let _types = events.next().unwrap();
+        let page = events.next().unwrap();
+        match page {
+            QueryExecEvent::Page { page, .. } => {
+                let v: serde_json::Value = serde_json::from_str(page.get())?;
+                let row = &v[0];
+                assert!(row[0].as_str().unwrap().starts_with("1992-03-22 01:02:03"));
+                assert_eq!(row[1], "1992-03-22");
+                assert_eq!(row[2], "01:02:03.000004");
+                assert_eq!(row[3], "1 year 2 mons 3 days 04:05:06.000007");
+                assert_eq!(row[4], 123.456);
+            }
+            _ => anyhow::bail!("Expected Page"),
+        }
         Ok(())
     }
 }

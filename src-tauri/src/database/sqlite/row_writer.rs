@@ -10,6 +10,7 @@ pub struct RowWriter {
     buf: String,
     row_count: usize,
     column_decltypes: Vec<Option<String>>,
+    cfg: RowFormatCfg,
 }
 
 impl RowWriter {
@@ -18,8 +19,10 @@ impl RowWriter {
             buf: String::new(),
             row_count: 0,
             column_decltypes,
+            cfg: RowFormatCfg::from_env(),
         }
     }
+    pub fn with_settings(column_decltypes: Vec<Option<String>>, settings: Option<&crate::database::types::OracleSettings>) -> Self { Self { buf: String::new(), row_count: 0, column_decltypes, cfg: RowFormatCfg::from_settings(settings) } }
 
     pub fn add_row(&mut self, row: &Row) -> Result<(), anyhow::Error> {
         if self.row_count == 0 {
@@ -38,7 +41,7 @@ impl RowWriter {
             }
 
             match row.get_ref(i)? {
-                ValueRef::Null => self.write_json_string("NULL"),
+                ValueRef::Null => self.buf.push_str("null"),
                 ValueRef::Integer(value) if value == 0 || value == 1 => {
                     let decltype = self.column_decltypes[i].as_deref();
                     let looks_like_bool = decltype
@@ -59,7 +62,12 @@ impl RowWriter {
                 ValueRef::Real(value) => write!(&mut self.buf, "{value}")?,
                 ValueRef::Text(value) => {
                     // If this is a JSON object or array, convert it so that it's picked up by JsonInspector in the front-end
-                    let is_json = val_is_json(value);
+            let is_json = {
+                if self.cfg.json_detection == "off" { false } else {
+                    let min_len = self.cfg.json_min_length;
+                    if value.len() < min_len { false } else { val_is_json(value) }
+                }
+            };
                     let Ok(utf8) = std::str::from_utf8(value) else {
                         let utf8_lossy = String::from_utf8_lossy(value);
                         self.write_json_string(&utf8_lossy);
@@ -73,8 +81,17 @@ impl RowWriter {
                     }
                 }
                 ValueRef::Blob(value) => {
-                    // TODO(vini): we can make this more informative eventually
-                    self.write_json_string(&format!("Blob({})", value.len()));
+                    let len = value.len();
+                    match self.cfg.bytes_format.as_str() {
+                        "off" | "len" => self.write_json_string(&format!("Bytes({})", len)),
+                        "full_hex" => self.write_json_string(&format!("0x{}", hex::encode(value))),
+                        _ => {
+                            let n = usize::min(len, self.cfg.bytes_chunk_size);
+                            let hexp = hex::encode(&value[..n]);
+                            if n >= len { self.write_json_string(&format!("0x{}", hexp)); }
+                            else { self.write_json_string(&format!("Bytes({}) preview(0..{}): 0x{}…", len, n, hexp)); }
+                        }
+                    }
                 }
             };
         }
@@ -121,7 +138,15 @@ impl RowWriter {
         }
         self.buf.push('"');
     }
+
 }
+
+struct RowFormatCfg { bytes_format: String, bytes_chunk_size: usize, json_detection: String, json_min_length: usize }
+impl RowFormatCfg {
+    fn from_env() -> Self { Self { bytes_format: std::env::var("PGPAD_BYTES_FORMAT").unwrap_or_else(|_| String::from("len")).to_lowercase(), bytes_chunk_size: std::env::var("PGPAD_BYTES_CHUNK_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0).unwrap_or(4096), json_detection: std::env::var("PGPAD_JSON_DETECTION").unwrap_or_else(|_| String::from("auto")).to_lowercase(), json_min_length: std::env::var("PGPAD_JSON_MIN_LENGTH").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(1) } }
+    fn from_settings(settings: Option<&crate::database::types::OracleSettings>) -> Self { if let Some(s) = settings { Self { bytes_format: s.bytes_format.clone().unwrap_or_else(|| "len".into()).to_lowercase(), bytes_chunk_size: s.bytes_chunk_size.unwrap_or(4096), json_detection: s.json_detection.clone().unwrap_or_else(|| "auto".into()).to_lowercase(), json_min_length: s.json_min_length.unwrap_or(1) } } else { Self::from_env() } }
+}
+ 
 
 #[inline]
 fn val_is_json(value: &[u8]) -> bool {
@@ -264,7 +289,7 @@ mod tests {
     fn null_handling() -> Result<(), Error> {
         let conn = create_test_db()?;
         let result = execute_query_one_row(&conn, "SELECT null_col FROM test_data WHERE id = 1")?;
-        assert_eq!(result, serde_json::json!([["NULL"]]));
+        assert_eq!(result, serde_json::json!([[null]]));
         Ok(())
     }
 
@@ -306,10 +331,10 @@ mod tests {
         let conn = create_test_db()?;
 
         let result = execute_query_one_row(&conn, "SELECT blob_col FROM test_data WHERE id = 1")?;
-        assert_eq!(result, serde_json::json!([["Blob(5)"]]));
+        assert_eq!(result, serde_json::json!([["Bytes(5)"]]));
 
         let result = execute_query_one_row(&conn, "SELECT blob_col FROM test_data WHERE id = 3")?;
-        assert_eq!(result, serde_json::json!([["Blob(0)"]]));
+        assert_eq!(result, serde_json::json!([["Bytes(0)"]]));
 
         Ok(())
     }

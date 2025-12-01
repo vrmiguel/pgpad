@@ -10,6 +10,7 @@ use uuid::Uuid;
 const DB_TYPE_POSTGRES: i32 = 1;
 const DB_TYPE_SQLITE: i32 = 2;
 const DB_TYPE_DUCKDB: i32 = 3;
+const DB_TYPE_ORACLE: i32 = 4;
 
 use crate::{database::types::ConnectionInfo, Result};
 
@@ -24,6 +25,9 @@ impl Migrator {
                 include_str!("../migrations/001.sql"),
                 include_str!("../migrations/002.sql"),
                 include_str!("../migrations/003.sql"),
+                include_str!("../migrations/004.sql"),
+                include_str!("../migrations/005.sql"),
+                include_str!("../migrations/006.sql"),
             ],
         }
     }
@@ -154,7 +158,7 @@ impl Storage {
             .lock()
             .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
-        let (db_type_id, connection_data, ca_cert_path) = match &connection.database_type {
+        let (db_type_id, connection_data, ca_cert_path, wallet_path, tns_alias) = match &connection.database_type {
             crate::database::types::DatabaseInfo::Postgres {
                 connection_string,
                 ca_cert_path,
@@ -162,28 +166,36 @@ impl Storage {
                 DB_TYPE_POSTGRES,
                 connection_string.as_str(),
                 ca_cert_path.as_deref(),
+                None,
+                None,
             ),
             crate::database::types::DatabaseInfo::SQLite { db_path } => {
-                (DB_TYPE_SQLITE, db_path.as_str(), None)
+                (DB_TYPE_SQLITE, db_path.as_str(), None, None, None)
             }
             crate::database::types::DatabaseInfo::DuckDB { db_path } => {
-                (DB_TYPE_DUCKDB, db_path.as_str(), None)
+                (DB_TYPE_DUCKDB, db_path.as_str(), None, None, None)
+            }
+            crate::database::types::DatabaseInfo::Oracle { connection_string, wallet_path, tns_alias } => {
+                (DB_TYPE_ORACLE, connection_string.as_str(), None, wallet_path.as_deref(), tns_alias.as_deref())
             }
         };
 
         conn.execute(
             "INSERT OR REPLACE INTO connections 
-             (id, name, connection_data, database_type_id, ca_cert_path, created_at, updated_at, sort_order) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 
-                (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM connections))",
+             (id, name, connection_data, database_type_id, ca_cert_path, wallet_path, tns_alias, created_at, updated_at, sort_order) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 
+                ?9, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM connections))",
             (
                 &connection.id.to_string(),
                 &connection.name,
                 connection_data,
                 db_type_id,
                 ca_cert_path,
+                wallet_path,
+                tns_alias,
                 now,
                 now,
+                
             ),
         )
         .context("Failed to save connection")?;
@@ -198,7 +210,7 @@ impl Storage {
             .lock()
             .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
-        let (db_type_id, connection_data, ca_cert_path) = match &connection.database_type {
+        let (db_type_id, connection_data, ca_cert_path, wallet_path, tns_alias) = match &connection.database_type {
             crate::database::types::DatabaseInfo::Postgres {
                 connection_string,
                 ca_cert_path,
@@ -206,19 +218,24 @@ impl Storage {
                 DB_TYPE_POSTGRES,
                 connection_string.as_str(),
                 ca_cert_path.as_deref(),
+                None,
+                None,
             ),
             crate::database::types::DatabaseInfo::SQLite { db_path } => {
-                (DB_TYPE_SQLITE, db_path.as_str(), None)
+                (DB_TYPE_SQLITE, db_path.as_str(), None, None, None)
             }
             crate::database::types::DatabaseInfo::DuckDB { db_path } => {
-                (DB_TYPE_DUCKDB, db_path.as_str(), None)
+                (DB_TYPE_DUCKDB, db_path.as_str(), None, None, None)
+            }
+            crate::database::types::DatabaseInfo::Oracle { connection_string, wallet_path, tns_alias } => {
+                (DB_TYPE_ORACLE, connection_string.as_str(), None, wallet_path.as_deref(), tns_alias.as_deref())
             }
         };
 
         let updated_rows = conn
             .execute(
                 "UPDATE connections 
-             SET name = ?2, connection_data = ?3, database_type_id = ?4, ca_cert_path = ?5, updated_at = ?6
+             SET name = ?2, connection_data = ?3, database_type_id = ?4, ca_cert_path = ?5, wallet_path = ?7, tns_alias = ?8, updated_at = ?6
              WHERE id = ?1",
                 (
                     &connection.id.to_string(),
@@ -227,6 +244,8 @@ impl Storage {
                     db_type_id,
                     ca_cert_path,
                     now,
+                    wallet_path,
+                    tns_alias,
                 ),
             )
             .context("Failed to update connection")?;
@@ -251,7 +270,7 @@ impl Storage {
             .prepare(
                 "SELECT c.id, c.name, c.connection_data, 
                         COALESCE(dt.name, 'postgres') as db_type,
-                        c.ca_cert_path
+                        c.ca_cert_path, c.wallet_path, c.tns_alias
                  FROM connections c
                  LEFT JOIN database_types dt ON c.database_type_id = dt.id
                  ORDER BY c.sort_order, c.name",
@@ -263,6 +282,8 @@ impl Storage {
                 let connection_data: String = row.get(2)?;
                 let db_type: String = row.get(3)?;
                 let ca_cert_path: Option<String> = row.get(4)?;
+                let wallet_path: Option<String> = row.get(5)?;
+                let tns_alias: Option<String> = row.get(6)?;
 
                 let database_type = match db_type.as_str() {
                     "postgres" => crate::database::types::DatabaseInfo::Postgres {
@@ -274,6 +295,11 @@ impl Storage {
                     },
                     "duckdb" => crate::database::types::DatabaseInfo::DuckDB {
                         db_path: connection_data,
+                    },
+                    "oracle" => crate::database::types::DatabaseInfo::Oracle {
+                        connection_string: connection_data,
+                        wallet_path,
+                        tns_alias,
                     },
                     _ => crate::database::types::DatabaseInfo::Postgres {
                         connection_string: connection_data, // Default to postgres for unknown types

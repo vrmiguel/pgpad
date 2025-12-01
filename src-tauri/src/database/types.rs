@@ -27,6 +27,7 @@ pub struct StatementInfo {
     pub first_page: Option<Box<RawValue>>,
     pub affected_rows: Option<usize>,
     pub error: Option<String>,
+    pub is_explain_plan: bool,
 }
 
 #[repr(u8)]
@@ -69,6 +70,11 @@ pub enum DatabaseInfo {
     DuckDB {
         db_path: String,
     },
+    Oracle {
+        connection_string: String,
+        wallet_path: Option<String>,
+        tns_alias: Option<String>,
+    },
 }
 
 #[derive(Debug)]
@@ -90,6 +96,9 @@ pub enum DatabaseClient {
     DuckDB {
         connection: Arc<Mutex<duckdb::Connection>>,
     },
+    Oracle {
+        connection: Arc<Mutex<oracle::Connection>>,
+    },
 }
 
 #[derive(Debug)]
@@ -106,6 +115,12 @@ pub enum Database {
     DuckDB {
         db_path: String,
         connection: Option<Arc<Mutex<duckdb::Connection>>>,
+    },
+    Oracle {
+        connection_string: String,
+        wallet_path: Option<String>,
+        tns_alias: Option<String>,
+        connection: Option<Arc<Mutex<oracle::Connection>>>,
     },
 }
 
@@ -130,6 +145,11 @@ impl DatabaseConnection {
                 Database::DuckDB { db_path, .. } => DatabaseInfo::DuckDB {
                     db_path: db_path.clone(),
                 },
+                Database::Oracle { connection_string, wallet_path, tns_alias, .. } => DatabaseInfo::Oracle {
+                    connection_string: connection_string.clone(),
+                    wallet_path: wallet_path.clone(),
+                    tns_alias: tns_alias.clone(),
+                },
             },
         }
     }
@@ -152,6 +172,12 @@ impl DatabaseConnection {
                 db_path,
                 connection: None,
             },
+            DatabaseInfo::Oracle { connection_string, wallet_path, tns_alias } => Database::Oracle {
+                connection_string,
+                wallet_path,
+                tns_alias,
+                connection: None,
+            },
         };
 
         Self {
@@ -167,6 +193,7 @@ impl DatabaseConnection {
             Database::Postgres { client, .. } => client.is_some(),
             Database::SQLite { connection, .. } => connection.is_some(),
             Database::DuckDB { connection, .. } => connection.is_some(),
+            Database::Oracle { connection, .. } => connection.is_some(),
         }
     }
 
@@ -205,6 +232,10 @@ impl DatabaseConnection {
                 connection: None, ..
             } => {
                 return Err(Error::Any(anyhow::anyhow!("DuckDB connection not active")));
+            }
+            Database::Oracle { connection: Some(oracle_conn), .. } => DatabaseClient::Oracle { connection: oracle_conn.clone() },
+            Database::Oracle { connection: None, .. } => {
+                return Err(Error::Any(anyhow::anyhow!("Oracle connection not active")));
             }
         };
 
@@ -257,6 +288,17 @@ pub enum QueryExecEvent {
         /// JSON-serialized Vec<Vec<Json>>
         page: Page,
     },
+    #[allow(dead_code)]
+    BlobChunk {
+        #[allow(dead_code)]
+        row_index: usize,
+        #[allow(dead_code)]
+        column_index: usize,
+        #[allow(dead_code)]
+        offset: usize,
+        #[allow(dead_code)]
+        hex_chunk: String,
+    },
     Finished {
         #[allow(unused)]
         elapsed_ms: u64,
@@ -266,4 +308,25 @@ pub enum QueryExecEvent {
         /// If the query failed, this will contain the error message
         error: Option<String>,
     },
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OracleSettings {
+    pub raw_format: Option<String>,
+    pub raw_chunk_size: Option<usize>,
+    pub blob_stream: Option<String>,
+    pub blob_chunk_size: Option<usize>,
+    pub allow_db_link_ping: Option<bool>,
+    pub xplan_format: Option<String>,
+    pub xplan_mode: Option<String>,
+    pub reconnect_max_retries: Option<u32>,
+    pub reconnect_backoff_ms: Option<u64>,
+    pub stmt_cache_size: Option<u32>,
+    pub batch_size: Option<usize>,
+    pub bytes_format: Option<String>,
+    pub bytes_chunk_size: Option<usize>,
+    pub timestamp_tz_mode: Option<String>,
+    pub numeric_string_policy: Option<String>,
+    pub numeric_precision_threshold: Option<usize>,
+    pub json_detection: Option<String>,
+    pub json_min_length: Option<usize>,
 }

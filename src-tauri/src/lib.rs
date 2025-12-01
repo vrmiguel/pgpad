@@ -93,6 +93,7 @@ pub fn run() {
             database::commands::get_query_status,
             database::commands::get_page_count,
             database::commands::get_columns,
+            database::commands::cancel_query,
             database::commands::get_connections,
             database::commands::remove_connection,
             database::commands::initialize_connections,

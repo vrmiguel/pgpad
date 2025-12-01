@@ -14,9 +14,10 @@ pub async fn execute_query(
     client: &Client,
     stmt: ParsedStatement,
     sender: &ExecSender,
+    settings: Option<&crate::database::types::OracleSettings>,
 ) -> Result<(), Error> {
     if stmt.returns_values {
-        execute_query_with_results(client, &stmt.statement, sender).await?;
+        execute_query_with_results(client, &stmt.statement, sender, settings).await?;
     } else {
         execute_modification_query(client, &stmt.statement, sender).await?;
     }
@@ -28,6 +29,7 @@ async fn execute_query_with_results(
     client: &Client,
     query: &str,
     sender: &ExecSender,
+    settings: Option<&crate::database::types::OracleSettings>,
 ) -> Result<(), Error> {
     let started_at = std::time::Instant::now();
     log::info!("Starting streaming query: {}", query);
@@ -63,17 +65,10 @@ async fn execute_query_with_results(
         Ok(stream) => {
             pin_mut!(stream);
 
-            fn batch_size() -> usize {
-                env::var("PGPAD_BATCH_SIZE")
-                    .ok()
-                    .and_then(|v| v.parse::<usize>().ok())
-                    .filter(|&n| n > 0)
-                    .unwrap_or(50)
-            }
-            let batch_size = batch_size();
+            let batch_size = settings.and_then(|s| s.batch_size).or_else(|| env::var("PGPAD_BATCH_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0)).unwrap_or(50);
             let mut total_rows = 0;
 
-            let mut writer = RowWriter::new();
+            let mut writer = match settings { Some(s) => RowWriter::with_settings(Some(s)), None => RowWriter::new() };
 
             loop {
                 match stream.try_next().await {
@@ -200,7 +195,7 @@ mod tests {
         let (sender, mut recv) = channel();
 
         tokio::task::spawn(async move {
-            execute_query(&conn, stmt, &sender).await.unwrap();
+            execute_query(&conn, stmt, &sender, None).await.unwrap();
         });
 
         let mut events = Vec::new();
@@ -225,7 +220,7 @@ mod tests {
         let (sender, mut recv) = channel();
 
         tokio::task::spawn(async move {
-            execute_query(&conn, stmt, &sender).await.unwrap();
+            execute_query(&conn, stmt, &sender, None).await.unwrap();
         });
 
         let event = recv

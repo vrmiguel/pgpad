@@ -35,11 +35,14 @@ struct ExecState {
     /// If set, the UI can now render the results of this query,
     /// even if it's still on-going (e.g. we already have enough data to render the first page)
     renderable: Condvar,
+    is_explain_plan: bool,
+    oracle_settings: Option<crate::database::types::OracleSettings>,
 }
 
 /// Executes and keeps track of the execution of queries.
 pub struct StatementManager {
     queries: DashMap<QueryId, Arc<ExecState>>,
+    handles: DashMap<QueryId, tauri::async_runtime::JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for StatementManager {
@@ -53,6 +56,7 @@ impl StatementManager {
     pub fn new() -> Self {
         Self {
             queries: DashMap::new(),
+            handles: DashMap::new(),
         }
     }
 
@@ -62,12 +66,15 @@ impl StatementManager {
     // TODO(vini): not sure if this will actually cancel the ongoing query.
     // Might need to store the joinhandles so we can properly cancel them
     pub fn submit_query(&self, client: DatabaseClient, query: &str) -> Result<Vec<QueryId>, Error> {
+        for h in self.handles.iter() { h.value().abort(); }
+        self.handles.clear();
         self.queries.clear();
 
         let parse_statements = match &client {
             DatabaseClient::Postgres { .. } => postgres::parser::parse_statements,
             DatabaseClient::SQLite { .. } => sqlite::parser::parse_statements,
             DatabaseClient::DuckDB { .. } => crate::database::duckdb::parser::parse_statements,
+            DatabaseClient::Oracle { .. } => crate::database::oracle::parser::parse_statements,
         };
 
         let statements = parse_statements(query)?;
@@ -76,6 +83,329 @@ impl StatementManager {
         for (idx, statement) in statements.into_iter().enumerate() {
             self.create_worker(idx as QueryId, client.clone(), statement);
             query_ids.push(idx);
+        }
+
+        Ok(query_ids)
+    }
+
+    pub fn submit_query_with_settings(
+        &self,
+        client: DatabaseClient,
+        query: &str,
+        oracle_settings: Option<crate::database::types::OracleSettings>,
+    ) -> Result<Vec<QueryId>, Error> {
+        for h in self.handles.iter() { h.value().abort(); }
+        self.handles.clear();
+        self.queries.clear();
+
+        let parse_statements = match &client {
+            DatabaseClient::Postgres { .. } => postgres::parser::parse_statements,
+            DatabaseClient::SQLite { .. } => sqlite::parser::parse_statements,
+            DatabaseClient::DuckDB { .. } => crate::database::duckdb::parser::parse_statements,
+            DatabaseClient::Oracle { .. } => crate::database::oracle::parser::parse_statements,
+        };
+
+        let statements = parse_statements(query)?;
+        let mut query_ids = Vec::with_capacity(statements.len());
+
+        for (idx, statement) in statements.into_iter().enumerate() {
+            // create worker with settings on exec_state
+            let exec_storage = ExecState {
+                status: AtomicU8::new(QueryStatus::Pending as u8),
+                pages: RwLock::new(vec![]),
+                error: RwLock::new(None),
+                columns: RwLock::new(None),
+                returns_values: statement.returns_values,
+                rows_affected: RwLock::new(None),
+                renderable: Condvar::new(),
+                is_explain_plan: statement.explain_plan,
+                oracle_settings: oracle_settings.clone(),
+            };
+
+            let exec_storage = Arc::new(exec_storage);
+            self.queries.insert(idx as QueryId, exec_storage.clone());
+
+            let (sender, recv) = channel();
+
+            match client.clone() {
+                DatabaseClient::Oracle { connection } => {
+                    let mut stmt = statement;
+                    let up = stmt.statement.to_uppercase();
+                    if up.starts_with("CALL ") || up.starts_with("BEGIN ") || up.starts_with("DECLARE ") {
+                        if let Ok(conn) = connection.lock() {
+                            let outs = crate::database::oracle::execute::detect_out_args(&conn, &stmt.statement);
+                            if !outs.is_empty() { stmt.returns_values = true; }
+                        }
+                    }
+                    let settings_clone = exec_storage.oracle_settings.clone();
+                    let handle = spawn_blocking(move || {
+                        match connection.lock() {
+                            Ok(conn) => {
+                                if let Err(err) = crate::database::oracle::execute::execute_query(&conn, stmt, &sender, settings_clone.as_ref()) {
+                                    log::error!("Error executing Oracle query: {}", err);
+                                }
+                            }
+                            Err(e) => { log::error!("Mutex poisoned: {}", e); }
+                        }
+                    });
+                    self.handles.insert(idx as QueryId, handle);
+                }
+                DatabaseClient::Postgres { client } => {
+                    let settings_clone = exec_storage.oracle_settings.clone();
+                    let handle = spawn(async move {
+                        if let Err(err) = postgres::execute::execute_query(&client, statement, &sender, settings_clone.as_ref()).await { log::error!("Error executing Postgres query: {}", err); }
+                    });
+                    self.handles.insert(idx as QueryId, handle);
+                }
+                DatabaseClient::SQLite { connection } => {
+                    let settings_clone = exec_storage.oracle_settings.clone();
+                    let handle = spawn_blocking(move || { match connection.lock() { Ok(conn) => {
+                        if let Err(err) = sqlite::execute::execute_query(&conn, statement, &sender, settings_clone.as_ref()) { log::error!("Error executing SQLite query: {}", err); }
+                    } Err(e) => log::error!("Mutex poisoned: {}", e) } });
+                    self.handles.insert(idx as QueryId, handle);
+                }
+                DatabaseClient::DuckDB { connection } => {
+                    let settings_clone = exec_storage.oracle_settings.clone();
+                    let handle = spawn_blocking(move || { match connection.lock() { Ok(conn) => {
+                        if let Err(err) = crate::database::duckdb::execute::execute_query(&conn, statement, &sender, settings_clone.as_ref()) { log::error!("Error executing DuckDB query: {}", err); }
+                    } Err(e) => log::error!("Mutex poisoned: {}", e) } });
+                    self.handles.insert(idx as QueryId, handle);
+                }
+            }
+
+            tokio::task::spawn(async move {
+                let mut recv = recv;
+                exec_storage.status.store(QueryStatus::Running as u8, Ordering::Relaxed);
+                while let Some(event) = recv.recv().await {
+                    match event {
+                        QueryExecEvent::TypesResolved { columns } => {
+                            if let Ok(mut w) = exec_storage.columns.write() { *w = Some(columns); } else { log::error!("RwLock poisoned"); }
+                        }
+                        QueryExecEvent::Page { page_amount: _, page } => {
+                            if let Ok(mut w) = exec_storage.pages.write() { w.push(page); } else { log::error!("RwLock poisoned"); }
+                            exec_storage.renderable.set();
+                        }
+                        QueryExecEvent::BlobChunk { .. } => {
+                            // Auxiliary streaming event; ignore for page aggregation.
+                        }
+                        QueryExecEvent::Finished { elapsed_ms: _, affected_rows, error } => {
+                            if let Some(err) = error { if let Ok(mut w) = exec_storage.error.write() { *w = Some(err); } else { log::error!("RwLock poisoned"); } exec_storage.status.store(QueryStatus::Error as u8, Ordering::Relaxed); }
+                            else { exec_storage.status.store(QueryStatus::Completed as u8, Ordering::Relaxed); if let Ok(mut w) = exec_storage.rows_affected.write() { *w = Some(affected_rows); } else { log::error!("RwLock poisoned"); } }
+                            exec_storage.renderable.set(); break; }
+                    }
+                }
+            });
+
+            query_ids.push(idx as QueryId);
+        }
+
+        Ok(query_ids)
+    }
+
+    pub fn submit_query_with_params(
+        &self,
+        client: DatabaseClient,
+        query: &str,
+        params: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<Vec<QueryId>, Error> {
+        for h in self.handles.iter() { h.value().abort(); }
+        self.handles.clear();
+        self.queries.clear();
+
+        let parse_statements = match &client {
+            DatabaseClient::Postgres { .. } => postgres::parser::parse_statements,
+            DatabaseClient::SQLite { .. } => sqlite::parser::parse_statements,
+            DatabaseClient::DuckDB { .. } => crate::database::duckdb::parser::parse_statements,
+            DatabaseClient::Oracle { .. } => crate::database::oracle::parser::parse_statements,
+        };
+
+        let statements = parse_statements(query)?;
+        let mut query_ids = Vec::with_capacity(statements.len());
+
+        for (idx, statement) in statements.into_iter().enumerate() {
+            let mut returns_values = statement.returns_values;
+            if let DatabaseClient::Oracle { connection } = &client {
+                let up = statement.statement.to_uppercase();
+                if up.starts_with("CALL ") || up.starts_with("BEGIN ") || up.starts_with("DECLARE ") {
+                    let rv = tauri::async_runtime::block_on(tauri::async_runtime::spawn_blocking({ let connection = connection.clone(); let sql = statement.statement.clone(); move || {
+                        match connection.lock() { Ok(conn) => {
+                            let outs = crate::database::oracle::execute::detect_out_args(&conn, &sql);
+                            !outs.is_empty()
+                        }, Err(_) => returns_values }
+                    }})).unwrap_or(returns_values);
+                    returns_values = rv;
+                }
+            }
+            let exec_storage = ExecState {
+                status: AtomicU8::new(QueryStatus::Pending as u8),
+                pages: RwLock::new(vec![]),
+                error: RwLock::new(None),
+                columns: RwLock::new(None),
+                returns_values,
+                rows_affected: RwLock::new(None),
+                renderable: Condvar::new(),
+                is_explain_plan: statement.explain_plan,
+                oracle_settings: None,
+            };
+
+            let exec_storage = Arc::new(exec_storage);
+            self.queries.insert(idx as QueryId, exec_storage.clone());
+
+            let (sender, recv) = channel();
+
+            match client.clone() {
+                DatabaseClient::Oracle { connection } => {
+                    let stmt = statement;
+                    let params_clone = params.clone();
+                    let settings_clone: Option<crate::database::types::OracleSettings> = None;
+                    let handle = spawn_blocking(move || {
+                        match connection.lock() {
+                            Ok(conn) => {
+                                if let Err(err) = crate::database::oracle::execute::execute_query_with_params(&conn, stmt, &sender, params_clone, settings_clone.as_ref()) {
+                                    log::error!("Error executing Oracle prepared query: {}", err);
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Mutex poisoned: {}", e);
+                            }
+                        }
+                    });
+                    self.handles.insert(idx as QueryId, handle);
+                }
+                _ => {
+                    // Fallback to regular submission for non-Oracle
+                    self.create_worker(idx as QueryId, client.clone(), statement);
+                }
+            }
+
+            tokio::task::spawn(async move {
+                let mut recv = recv;
+                exec_storage.status.store(QueryStatus::Running as u8, Ordering::Relaxed);
+                while let Some(event) = recv.recv().await {
+                    match event {
+                        QueryExecEvent::TypesResolved { columns } => {
+                            if let Ok(mut w) = exec_storage.columns.write() { *w = Some(columns); } else { log::error!("RwLock poisoned"); }
+                        }
+                        QueryExecEvent::Page { page_amount: _, page } => {
+                            if let Ok(mut w) = exec_storage.pages.write() { w.push(page); } else { log::error!("RwLock poisoned"); }
+                            exec_storage.renderable.set();
+                        }
+                        QueryExecEvent::BlobChunk { .. } => {
+                        }
+                        QueryExecEvent::Finished { elapsed_ms: _, affected_rows, error } => {
+                            if let Some(err) = error {
+                                if let Ok(mut w) = exec_storage.error.write() { *w = Some(err); } else { log::error!("RwLock poisoned"); }
+                                exec_storage.status.store(QueryStatus::Error as u8, Ordering::Relaxed);
+                            } else {
+                                exec_storage.status.store(QueryStatus::Completed as u8, Ordering::Relaxed);
+                                if let Ok(mut w) = exec_storage.rows_affected.write() { *w = Some(affected_rows); } else { log::error!("RwLock poisoned"); }
+                            }
+                            exec_storage.renderable.set();
+                            break;
+                        }
+                    }
+                }
+            });
+
+            query_ids.push(idx as QueryId);
+        }
+
+        Ok(query_ids)
+    }
+
+    pub fn submit_query_with_params_settings(
+        &self,
+        client: DatabaseClient,
+        query: &str,
+        params: serde_json::Map<String, serde_json::Value>,
+        oracle_settings: Option<crate::database::types::OracleSettings>,
+    ) -> Result<Vec<QueryId>, Error> {
+        for h in self.handles.iter() { h.value().abort(); }
+        self.handles.clear();
+        self.queries.clear();
+
+        let parse_statements = match &client {
+            DatabaseClient::Postgres { .. } => postgres::parser::parse_statements,
+            DatabaseClient::SQLite { .. } => sqlite::parser::parse_statements,
+            DatabaseClient::DuckDB { .. } => crate::database::duckdb::parser::parse_statements,
+            DatabaseClient::Oracle { .. } => crate::database::oracle::parser::parse_statements,
+        };
+
+        let statements = parse_statements(query)?;
+        let mut query_ids = Vec::with_capacity(statements.len());
+
+        for (idx, statement) in statements.into_iter().enumerate() {
+            let mut returns_values = statement.returns_values;
+            if let DatabaseClient::Oracle { connection } = &client {
+                let up = statement.statement.to_uppercase();
+                if up.starts_with("CALL ") || up.starts_with("BEGIN ") || up.starts_with("DECLARE ") {
+                    let rv = tauri::async_runtime::block_on(tauri::async_runtime::spawn_blocking({ let connection = connection.clone(); let sql = statement.statement.clone(); move || {
+                        match connection.lock() { Ok(conn) => {
+                            let outs = crate::database::oracle::execute::detect_out_args(&conn, &sql);
+                            !outs.is_empty()
+                        }, Err(_) => returns_values }
+                    }})).unwrap_or(returns_values);
+                    returns_values = rv;
+                }
+            }
+            let exec_storage = ExecState {
+                status: AtomicU8::new(QueryStatus::Pending as u8),
+                pages: RwLock::new(vec![]),
+                error: RwLock::new(None),
+                columns: RwLock::new(None),
+                returns_values,
+                rows_affected: RwLock::new(None),
+                renderable: Condvar::new(),
+                is_explain_plan: statement.explain_plan,
+                oracle_settings: oracle_settings.clone(),
+            };
+
+            let exec_storage = Arc::new(exec_storage);
+            self.queries.insert(idx as QueryId, exec_storage.clone());
+
+            let (sender, recv) = channel();
+
+            match client.clone() {
+                DatabaseClient::Oracle { connection } => {
+                    let stmt = statement;
+                    let params_clone = params.clone();
+                    let settings_clone = exec_storage.oracle_settings.clone();
+                    let handle = spawn_blocking(move || {
+                        match connection.lock() {
+                            Ok(conn) => {
+                                if let Err(err) = crate::database::oracle::execute::execute_query_with_params(&conn, stmt, &sender, params_clone, settings_clone.as_ref()) {
+                                    log::error!("Error executing Oracle prepared query: {}", err);
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Mutex poisoned: {}", e);
+                            }
+                        }
+                    });
+                    self.handles.insert(idx as QueryId, handle);
+                }
+                _ => {
+                    self.create_worker(idx as QueryId, client.clone(), statement);
+                }
+            }
+
+            tokio::task::spawn(async move {
+                let mut recv = recv;
+                exec_storage.status.store(QueryStatus::Running as u8, Ordering::Relaxed);
+                while let Some(event) = recv.recv().await {
+                    match event {
+                        QueryExecEvent::TypesResolved { columns } => { if let Ok(mut w) = exec_storage.columns.write() { *w = Some(columns); } else { log::error!("RwLock poisoned"); } }
+                        QueryExecEvent::Page { page_amount: _, page } => { if let Ok(mut w) = exec_storage.pages.write() { w.push(page); } else { log::error!("RwLock poisoned"); } exec_storage.renderable.set(); }
+                        QueryExecEvent::BlobChunk { .. } => { }
+                        QueryExecEvent::Finished { elapsed_ms: _, affected_rows, error } => {
+                            if let Some(err) = error { if let Ok(mut w) = exec_storage.error.write() { *w = Some(err); } else { log::error!("RwLock poisoned"); } exec_storage.status.store(QueryStatus::Error as u8, Ordering::Relaxed); }
+                            else { exec_storage.status.store(QueryStatus::Completed as u8, Ordering::Relaxed); if let Ok(mut w) = exec_storage.rows_affected.write() { *w = Some(affected_rows); } else { log::error!("RwLock poisoned"); } }
+                            exec_storage.renderable.set(); break; }
+                    }
+                }
+            });
+
+            query_ids.push(idx as QueryId);
         }
 
         Ok(query_ids)
@@ -108,6 +438,7 @@ impl StatementManager {
                 .read()
                 .map_err(|e| Error::Any(anyhow::anyhow!("RwLock poisoned: {}", e)))?
                 .clone(),
+            is_explain_plan: exec_state.is_explain_plan,
         };
 
         Ok(info)
@@ -167,6 +498,8 @@ impl StatementManager {
             returns_values: stmt.returns_values,
             rows_affected: RwLock::new(None),
             renderable: Condvar::new(),
+            is_explain_plan: stmt.explain_plan,
+            oracle_settings: None,
         };
 
         let exec_storage = Arc::new(exec_storage);
@@ -176,18 +509,19 @@ impl StatementManager {
 
         match client {
             DatabaseClient::Postgres { client } => {
-                spawn(async move {
-                    if let Err(err) = postgres::execute::execute_query(&client, stmt, &sender).await
+                let handle = spawn(async move {
+                    if let Err(err) = postgres::execute::execute_query(&client, stmt, &sender, None).await
                     {
                         log::error!("Error executing Postgres query: {}", err);
                     }
                 });
+                self.handles.insert(id, handle);
             }
             DatabaseClient::SQLite { connection } => {
-                spawn_blocking(move || {
+                let handle = spawn_blocking(move || {
                     match connection.lock() {
                         Ok(conn) => {
-                            if let Err(err) = sqlite::execute::execute_query(&conn, stmt, &sender) {
+                            if let Err(err) = sqlite::execute::execute_query(&conn, stmt, &sender, None) {
                                 log::error!("Error executing SQLite query: {}", err);
                             }
                         }
@@ -196,12 +530,13 @@ impl StatementManager {
                         }
                     }
                 });
+                self.handles.insert(id, handle);
             }
             DatabaseClient::DuckDB { connection } => {
-                spawn_blocking(move || {
+                let handle = spawn_blocking(move || {
                     match connection.lock() {
                         Ok(conn) => {
-                            if let Err(err) = crate::database::duckdb::execute::execute_query(&conn, stmt, &sender) {
+                            if let Err(err) = crate::database::duckdb::execute::execute_query(&conn, stmt, &sender, None) {
                                 log::error!("Error executing DuckDB query: {}", err);
                             }
                         }
@@ -210,6 +545,33 @@ impl StatementManager {
                         }
                     }
                 });
+                self.handles.insert(id, handle);
+            }
+            DatabaseClient::Oracle { connection } => {
+                let mut stmt = stmt;
+                let up = stmt.statement.to_uppercase();
+                if up.starts_with("CALL ") || up.starts_with("BEGIN ") || up.starts_with("DECLARE ") {
+                    // refine returns_values using ALL_ARGUMENTS
+                    if let Ok(conn) = connection.lock() {
+                        let outs = crate::database::oracle::execute::detect_out_args(&conn, &stmt.statement);
+                        if !outs.is_empty() {
+                            stmt.returns_values = true;
+                        }
+                    }
+                }
+                let handle = spawn_blocking(move || {
+                    match connection.lock() {
+                        Ok(conn) => {
+                            if let Err(err) = crate::database::oracle::execute::execute_query(&conn, stmt, &sender, None) {
+                                log::error!("Error executing Oracle query: {}", err);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Mutex poisoned: {}", e);
+                        }
+                    }
+                });
+                self.handles.insert(id, handle);
             }
         }
 
@@ -239,6 +601,8 @@ impl StatementManager {
                             log::error!("RwLock poisoned");
                         }
                         exec_storage.renderable.set();
+                    }
+                    QueryExecEvent::BlobChunk { .. } => {
                     }
                     QueryExecEvent::Finished {
                         elapsed_ms: _,
@@ -271,6 +635,15 @@ impl StatementManager {
                 }
             }
         });
+    }
+
+    pub fn cancel_query(&self, query_id: QueryId) -> Result<(), Error> {
+        if let Some(h) = self.handles.remove(&query_id) { h.1.abort(); }
+        let exec_state = self.get(query_id)?;
+        exec_state.status.store(QueryStatus::Error as u8, Ordering::Relaxed);
+        if let Ok(mut w) = exec_state.error.write() { *w = Some(String::from("Cancelled")); }
+        exec_state.renderable.set();
+        Ok(())
     }
 
     fn get(

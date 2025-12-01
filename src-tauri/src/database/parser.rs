@@ -8,6 +8,7 @@ pub struct ParsedStatement {
     pub returns_values: bool,
     #[expect(unused)]
     pub is_read_only: bool,
+    pub explain_plan: bool,
 }
 
 pub trait SqlDialectExt {
@@ -148,6 +149,7 @@ where
             statement: statement.to_string(),
             returns_values: T::returns_values(&statement),
             is_read_only: T::is_read_only(&statement),
+            explain_plan: false,
         });
     }
 
