@@ -63,12 +63,15 @@ pub fn run() {
         .manage(app_state)
         .manage(certificates)
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(
-                    "trace,tokio_postgres=info,tao=info,sqlparser=info,rustls=info",
-                ))
-                .init();
-            }
+            let default = if cfg!(debug_assertions) {
+                "trace,tokio_postgres=info,tao=info,sqlparser=info,rustls=info"
+            } else {
+                "info,tokio_postgres=warn,tao=warn,sqlparser=warn,rustls=warn"
+            };
+            env_logger::Builder::from_env(
+                env_logger::Env::default().default_filter_or(default),
+            )
+            .init();
 
             init::build_window(app)?;
             init::build_menu(app)?;

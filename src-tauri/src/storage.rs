@@ -147,7 +147,10 @@ impl Storage {
 
     pub fn save_connection(&self, connection: &ConnectionInfo) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
         let (db_type_id, connection_data, ca_cert_path) = match &connection.database_type {
             crate::database::types::DatabaseInfo::Postgres {
@@ -185,7 +188,10 @@ impl Storage {
 
     pub fn update_connection(&self, connection: &ConnectionInfo) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
         let (db_type_id, connection_data, ca_cert_path) = match &connection.database_type {
             crate::database::types::DatabaseInfo::Postgres {
@@ -229,7 +235,10 @@ impl Storage {
 
     // TODO: add `get_connection`
     pub fn get_connections(&self) -> Result<Vec<ConnectionInfo>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         let mut stmt = conn
             .prepare(
                 "SELECT c.id, c.name, c.connection_data, 
@@ -285,7 +294,10 @@ impl Storage {
     }
 
     pub fn remove_connection(&self, connection_id: &Uuid) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         conn.execute(
             "DELETE FROM connections WHERE id = ?1",
             [connection_id.to_string()],
@@ -296,7 +308,10 @@ impl Storage {
 
     pub fn update_last_connected(&self, connection_id: &Uuid) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         conn.execute(
             "UPDATE connections SET last_connected_at = ?1 WHERE id = ?2",
             (now, connection_id.to_string()),
@@ -306,7 +321,10 @@ impl Storage {
     }
 
     pub fn save_query_history(&self, entry: &QueryHistoryEntry) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         conn.execute(
             "INSERT INTO query_history 
              (connection_id, query_text, executed_at, duration_ms, status, row_count, error_message)
@@ -331,7 +349,10 @@ impl Storage {
         limit: Option<i64>,
     ) -> Result<Vec<QueryHistoryEntry>> {
         let limit = limit.unwrap_or(100);
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         let mut stmt = conn.prepare(
             "SELECT id, connection_id, query_text, executed_at, duration_ms, status, row_count, error_message
              FROM query_history 
@@ -364,7 +385,10 @@ impl Storage {
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         let mut stmt = conn
             .prepare("SELECT value FROM app_settings WHERE key = ?1")
             .context("Failed to prepare settings statement")?;
@@ -381,7 +405,10 @@ impl Storage {
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?1, ?2, ?3)",
             (key, value, now),
@@ -392,7 +419,10 @@ impl Storage {
 
     pub fn save_query(&self, query: &SavedQuery) -> Result<i64> {
         let now = chrono::Utc::now().timestamp();
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
         if query.id == 0 {
             conn.execute(
@@ -434,7 +464,10 @@ impl Storage {
     }
 
     pub fn get_saved_queries(&self, connection_id: Option<&Uuid>) -> Result<Vec<SavedQuery>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
         let mut queries = Vec::new();
 
@@ -521,7 +554,10 @@ impl Storage {
     }
 
     pub fn delete_saved_query(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         conn.execute("DELETE FROM saved_queries WHERE id = ?1", [id])
             .context("Failed to delete saved query")?;
         Ok(())

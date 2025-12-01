@@ -59,8 +59,8 @@ where
     let res = conn.await;
     log::info!("Connection finished");
     match res {
-        Ok(()) => println!("Connected successfully"),
-        Err(err) => eprintln!("Error or disconnect: {err:?}"),
+        Ok(()) => log::info!("Connected successfully"),
+        Err(err) => log::error!("Error or disconnect: {:?}", err),
     }
 }
 

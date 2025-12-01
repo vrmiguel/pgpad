@@ -90,13 +90,23 @@ impl StatementManager {
             returns_values,
             status: exec_state.status.load(Ordering::Relaxed).into(),
             first_page: if returns_values {
-                let pages = exec_state.pages.read().expect("RwLock poisoned");
+                let pages = exec_state
+                    .pages
+                    .read()
+                    .map_err(|e| Error::Any(anyhow::anyhow!("RwLock poisoned: {}", e)))?;
                 pages.first().cloned()
             } else {
                 None
             },
-            affected_rows: *exec_state.rows_affected.read().expect("RwLock poisoned"),
-            error: exec_state.error.read().expect("RwLock poisoned").clone(),
+            affected_rows: *exec_state
+                .rows_affected
+                .read()
+                .map_err(|e| Error::Any(anyhow::anyhow!("RwLock poisoned: {}", e)))?,
+            error: exec_state
+                .error
+                .read()
+                .map_err(|e| Error::Any(anyhow::anyhow!("RwLock poisoned: {}", e)))?
+                .clone(),
         };
 
         Ok(info)
@@ -105,7 +115,10 @@ impl StatementManager {
     /// Fetches a page of results for a given query.
     pub fn fetch_page(&self, query_id: QueryId, page_idx: usize) -> Result<Option<Page>, Error> {
         let exec_state = self.get(query_id)?;
-        let pages = exec_state.pages.read().expect("RwLock poisoned");
+        let pages = exec_state
+            .pages
+            .read()
+            .map_err(|e| Error::Any(anyhow::anyhow!("RwLock poisoned: {}", e)))?;
         Ok(pages.get(page_idx).cloned())
     }
 
@@ -122,14 +135,21 @@ impl StatementManager {
 
     pub fn get_page_count(&self, query_id: QueryId) -> Result<usize, Error> {
         let exec_state = self.get(query_id)?;
-        let page_count = exec_state.pages.read().expect("RwLock poisoned").len();
+        let page_count = exec_state
+            .pages
+            .read()
+            .map_err(|e| Error::Any(anyhow::anyhow!("RwLock poisoned: {}", e)))?
+            .len();
         Ok(page_count)
     }
 
     pub fn get_columns(&self, query_id: QueryId) -> Result<Option<Box<RawValue>>, Error> {
         let exec_state = self.get(query_id)?;
 
-        let columns = exec_state.columns.read().expect("RwLock poisoned");
+        let columns = exec_state
+            .columns
+            .read()
+            .map_err(|e| Error::Any(anyhow::anyhow!("RwLock poisoned: {}", e)))?;
 
         Ok(columns.clone())
     }
@@ -164,9 +184,15 @@ impl StatementManager {
             }
             DatabaseClient::SQLite { connection } => {
                 spawn_blocking(move || {
-                    let conn = connection.lock().unwrap();
-                    if let Err(err) = sqlite::execute::execute_query(&conn, stmt, &sender) {
-                        log::error!("Error executing SQLite query: {}", err);
+                    match connection.lock() {
+                        Ok(conn) => {
+                            if let Err(err) = sqlite::execute::execute_query(&conn, stmt, &sender) {
+                                log::error!("Error executing SQLite query: {}", err);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Mutex poisoned: {}", e);
+                        }
                     }
                 });
             }
@@ -182,13 +208,21 @@ impl StatementManager {
             while let Some(event) = recv.recv().await {
                 match event {
                     QueryExecEvent::TypesResolved { columns } => {
-                        *exec_storage.columns.write().unwrap() = Some(columns);
+                        if let Ok(mut w) = exec_storage.columns.write() {
+                            *w = Some(columns);
+                        } else {
+                            log::error!("RwLock poisoned");
+                        }
                     }
                     QueryExecEvent::Page {
                         page_amount: _,
                         page,
                     } => {
-                        exec_storage.pages.write().unwrap().push(page);
+                        if let Ok(mut w) = exec_storage.pages.write() {
+                            w.push(page);
+                        } else {
+                            log::error!("RwLock poisoned");
+                        }
                         exec_storage.renderable.set();
                     }
                     QueryExecEvent::Finished {
@@ -197,7 +231,11 @@ impl StatementManager {
                         error,
                     } => {
                         if let Some(err) = error {
-                            *exec_storage.error.write().unwrap() = Some(err);
+                            if let Ok(mut w) = exec_storage.error.write() {
+                                *w = Some(err);
+                            } else {
+                                log::error!("RwLock poisoned");
+                            }
                             exec_storage
                                 .status
                                 .store(QueryStatus::Error as u8, Ordering::Relaxed);
@@ -205,8 +243,11 @@ impl StatementManager {
                             exec_storage
                                 .status
                                 .store(QueryStatus::Completed as u8, Ordering::Relaxed);
-
-                            *exec_storage.rows_affected.write().unwrap() = Some(affected_rows);
+                            if let Ok(mut w) = exec_storage.rows_affected.write() {
+                                *w = Some(affected_rows);
+                            } else {
+                                log::error!("RwLock poisoned");
+                            }
                         }
 
                         exec_storage.renderable.set();

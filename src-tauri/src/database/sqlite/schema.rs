@@ -13,7 +13,9 @@ use crate::{
 
 pub async fn get_database_schema(conn: Arc<Mutex<Connection>>) -> Result<DatabaseSchema, Error> {
     tauri::async_runtime::spawn_blocking(move || {
-        let conn = conn.lock().unwrap();
+        let conn = conn
+            .lock()
+            .map_err(|e| Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
         let mut tables_stmt = conn.prepare(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
@@ -26,7 +28,8 @@ pub async fn get_database_schema(conn: Arc<Mutex<Connection>>) -> Result<Databas
         let mut unique_columns_set = HashSet::new();
 
         for table_name in table_names {
-            let pragma_query = format!("PRAGMA table_info('{}')", table_name);
+            let safe_table_name = table_name.replace('\'', "''");
+            let pragma_query = format!("PRAGMA table_info('{}')", safe_table_name);
             let mut col_stmt = conn
                 .prepare(&pragma_query)
                 .context("Failed to prepare PRAGMA table_info query")?;
