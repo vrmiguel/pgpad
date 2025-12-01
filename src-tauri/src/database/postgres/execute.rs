@@ -1,4 +1,5 @@
 use futures_util::{pin_mut, TryStreamExt};
+use std::env;
 use tokio_postgres::{types::ToSql, Client};
 
 use crate::{
@@ -62,7 +63,14 @@ async fn execute_query_with_results(
         Ok(stream) => {
             pin_mut!(stream);
 
-            let batch_size = 50;
+            fn batch_size() -> usize {
+                env::var("PGPAD_BATCH_SIZE")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .filter(|&n| n > 0)
+                    .unwrap_or(50)
+            }
+            let batch_size = batch_size();
             let mut total_rows = 0;
 
             let mut writer = RowWriter::new();
