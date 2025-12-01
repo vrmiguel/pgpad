@@ -113,18 +113,18 @@ impl RowWriter {
                         let raw_mode = self.cfg.raw_format.as_str();
                         let chunk_size = self.cfg.raw_chunk_size;
                         match raw_mode {
-                            "off" => self.write_json_string(&format!("Raw({})", len)),
+                            "off" | "len" => self.write_json_string(&format!("Bytes({})", len)),
                             "full_hex" => {
                                 let hex_full = if len > 0 { hex::encode(&bytes[..]) } else { String::new() };
-                                self.write_json_string(&format!("Raw({}): 0x{}", len, hex_full));
+                                self.write_json_string(&format!("0x{}", hex_full));
                             }
                             _ => {
                                 let preview_len = usize::min(len, chunk_size);
                                 let hex_preview = if preview_len > 0 { hex::encode(&bytes[..preview_len]) } else { String::new() };
                                 if preview_len >= len {
-                                    self.write_json_string(&format!("Raw({}): 0x{}", len, hex_preview));
+                                    self.write_json_string(&format!("0x{}", hex_preview));
                                 } else {
-                                    self.write_json_string(&format!("Raw({}) preview(0..{}): 0x{}…", len, preview_len, hex_preview));
+                                    self.write_json_string(&format!("Bytes({}) preview(0..{}): 0x{}…", len, preview_len, hex_preview));
                                 }
                             }
                         }
@@ -139,25 +139,32 @@ impl RowWriter {
                     Some(mut blob) => {
                         let mode = self.cfg.blob_stream.as_str();
                         let chunk = self.cfg.blob_chunk_size;
+                        let total_len = blob.len().unwrap_or_else(|_| blob.seek_stream_len().unwrap_or(0));
                         match mode {
                             "off" | "len" | "" => {
-                                self.write_json_string("Blob");
+                                // Prefer label with total length if obtainable
+                                if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
+                                else { self.write_json_string("Bytes"); }
                             }
                             "preview" => {
                                 let mut buf = vec![0u8; chunk];
                                 if let Ok(n) = blob.read(&mut buf) {
                                     if n > 0 {
                                         let hex_preview = hex::encode(&buf[..n]);
-                                        self.write_json_string(&format!("Blob preview(0..{}): 0x{}…", n, hex_preview));
+                                        if total_len > 0 { self.write_json_string(&format!("Bytes({}) preview(0..{}): 0x{}…", total_len, n, hex_preview)); }
+                                        else { self.write_json_string(&format!("Bytes preview(0..{}): 0x{}…", n, hex_preview)); }
                                     } else {
-                                        self.write_json_string("Blob");
+                                        if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
+                                        else { self.write_json_string("Bytes"); }
                                     }
                                 } else {
-                                    self.write_json_string("Blob");
+                                    if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
+                                    else { self.write_json_string("Bytes"); }
                                 }
                             }
                             "stream" => {
-                                self.write_json_string("Blob");
+                                if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
+                                else { self.write_json_string("Bytes"); }
                                 if let Some(s) = &self.sender {
                                     let mut offset = 0usize;
                                     let mut buf = vec![0u8; chunk];

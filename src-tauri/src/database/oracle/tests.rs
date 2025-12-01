@@ -439,8 +439,8 @@ mod tests {
                 QueryExecEvent::Page { page_amount: _, page } => {
                     let v: serde_json::Value = serde_json::from_str(&serde_json::to_string(&page).unwrap()).unwrap();
                     let first = &v[0];
-                    assert!(first[0].as_str().unwrap().starts_with("Raw(8) preview(0..4): 0x00112233"));
-                    assert_eq!(first[1].as_str().unwrap(), "Blob(4)");
+                    assert!(first[0].as_str().unwrap().starts_with("Bytes(8) preview(0..4): 0x00112233"));
+                    assert_eq!(first[1].as_str().unwrap(), "Bytes(4)");
                     saw_page = true;
                 }
                 QueryExecEvent::Finished { error, .. } => { assert!(error.is_none()); break; }
