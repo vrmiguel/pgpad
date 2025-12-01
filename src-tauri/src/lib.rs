@@ -110,6 +110,8 @@ pub fn run() {
             window::commands::close_window,
             window::commands::open_sqlite_db,
             window::commands::save_sqlite_db,
+            window::commands::open_duckdb_db,
+            window::commands::save_duckdb_db,
             window::commands::pick_ca_cert,
         ])
         .run(tauri::generate_context!())

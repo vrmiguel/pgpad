@@ -1,5 +1,6 @@
 pub mod postgres;
 pub mod sqlite;
+pub mod duckdb;
 
 pub use postgres::tls::Certificates;
 

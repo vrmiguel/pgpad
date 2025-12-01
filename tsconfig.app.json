@@ -10,6 +10,7 @@
 		"target": "ESNext",
 		"useDefineForClassFields": true,
 		"module": "ESNext",
+		"moduleResolution": "bundler",
 		"resolveJsonModule": true,
 		"allowJs": true,
 		"checkJs": true,

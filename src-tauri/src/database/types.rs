@@ -66,6 +66,9 @@ pub enum DatabaseInfo {
     SQLite {
         db_path: String,
     },
+    DuckDB {
+        db_path: String,
+    },
 }
 
 #[derive(Debug)]
@@ -84,6 +87,9 @@ pub enum DatabaseClient {
     SQLite {
         connection: Arc<Mutex<rusqlite::Connection>>,
     },
+    DuckDB {
+        connection: Arc<Mutex<duckdb::Connection>>,
+    },
 }
 
 #[derive(Debug)]
@@ -96,6 +102,10 @@ pub enum Database {
     SQLite {
         db_path: String,
         connection: Option<Arc<Mutex<rusqlite::Connection>>>,
+    },
+    DuckDB {
+        db_path: String,
+        connection: Option<Arc<Mutex<duckdb::Connection>>>,
     },
 }
 
@@ -117,6 +127,9 @@ impl DatabaseConnection {
                 Database::SQLite { db_path, .. } => DatabaseInfo::SQLite {
                     db_path: db_path.clone(),
                 },
+                Database::DuckDB { db_path, .. } => DatabaseInfo::DuckDB {
+                    db_path: db_path.clone(),
+                },
             },
         }
     }
@@ -135,6 +148,10 @@ impl DatabaseConnection {
                 db_path,
                 connection: None,
             },
+            DatabaseInfo::DuckDB { db_path } => Database::DuckDB {
+                db_path,
+                connection: None,
+            },
         };
 
         Self {
@@ -149,6 +166,7 @@ impl DatabaseConnection {
         match &self.database {
             Database::Postgres { client, .. } => client.is_some(),
             Database::SQLite { connection, .. } => connection.is_some(),
+            Database::DuckDB { connection, .. } => connection.is_some(),
         }
     }
 
@@ -176,6 +194,17 @@ impl DatabaseConnection {
                 connection: None, ..
             } => {
                 return Err(Error::Any(anyhow::anyhow!("SQLite connection not active")));
+            }
+            Database::DuckDB {
+                connection: Some(duckdb_conn),
+                ..
+            } => DatabaseClient::DuckDB {
+                connection: duckdb_conn.clone(),
+            },
+            Database::DuckDB {
+                connection: None, ..
+            } => {
+                return Err(Error::Any(anyhow::anyhow!("DuckDB connection not active")));
             }
         };
 

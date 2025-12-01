@@ -51,6 +51,10 @@ impl ConnectionMonitor {
                 connection: sqlite_conn,
                 ..
             } => *sqlite_conn = None,
+            crate::database::types::Database::DuckDB {
+                connection: duck_conn,
+                ..
+            } => *duck_conn = None,
         }
     }
 

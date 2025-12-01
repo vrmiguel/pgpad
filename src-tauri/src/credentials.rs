@@ -29,6 +29,7 @@ pub fn extract_sensitive_data(
             Ok((database_info, password))
         }
         DatabaseInfo::SQLite { .. } => Ok((database_info, None)),
+        DatabaseInfo::DuckDB { .. } => Ok((database_info, None)),
     }
 }
 

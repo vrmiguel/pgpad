@@ -67,6 +67,7 @@ impl StatementManager {
         let parse_statements = match &client {
             DatabaseClient::Postgres { .. } => postgres::parser::parse_statements,
             DatabaseClient::SQLite { .. } => sqlite::parser::parse_statements,
+            DatabaseClient::DuckDB { .. } => crate::database::duckdb::parser::parse_statements,
         };
 
         let statements = parse_statements(query)?;
@@ -188,6 +189,20 @@ impl StatementManager {
                         Ok(conn) => {
                             if let Err(err) = sqlite::execute::execute_query(&conn, stmt, &sender) {
                                 log::error!("Error executing SQLite query: {}", err);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Mutex poisoned: {}", e);
+                        }
+                    }
+                });
+            }
+            DatabaseClient::DuckDB { connection } => {
+                spawn_blocking(move || {
+                    match connection.lock() {
+                        Ok(conn) => {
+                            if let Err(err) = crate::database::duckdb::execute::execute_query(&conn, stmt, &sender) {
+                                log::error!("Error executing DuckDB query: {}", err);
                             }
                         }
                         Err(e) => {

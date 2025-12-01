@@ -78,6 +78,9 @@ pub async fn update_connection(
             (Database::SQLite { db_path: old, .. }, DatabaseInfo::SQLite { db_path: new }) => {
                 old != new
             }
+            (Database::DuckDB { db_path: old, .. }, DatabaseInfo::DuckDB { db_path: new }) => {
+                old != new
+            }
             _ => true,
         };
 
@@ -87,6 +90,7 @@ pub async fn update_connection(
                 Database::SQLite {
                     connection: conn, ..
                 } => *conn = None,
+                Database::DuckDB { connection: conn, .. } => *conn = None,
             }
             connection.connected = false;
         }
@@ -102,6 +106,10 @@ pub async fn update_connection(
                 client: None,
             },
             DatabaseInfo::SQLite { db_path } => Database::SQLite {
+                db_path,
+                connection: None,
+            },
+            DatabaseInfo::DuckDB { db_path } => Database::DuckDB {
                 db_path,
                 connection: None,
             },
@@ -200,6 +208,27 @@ pub async fn connect_to_database(
                 Ok(false)
             }
         },
+        Database::DuckDB {
+            db_path,
+            connection: duck_conn,
+        } => match duckdb::Connection::open(&db_path) {
+            Ok(conn) => {
+                *duck_conn = Some(Arc::new(Mutex::new(conn)));
+                connection.connected = true;
+
+                if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                    log::warn!("Failed to update last connected timestamp: {}", e);
+                }
+
+                log::info!("Successfully connected to DuckDB database: {}", db_path);
+                Ok(true)
+            }
+            Err(e) => {
+                log::error!("Failed to connect to DuckDB database {}: {}", db_path, e);
+                connection.connected = false;
+                Ok(false)
+            }
+        },
     }
 }
 
@@ -220,6 +249,10 @@ pub async fn disconnect_from_database(
             connection: sqlite_conn,
             ..
         } => *sqlite_conn = None,
+        Database::DuckDB {
+            connection: duck_conn,
+            ..
+        } => *duck_conn = None,
     }
     connection.connected = false;
     Ok(())
@@ -361,6 +394,13 @@ pub async fn test_connection(
                 Ok(false)
             }
         },
+        DatabaseInfo::DuckDB { db_path } => match duckdb::Connection::open(db_path) {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                log::error!("DuckDB connection test failed: {}", e);
+                Ok(false)
+            }
+        },
     }
 }
 
@@ -453,6 +493,13 @@ pub async fn get_database_schema(
         Database::SQLite {
             connection: None, ..
         } => return Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        Database::DuckDB {
+            connection: Some(conn),
+            ..
+        } => crate::database::duckdb::schema::get_database_schema(Arc::clone(conn)).await?,
+        Database::DuckDB {
+            connection: None, ..
+        } => return Err(Error::Any(anyhow::anyhow!("DuckDB connection not active"))),
     };
 
     let schema = Arc::new(schema);

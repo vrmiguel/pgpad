@@ -9,6 +9,7 @@ use uuid::Uuid;
 // Gotta match the IDs in the DB
 const DB_TYPE_POSTGRES: i32 = 1;
 const DB_TYPE_SQLITE: i32 = 2;
+const DB_TYPE_DUCKDB: i32 = 3;
 
 use crate::{database::types::ConnectionInfo, Result};
 
@@ -22,6 +23,7 @@ impl Migrator {
             migrations: &[
                 include_str!("../migrations/001.sql"),
                 include_str!("../migrations/002.sql"),
+                include_str!("../migrations/003.sql"),
             ],
         }
     }
@@ -164,6 +166,9 @@ impl Storage {
             crate::database::types::DatabaseInfo::SQLite { db_path } => {
                 (DB_TYPE_SQLITE, db_path.as_str(), None)
             }
+            crate::database::types::DatabaseInfo::DuckDB { db_path } => {
+                (DB_TYPE_DUCKDB, db_path.as_str(), None)
+            }
         };
 
         conn.execute(
@@ -204,6 +209,9 @@ impl Storage {
             ),
             crate::database::types::DatabaseInfo::SQLite { db_path } => {
                 (DB_TYPE_SQLITE, db_path.as_str(), None)
+            }
+            crate::database::types::DatabaseInfo::DuckDB { db_path } => {
+                (DB_TYPE_DUCKDB, db_path.as_str(), None)
             }
         };
 
@@ -262,6 +270,9 @@ impl Storage {
                         ca_cert_path,
                     },
                     "sqlite" => crate::database::types::DatabaseInfo::SQLite {
+                        db_path: connection_data,
+                    },
+                    "duckdb" => crate::database::types::DatabaseInfo::DuckDB {
                         db_path: connection_data,
                     },
                     _ => crate::database::types::DatabaseInfo::Postgres {
