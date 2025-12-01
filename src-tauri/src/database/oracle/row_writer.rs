@@ -1,6 +1,6 @@
 use serde_json::value::RawValue;
 use oracle::sql_type::{Blob, OracleType};
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::fmt::Write;
 
 pub struct RowWriter {
@@ -139,7 +139,11 @@ impl RowWriter {
                     Some(mut blob) => {
                         let mode = self.cfg.blob_stream.as_str();
                         let chunk = self.cfg.blob_chunk_size;
-                        let total_len = blob.len().unwrap_or_else(|_| blob.seek_stream_len().unwrap_or(0));
+                        let total_len = {
+                            let p = blob.seek(SeekFrom::End(0)).unwrap_or(0);
+                            let _ = blob.seek(SeekFrom::Start(0));
+                            p as usize
+                        };
                         match mode {
                             "off" | "len" | "" => {
                                 // Prefer label with total length if obtainable
@@ -153,14 +157,10 @@ impl RowWriter {
                                         let hex_preview = hex::encode(&buf[..n]);
                                         if total_len > 0 { self.write_json_string(&format!("Bytes({}) preview(0..{}): 0x{}…", total_len, n, hex_preview)); }
                                         else { self.write_json_string(&format!("Bytes preview(0..{}): 0x{}…", n, hex_preview)); }
-                                    } else {
-                                        if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
-                                        else { self.write_json_string("Bytes"); }
-                                    }
-                                } else {
-                                    if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
+                                    } else if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
                                     else { self.write_json_string("Bytes"); }
-                                }
+                                } else if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
+                                else { self.write_json_string("Bytes"); }
                             }
                             "stream" => {
                                 if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
@@ -181,7 +181,8 @@ impl RowWriter {
                                 }
                             }
                             _ => {
-                                self.write_json_string("Blob");
+                                if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
+                                else { self.write_json_string("Bytes"); }
                             }
                         }
                     }
