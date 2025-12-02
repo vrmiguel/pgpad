@@ -2009,22 +2009,153 @@ pub async fn get_postgres_foreign_keys(
 
 #[tauri::command]
 pub async fn get_sqlite_indexes(
-    _connection_id: Uuid,
-    _page: Option<usize>,
-    _page_size: Option<usize>,
-    _state: tauri::State<'_, AppState>,
+    connection_id: Uuid,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    Ok("[]".into())
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::SQLite { connection: Some(conn), .. } => {
+            let result = tauri::async_runtime::spawn_blocking({
+                let conn = conn.clone();
+                let page = page.unwrap_or(0);
+                let page_size = page_size.unwrap_or(50);
+                move || {
+                    use rusqlite::Connection;
+                    let mut data: Vec<serde_json::Value> = Vec::new();
+                    let c: std::sync::MutexGuard<Connection> = conn.lock().map_err(|_| Error::Any(anyhow::anyhow!("SQLite connection mutex poisoned")))?;
+                    let mut stmt = c
+                        .prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name")
+                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let rows = stmt.query_map([], |row| row.get::<usize, String>(0)).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let mut idx_items: Vec<(String, String, bool, bool)> = Vec::new();
+                    for table_name in rows.flatten() {
+                        let mut istmt = c
+                            .prepare(&format!("PRAGMA index_list('{}')", table_name.replace("'", "''")))
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let indices = istmt
+                            .query_map([], |row| {
+                                let name: String = row.get(1)?;
+                                let unique: i64 = row.get(2)?;
+                                let origin: String = row.get(3)?; // c/u/pk
+                                Ok((name, unique == 1, origin == "pk"))
+                            })
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        for item in indices.flatten() {
+                            idx_items.push((table_name.clone(), item.0, item.1, item.2));
+                        }
+                    }
+                    let total_rows = idx_items.len() as i64;
+                    let start = (page as i64) * (page_size as i64);
+                    let end = (start + page_size as i64).min(total_rows);
+                    for i in start..end {
+                        let (table_name, index_name, is_unique, is_primary) = idx_items[i as usize].clone();
+                        data.push(serde_json::json!({
+                            "schema_name": "main",
+                            "table_name": table_name,
+                            "index_name": index_name,
+                            "is_unique": is_unique,
+                            "is_primary": is_primary
+                        }));
+                    }
+                    let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+                    let payload = serde_json::json!({
+                        "data": data,
+                        "total_pages": total_pages,
+                        "current_page": page
+                    });
+                    Ok::<String, Error>(payload.to_string())
+                }
+            }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
+            Ok(result)
+        }
+        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
+    }
 }
 
 #[tauri::command]
 pub async fn get_sqlite_index_columns(
-    _connection_id: Uuid,
-    _page: Option<usize>,
-    _page_size: Option<usize>,
-    _state: tauri::State<'_, AppState>,
+    connection_id: Uuid,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    Ok("[]".into())
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::SQLite { connection: Some(conn), .. } => {
+            let result = tauri::async_runtime::spawn_blocking({
+                let conn = conn.clone();
+                let page = page.unwrap_or(0);
+                let page_size = page_size.unwrap_or(100);
+                move || {
+                    use rusqlite::Connection;
+                    let mut rows_all: Vec<serde_json::Value> = Vec::new();
+                    let c: std::sync::MutexGuard<Connection> = conn.lock().map_err(|_| Error::Any(anyhow::anyhow!("SQLite connection mutex poisoned")))?;
+                    let mut tstmt = c
+                        .prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name")
+                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let tables = tstmt.query_map([], |row| row.get::<usize, String>(0)).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    for table_name in tables.flatten() {
+                        let mut istmt = c
+                            .prepare(&format!("PRAGMA index_list('{}')", table_name.replace("'", "''")))
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let indices = istmt
+                            .query_map([], |row| {
+                                let name: String = row.get(1)?;
+                                Ok(name)
+                            })
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        for index_name in indices.flatten() {
+                            let mut cstmt = c
+                                .prepare(&format!("PRAGMA index_info('{}')", index_name.replace("'", "''")))
+                                .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                            let cols = cstmt
+                                .query_map([], |row| {
+                                    let pos: i64 = row.get(0)?; // seqno
+                                    let col_name: String = row.get(2)?; // name
+                                    Ok((pos, col_name))
+                                })
+                                .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                            for (pos, col) in cols.flatten() {
+                                rows_all.push(serde_json::json!({
+                                    "schema_name": "main",
+                                    "table_name": table_name,
+                                    "index_name": index_name,
+                                    "column_name": col,
+                                    "column_position": pos,
+                                    "is_desc": false
+                                }));
+                            }
+                        }
+                    }
+                    let total_rows = rows_all.len() as i64;
+                    let start = (page as i64) * (page_size as i64);
+                    let end = (start + page_size as i64).min(total_rows);
+                    let data = rows_all.into_iter().skip(start as usize).take((end - start) as usize).collect::<Vec<_>>();
+                    let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+                    let payload = serde_json::json!({
+                        "data": data,
+                        "total_pages": total_pages,
+                        "current_page": page
+                    });
+                    Ok::<String, Error>(payload.to_string())
+                }
+            }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
+            Ok(result)
+        }
+        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
+    }
 }
 
 #[tauri::command]
@@ -2059,32 +2190,168 @@ pub async fn get_sqlite_routines(
 
 #[tauri::command]
 pub async fn get_sqlite_views(
-    _connection_id: Uuid,
-    _page: Option<usize>,
-    _page_size: Option<usize>,
-    _state: tauri::State<'_, AppState>,
+    connection_id: Uuid,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    Ok("[]".into())
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::SQLite { connection: Some(conn), .. } => {
+            let result = tauri::async_runtime::spawn_blocking({
+                let conn = conn.clone();
+                let page = page.unwrap_or(0);
+                let page_size = page_size.unwrap_or(50);
+                move || {
+                    use rusqlite::Connection;
+                    let mut data: Vec<serde_json::Value> = Vec::new();
+                    let c: std::sync::MutexGuard<Connection> = conn.lock().map_err(|_| Error::Any(anyhow::anyhow!("SQLite connection mutex poisoned")))?;
+                    let mut stmt = c
+                        .prepare("SELECT name FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let views = stmt.query_map([], |row| row.get::<usize, String>(0)).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let all: Vec<String> = views.flatten().collect();
+                    let total_rows = all.len() as i64;
+                    let start = (page as i64) * (page_size as i64);
+                    let end = (start + page_size as i64).min(total_rows);
+                    for v in all.iter().skip(start as usize).take((end - start) as usize) {
+                        data.push(serde_json::json!({"schema_name":"main","view_name":v}));
+                    }
+                    let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+                    let payload = serde_json::json!({
+                        "data": data,
+                        "total_pages": total_pages,
+                        "current_page": page
+                    });
+                    Ok::<String, Error>(payload.to_string())
+                }
+            }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
+            Ok(result)
+        }
+        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
+    }
 }
 
 #[tauri::command]
 pub async fn get_sqlite_view_definitions(
-    _connection_id: Uuid,
+    connection_id: Uuid,
     _page: Option<usize>,
     _page_size: Option<usize>,
-    _state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    Ok("{}".into())
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::SQLite { connection: Some(conn), .. } => {
+            let result = tauri::async_runtime::spawn_blocking({
+                let conn = conn.clone();
+                move || {
+                    use rusqlite::Connection;
+                    let mut map = serde_json::Map::new();
+                    let c: std::sync::MutexGuard<Connection> = conn.lock().map_err(|_| Error::Any(anyhow::anyhow!("SQLite connection mutex poisoned")))?;
+                    let mut stmt = c
+                        .prepare("SELECT name, sql FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let mut rows = stmt.query([]).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    while let Some(row) = rows.next().map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))? {
+                        let name: String = row.get(0).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let sql: String = row.get(1).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        map.insert(name, serde_json::Value::String(sql));
+                    }
+                    Ok::<String, Error>(serde_json::Value::Object(map).to_string())
+                }
+            }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
+            Ok(result)
+        }
+        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
+    }
 }
 
 #[tauri::command]
 pub async fn get_sqlite_foreign_keys(
-    _connection_id: Uuid,
-    _page: Option<usize>,
-    _page_size: Option<usize>,
-    _state: tauri::State<'_, AppState>,
+    connection_id: Uuid,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    Ok("[]".into())
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::SQLite { connection: Some(conn), .. } => {
+            let result = tauri::async_runtime::spawn_blocking({
+                let conn = conn.clone();
+                let page = page.unwrap_or(0);
+                let page_size = page_size.unwrap_or(50);
+                move || {
+                    use rusqlite::Connection;
+                    let mut all: Vec<serde_json::Value> = Vec::new();
+                    let c: std::sync::MutexGuard<Connection> = conn.lock().map_err(|_| Error::Any(anyhow::anyhow!("SQLite connection mutex poisoned")))?;
+                    let mut tstmt = c
+                        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let tables = tstmt.query_map([], |row| row.get::<usize, String>(0)).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    for table_name in tables.flatten() {
+                        let mut fkstmt = c
+                            .prepare(&format!("PRAGMA foreign_key_list('{}')", table_name.replace("'", "''")))
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let fks = fkstmt
+                            .query_map([], |row| {
+                                let id: i64 = row.get(0)?; // foreign key id
+                                let seq: i64 = row.get(1)?; // sequence within fk
+                                let ref_table: String = row.get(2)?;
+                                let from_col: String = row.get(3)?;
+                                let to_col: String = row.get(4)?;
+                                let on_update: Option<String> = row.get::<usize, Option<String>>(5)?;
+                                let on_delete: Option<String> = row.get::<usize, Option<String>>(6)?;
+                                let match_opt: Option<String> = row.get::<usize, Option<String>>(7)?;
+                                Ok((id, seq, ref_table, from_col, to_col, on_update, on_delete, match_opt))
+                            })
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        for (id, seq, ref_table, from_col, to_col, on_update, on_delete, match_opt) in fks.flatten() {
+                            all.push(serde_json::json!({
+                                "schema_name": "main",
+                                "table_name": table_name,
+                                "fk_id": id,
+                                "seq": seq,
+                                "ref_table": ref_table,
+                                "from_column": from_col,
+                                "to_column": to_col,
+                                "on_update": on_update.unwrap_or_default(),
+                                "on_delete": on_delete.unwrap_or_default(),
+                                "match": match_opt.unwrap_or_default()
+                            }));
+                        }
+                    }
+                    let total_rows = all.len() as i64;
+                    let start = (page as i64) * (page_size as i64);
+                    let end = (start + page_size as i64).min(total_rows);
+                    let data = all.into_iter().skip(start as usize).take((end - start) as usize).collect::<Vec<_>>();
+                    let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+                    let payload = serde_json::json!({
+                        "data": data,
+                        "total_pages": total_pages,
+                        "current_page": page
+                    });
+                    Ok::<String, Error>(payload.to_string())
+                }
+            }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
+            Ok(result)
+        }
+        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
+    }
 }
 
 #[tauri::command]
