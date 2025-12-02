@@ -63,14 +63,22 @@ impl RowWriter {
                 ValueRef::UBigInt(value) => write!(&mut self.buf, "{value}")?,
                 ValueRef::Float(value) => {
                     if value.is_finite() {
-                        write!(&mut self.buf, "{value}")?;
+                        if value.fract() == 0.0 {
+                            write!(&mut self.buf, "{}.0", value as f64)?;
+                        } else {
+                            write!(&mut self.buf, "{value}")?;
+                        }
                     } else {
                         self.write_json_string(&format!("{}", value));
                     }
                 }
                 ValueRef::Double(value) => {
                     if value.is_finite() {
-                        write!(&mut self.buf, "{value}")?;
+                        if value.fract() == 0.0 {
+                            write!(&mut self.buf, "{}.0", value)?;
+                        } else {
+                            write!(&mut self.buf, "{value}")?;
+                        }
                     } else {
                         self.write_json_string(&format!("{}", value));
                     }
@@ -305,14 +313,22 @@ impl RowWriter {
             Value::UBigInt(x) => write!(&mut self.buf, "{}", x).unwrap(),
             Value::Float(f) => {
                 if f.is_finite() {
-                    write!(&mut self.buf, "{}", f).unwrap()
+                    if f.fract() == 0.0 {
+                        write!(&mut self.buf, "{}.0", *f as f64).unwrap();
+                    } else {
+                        write!(&mut self.buf, "{}", f).unwrap();
+                    }
                 } else {
                     self.write_json_string(&format!("{}", f));
                 }
             }
             Value::Double(f) => {
                 if f.is_finite() {
-                    write!(&mut self.buf, "{}", f).unwrap()
+                    if f.fract() == 0.0 {
+                        write!(&mut self.buf, "{}.0", f).unwrap();
+                    } else {
+                        write!(&mut self.buf, "{}", f).unwrap();
+                    }
                 } else {
                     self.write_json_string(&format!("{}", f));
                 }

@@ -408,22 +408,26 @@ impl RowWriter {
 
             _ => {
                 let bytes = row.try_get::<_, PgBytes>(column_index)?;
-                let len = bytes.bytes.len();
-                match self.cfg.bytes_format.as_str() {
-                    "off" | "len" => self.write_json_string(&format!("Bytes({})", len)),
-                    "full_hex" => {
-                        self.write_json_string(&format!("0x{}", hex::encode(bytes.bytes)))
-                    }
-                    _ => {
-                        let n = usize::min(len, self.cfg.bytes_chunk_size);
-                        let hexp = hex::encode(&bytes.bytes[..n]);
-                        if n >= len {
-                            self.write_json_string(&format!("0x{}", hexp));
-                        } else {
-                            self.write_json_string(&format!(
-                                "Bytes({}) preview(0..{}): 0x{}…",
-                                len, n, hexp
-                            ));
+                if let Ok(s) = std::str::from_utf8(bytes.bytes) {
+                    self.write_json_string(s);
+                } else {
+                    let len = bytes.bytes.len();
+                    match self.cfg.bytes_format.as_str() {
+                        "off" | "len" => self.write_json_string(&format!("Bytes({})", len)),
+                        "full_hex" => {
+                            self.write_json_string(&format!("0x{}", hex::encode(bytes.bytes)))
+                        }
+                        _ => {
+                            let n = usize::min(len, self.cfg.bytes_chunk_size);
+                            let hexp = hex::encode(&bytes.bytes[..n]);
+                            if n >= len {
+                                self.write_json_string(&format!("0x{}", hexp));
+                            } else {
+                                self.write_json_string(&format!(
+                                    "Bytes({}) preview(0..{}): 0x{}…",
+                                    len, n, hexp
+                                ));
+                            }
                         }
                     }
                 }

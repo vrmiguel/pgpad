@@ -57,6 +57,7 @@ pub async fn execute_query_with_params(
     }
 
     enum ParamValue {
+        I32(i32),
         I64(i64),
         F64(f64),
         Bool(bool),
@@ -71,7 +72,11 @@ pub async fn execute_query_with_params(
             serde_json::Value::Bool(b) => ParamValue::Bool(*b),
             serde_json::Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
-                    ParamValue::I64(i)
+                    if i >= i32::MIN as i64 && i <= i32::MAX as i64 {
+                        ParamValue::I32(i as i32)
+                    } else {
+                        ParamValue::I64(i)
+                    }
                 } else if let Some(f) = n.as_f64() {
                     ParamValue::F64(f)
                 } else {
@@ -116,6 +121,7 @@ pub async fn execute_query_with_params(
     let mut param_refs: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(holders.len());
     for h in holders.iter() {
         match h {
+            ParamValue::I32(v) => param_refs.push(v),
             ParamValue::I64(v) => param_refs.push(v),
             ParamValue::F64(v) => param_refs.push(v),
             ParamValue::Bool(v) => param_refs.push(v),

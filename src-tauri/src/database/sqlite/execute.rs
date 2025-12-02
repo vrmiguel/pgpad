@@ -1,7 +1,6 @@
 use std::time::Instant;
 
 use rusqlite::Connection;
-use std::env;
 
 use crate::{
     database::{
@@ -55,12 +54,6 @@ fn execute_query_with_results(
                     let mut _total_rows = 0;
                     let batch_size = settings
                         .and_then(|s| s.batch_size)
-                        .or_else(|| {
-                            env::var("PGPAD_BATCH_SIZE")
-                                .ok()
-                                .and_then(|v| v.parse::<usize>().ok())
-                                .filter(|&n| n > 0)
-                        })
                         .unwrap_or(50);
                     let mut writer = match settings {
                         Some(s) => RowWriter::with_settings(column_types, Some(s)),
@@ -184,15 +177,9 @@ fn execute_query_with_results_params(
             sender.send(QueryExecEvent::TypesResolved { columns })?;
 
             let mut total_rows = 0;
-            let batch_size = settings
-                .and_then(|s| s.batch_size)
-                .or_else(|| {
-                    env::var("PGPAD_BATCH_SIZE")
-                        .ok()
-                        .and_then(|v| v.parse::<usize>().ok())
-                        .filter(|&n| n > 0)
-                })
-                .unwrap_or(50);
+                    let batch_size = settings
+                        .and_then(|s| s.batch_size)
+                        .unwrap_or(50);
             let mut writer = match settings {
                 Some(s) => RowWriter::with_settings(column_types, Some(s)),
                 None => RowWriter::new(column_types),
