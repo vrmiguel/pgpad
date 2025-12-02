@@ -484,7 +484,7 @@ impl RowFormatCfg {
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok())
                 .filter(|&n| n > 0)
-                .unwrap_or(18),
+                .unwrap_or(15),
         }
     }
     fn from_settings(settings: Option<&crate::database::types::OracleSettings>) -> Self {
@@ -506,7 +506,7 @@ impl RowFormatCfg {
                     .clone()
                     .unwrap_or_else(|| "precision_threshold".into())
                     .to_lowercase(),
-                numeric_threshold: s.numeric_precision_threshold.unwrap_or(18),
+                numeric_threshold: s.numeric_precision_threshold.unwrap_or(15),
             }
         } else {
             Self::from_env()
