@@ -125,6 +125,7 @@ pub async fn update_connection(
                 connection_string,
                 ca_cert_path,
                 client: None,
+                backend_pid: None,
             },
             DatabaseInfo::SQLite { db_path } => Database::SQLite {
                 db_path,
@@ -197,6 +198,7 @@ pub async fn connect_to_database(
             connection_string,
             ca_cert_path,
             client,
+            backend_pid,
         } => {
             let mut config: tokio_postgres::Config =
                 connection_string.parse().with_context(|| {
@@ -210,6 +212,16 @@ pub async fn connect_to_database(
                 Ok((pg_client, conn_check)) => {
                     *client = Some(Arc::new(pg_client));
                     connection.connected = true;
+
+                    if let Some(cl) = client.as_ref() {
+                        match cl.query_one("SELECT pg_backend_pid()", &[]).await {
+                            Ok(row) => {
+                                let pid: i32 = row.get(0);
+                                *backend_pid = Some(pid);
+                            }
+                            Err(e) => log::warn!("Failed to get backend pid: {}", e),
+                        }
+                    }
 
                     if let Err(e) = state.storage.update_last_connected(&connection_id) {
                         log::warn!("Failed to update last connected timestamp: {}", e);
@@ -630,6 +642,56 @@ pub async fn get_columns(
 #[tauri::command]
 pub async fn cancel_query(query_id: usize, state: tauri::State<'_, AppState>) -> Result<(), Error> {
     state.stmt_manager.cancel_query(query_id)
+}
+
+#[tauri::command]
+pub async fn cancel_postgres(
+    connection_id: Uuid,
+    state: tauri::State<'_, AppState>,
+    certificates: tauri::State<'_, Certificates>,
+) -> Result<(), Error> {
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::Postgres {
+            connection_string,
+            ca_cert_path,
+            backend_pid: Some(pid),
+            ..
+        } => {
+            let mut cfg: tokio_postgres::Config = connection_string
+                .parse()
+                .with_context(|| format!("Failed to parse connection string: {}", connection_string))?;
+            if cfg.get_password().is_none() {
+                if let Some(pw) = crate::credentials::get_password(&connection_id)? {
+                    cfg.password(pw);
+                }
+            }
+            match crate::database::postgres::connect::connect(
+                &cfg,
+                &certificates,
+                ca_cert_path.as_deref(),
+            )
+            .await
+            {
+                Ok((client, _)) => {
+                    let _ = client.execute("SELECT pg_cancel_backend($1)", &[pid]).await;
+                    Ok(())
+                }
+                Err(e) => Err(Error::Any(anyhow::anyhow!(format!(
+                    "Failed to connect for cancellation: {}",
+                    e
+                )))),
+            }
+        }
+        Database::Postgres { backend_pid: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres backend PID not recorded"
+        ))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
+    }
 }
 
 #[tauri::command]

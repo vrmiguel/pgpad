@@ -114,6 +114,7 @@ pub enum Database {
         connection_string: String,
         ca_cert_path: Option<String>,
         client: Option<Arc<tokio_postgres::Client>>,
+        backend_pid: Option<i32>,
     },
     SQLite {
         db_path: String,
@@ -189,6 +190,7 @@ impl DatabaseConnection {
                 connection_string,
                 ca_cert_path,
                 client: None,
+                backend_pid: None,
             },
             DatabaseInfo::SQLite { db_path } => Database::SQLite {
                 db_path,
