@@ -759,6 +759,56 @@ pub async fn cancel_postgres(
 }
 
 #[tauri::command]
+pub async fn terminate_postgres(
+    connection_id: Uuid,
+    state: tauri::State<'_, AppState>,
+    certificates: tauri::State<'_, Certificates>,
+) -> Result<(), Error> {
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::Postgres {
+            connection_string,
+            ca_cert_path,
+            backend_pid: Some(pid),
+            ..
+        } => {
+            let mut cfg: tokio_postgres::Config = connection_string
+                .parse()
+                .with_context(|| format!("Failed to parse connection string: {}", connection_string))?;
+            if cfg.get_password().is_none() {
+                if let Some(pw) = crate::credentials::get_password(&connection_id)? {
+                    cfg.password(pw);
+                }
+            }
+            match crate::database::postgres::connect::connect(
+                &cfg,
+                &certificates,
+                ca_cert_path.as_deref(),
+            )
+            .await
+            {
+                Ok((client, _)) => {
+                    let _ = client.execute("SELECT pg_terminate_backend($1)", &[pid]).await;
+                    Ok(())
+                }
+                Err(e) => Err(Error::Any(anyhow::anyhow!(format!(
+                    "Failed to connect for termination: {}",
+                    e
+                )))),
+            }
+        }
+        Database::Postgres { backend_pid: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres backend PID not recorded"
+        ))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
+    }
+}
+
+#[tauri::command]
 pub async fn get_connections(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ConnectionInfo>, Error> {
@@ -1720,12 +1770,72 @@ pub async fn get_postgres_triggers(
 
 #[tauri::command]
 pub async fn get_postgres_routines(
-    _connection_id: Uuid,
-    _page: Option<usize>,
-    _page_size: Option<usize>,
-    _state: tauri::State<'_, AppState>,
+    connection_id: Uuid,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    Ok("[]".into())
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::Postgres { client: Some(client), .. } => {
+            let page = page.unwrap_or(0);
+            let page_size = page_size.unwrap_or(50);
+            let count_sql = r#"
+                SELECT COUNT(*)
+                FROM information_schema.routines r
+                WHERE r.specific_schema NOT IN ('pg_catalog','information_schema')
+            "#;
+            let total_rows: i64 = client
+                .query_one(count_sql, &[])
+                .await
+                .map(|r| r.get::<usize, i64>(0))
+                .unwrap_or(0);
+            let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+            let offset = (page as i64) * (page_size as i64);
+            let list_sql = r#"
+                SELECT r.specific_schema AS schema_name,
+                       r.routine_name,
+                       r.routine_type,
+                       r.external_language AS language,
+                       r.data_type AS return_type
+                FROM information_schema.routines r
+                WHERE r.specific_schema NOT IN ('pg_catalog','information_schema')
+                ORDER BY r.specific_schema, r.routine_name
+                LIMIT $1 OFFSET $2
+            "#;
+            let rows = client
+                .query(list_sql, &[&(page_size as i64), &offset])
+                .await
+                .unwrap_or_default();
+            let mut data: Vec<serde_json::Value> = Vec::with_capacity(rows.len());
+            for row in rows {
+                let schema_name: &str = row.get(0);
+                let routine_name: &str = row.get(1);
+                let routine_type: &str = row.get(2);
+                let language: Option<&str> = row.get(3);
+                let return_type: &str = row.get(4);
+                data.push(serde_json::json!({
+                    "schema_name": schema_name,
+                    "routine_name": routine_name,
+                    "routine_type": routine_type,
+                    "language": language.unwrap_or(""),
+                    "return_type": return_type
+                }));
+            }
+            let payload = serde_json::json!({
+                "data": data,
+                "total_pages": total_pages,
+                "current_page": page
+            });
+            Ok(payload.to_string())
+        }
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
+    }
 }
 
 #[tauri::command]
