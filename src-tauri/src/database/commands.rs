@@ -2160,22 +2160,223 @@ pub async fn get_sqlite_index_columns(
 
 #[tauri::command]
 pub async fn get_sqlite_constraints(
-    _connection_id: Uuid,
-    _page: Option<usize>,
-    _page_size: Option<usize>,
-    _state: tauri::State<'_, AppState>,
+    connection_id: Uuid,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    Ok("[]".into())
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::SQLite { connection: Some(conn), .. } => {
+            let result = tauri::async_runtime::spawn_blocking({
+                let conn = conn.clone();
+                let page = page.unwrap_or(0);
+                let page_size = page_size.unwrap_or(100);
+                move || {
+                    use rusqlite::Connection;
+                    let c: std::sync::MutexGuard<Connection> = conn
+                        .lock()
+                        .map_err(|_| Error::Any(anyhow::anyhow!("SQLite connection mutex poisoned")))?;
+                    // Collect table names and CREATE SQL
+                    let mut tstmt = c
+                        .prepare("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let mut rows = tstmt
+                        .query([])
+                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let mut items: Vec<serde_json::Value> = Vec::new();
+                    while let Some(row) = rows
+                        .next()
+                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?
+                    {
+                        let table_name: String = row
+                            .get(0)
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let create_sql: String = row
+                            .get(1)
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+
+                        // PRIMARY KEY columns via PRAGMA table_info
+                        let mut pinfo = c
+                            .prepare(&format!("PRAGMA table_info('{}')", table_name.replace("'", "''")))
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let cols = pinfo
+                            .query_map([], |r| {
+                                let name: String = r.get(1)?; // name
+                                let pkpos: i64 = r.get(5)?;   // pk (0 if not part of PK)
+                                Ok((name, pkpos))
+                            })
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let mut pk_cols: Vec<String> = Vec::new();
+                        for (name, pkpos) in cols.flatten() {
+                            if pkpos > 0 {
+                                pk_cols.push(name);
+                            }
+                        }
+                        if !pk_cols.is_empty() {
+                            items.push(serde_json::json!({
+                                "schema_name": "main",
+                                "table_name": table_name,
+                                "constraint_name": "PRIMARY KEY",
+                                "constraint_type": "pk",
+                                "columns": pk_cols,
+                            }));
+                        }
+
+                        // UNIQUE constraints via PRAGMA index_list(origin='u')
+                        let mut ilist = c
+                            .prepare(&format!("PRAGMA index_list('{}')", table_name.replace("'", "''")))
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let idxs = ilist
+                            .query_map([], |r| {
+                                let name: String = r.get(1)?;
+                                let unique: i64 = r.get(2)?;
+                                let origin: String = r.get(3)?; // 'c', 'u', 'pk'
+                                Ok((name, unique == 1, origin))
+                            })
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        for (iname, is_unique, origin) in idxs.flatten() {
+                            if is_unique || origin == "u" {
+                                let mut iinfo = c
+                                    .prepare(&format!("PRAGMA index_info('{}')", iname.replace("'", "''")))
+                                    .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                                let cols = iinfo
+                                    .query_map([], |r| r.get::<usize, String>(2))
+                                    .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                                let mut ucols: Vec<String> = Vec::new();
+                                for col in cols.flatten() {
+                                    ucols.push(col);
+                                }
+                                items.push(serde_json::json!({
+                                    "schema_name": "main",
+                                    "table_name": table_name,
+                                    "constraint_name": iname,
+                                    "constraint_type": "unique",
+                                    "columns": ucols,
+                                }));
+                            }
+                        }
+
+                        // CHECK constraints: naive extraction of `CHECK(...)` fragments
+                        let mut checks: Vec<String> = Vec::new();
+                        let mut rest = create_sql.as_str();
+                        while let Some(pos) = rest.to_uppercase().find("CHECK(") {
+                            let orig_pos = rest.char_indices().nth(pos).map(|(i, _)| i).unwrap_or(pos);
+                            let after = &rest[orig_pos + 6..];
+                            // find matching closing parenthesis
+                            let mut depth = 1i32;
+                            let mut end_idx = 0usize;
+                            for (i, ch) in after.char_indices() {
+                                if ch == '(' { depth += 1; }
+                                if ch == ')' {
+                                    depth -= 1;
+                                    if depth == 0 { end_idx = i; break; }
+                                }
+                            }
+                            if end_idx == 0 { break; }
+                            let expr = after[..end_idx].trim().to_string();
+                            checks.push(expr);
+                            rest = &after[end_idx+1..];
+                        }
+                        for expr in checks {
+                            items.push(serde_json::json!({
+                                "schema_name": "main",
+                                "table_name": table_name,
+                                "constraint_name": "CHECK",
+                                "constraint_type": "check",
+                                "definition": expr,
+                            }));
+                        }
+                    }
+
+                    let total_rows = items.len() as i64;
+                    let start = (page as i64) * (page_size as i64);
+                    let end = (start + page_size as i64).min(total_rows);
+                    let data = items
+                        .into_iter()
+                        .skip(start as usize)
+                        .take((end - start) as usize)
+                        .collect::<Vec<_>>();
+                    let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+                    let payload = serde_json::json!({
+                        "data": data,
+                        "total_pages": total_pages,
+                        "current_page": page
+                    });
+                    Ok::<String, Error>(payload.to_string())
+                }
+            })
+            .await
+            .unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
+            Ok(result)
+        }
+        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
+    }
 }
 
 #[tauri::command]
 pub async fn get_sqlite_triggers(
-    _connection_id: Uuid,
-    _page: Option<usize>,
-    _page_size: Option<usize>,
-    _state: tauri::State<'_, AppState>,
+    connection_id: Uuid,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    Ok("[]".into())
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::SQLite { connection: Some(conn), .. } => {
+            let result = tauri::async_runtime::spawn_blocking({
+                let conn = conn.clone();
+                let page = page.unwrap_or(0);
+                let page_size = page_size.unwrap_or(50);
+                move || {
+                    use rusqlite::Connection;
+                    let mut data: Vec<serde_json::Value> = Vec::new();
+                    let c: std::sync::MutexGuard<Connection> = conn.lock().map_err(|_| Error::Any(anyhow::anyhow!("SQLite connection mutex poisoned")))?;
+                    let mut stmt = c
+                        .prepare("SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let mut rows = stmt.query([]).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let mut all: Vec<(String, String, String)> = Vec::new();
+                    while let Some(row) = rows.next().map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))? {
+                        let name: String = row.get(0).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let tbl: String = row.get(1).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let sql: String = row.get(2).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        all.push((name, tbl, sql));
+                    }
+                    let total_rows = all.len() as i64;
+                    let start = (page as i64) * (page_size as i64);
+                    let end = (start + page_size as i64).min(total_rows);
+                    for (name, tbl, sql) in all.into_iter().skip(start as usize).take((end - start) as usize) {
+                        data.push(serde_json::json!({
+                            "schema_name": "main",
+                            "table_name": tbl,
+                            "trigger_name": name,
+                            "definition": sql,
+                        }));
+                    }
+                    let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+                    let payload = serde_json::json!({
+                        "data": data,
+                        "total_pages": total_pages,
+                        "current_page": page
+                    });
+                    Ok::<String, Error>(payload.to_string())
+                }
+            }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
+            Ok(result)
+        }
+        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
+    }
 }
 
 #[tauri::command]
@@ -2185,7 +2386,9 @@ pub async fn get_sqlite_routines(
     _page_size: Option<usize>,
     _state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    Ok("[]".into())
+    // SQLite doesn't have stored routines; return empty payload
+    let payload = serde_json::json!({"data": [], "total_pages": 0, "current_page": 0});
+    Ok(payload.to_string())
 }
 
 #[tauri::command]
