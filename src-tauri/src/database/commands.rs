@@ -412,6 +412,7 @@ pub async fn connect_to_database(
     }
 }
 
+#[allow(dead_code)]
 fn is_valid_pg_identifier(name: &str) -> bool {
     let bytes = name.as_bytes();
     if bytes.is_empty() {
@@ -428,6 +429,7 @@ fn is_valid_pg_identifier(name: &str) -> bool {
     true
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn listen_postgres(
     connection_id: Uuid,
@@ -461,6 +463,7 @@ pub async fn listen_postgres(
     }
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn unlisten_postgres(
     connection_id: Uuid,
@@ -755,6 +758,7 @@ pub async fn cancel_query(query_id: usize, state: tauri::State<'_, AppState>) ->
     state.stmt_manager.cancel_query(query_id)
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn cancel_postgres(
     connection_id: Uuid,
@@ -807,6 +811,7 @@ pub async fn cancel_postgres(
     }
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn terminate_postgres(
     connection_id: Uuid,
