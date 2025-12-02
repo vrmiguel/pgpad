@@ -3,6 +3,8 @@ use std::sync::Mutex;
 
 use anyhow::Context;
 use rusqlite::{types::Type, Connection};
+use keyring::Entry;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -130,23 +132,10 @@ impl Storage {
             })?;
         }
 
-        let mut conn = Connection::open(&db_path)
+        let mut conn = Self::open_or_migrate_encrypted(&db_path)
             .with_context(|| format!("Failed to open SQLite database at {}", db_path.display()))?;
 
-        conn.execute_batch(
-            "
-            PRAGMA foreign_keys = ON;
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = FULL;
-            PRAGMA busy_timeout = 30000;
-            PRAGMA case_sensitive_like = ON;
-            PRAGMA extended_result_codes = ON;
-            ",
-        )
-        .context("Failed to execute database initialization SQL")?;
-
-        let migrator = Migrator::new();
-        migrator.migrate(&mut conn)?;
+        
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -172,7 +161,7 @@ impl Storage {
                     None,
                     None,
                 ),
-                crate::database::types::DatabaseInfo::SQLite { db_path } => {
+                crate::database::types::DatabaseInfo::SQLite { db_path, .. } => {
                     (DB_TYPE_SQLITE, db_path.as_str(), None, None, None)
                 }
                 crate::database::types::DatabaseInfo::DuckDB { db_path } => {
@@ -242,7 +231,7 @@ impl Storage {
                     None,
                     None,
                 ),
-                crate::database::types::DatabaseInfo::SQLite { db_path } => {
+                crate::database::types::DatabaseInfo::SQLite { db_path, .. } => {
                     (DB_TYPE_SQLITE, db_path.as_str(), None, None, None)
                 }
                 crate::database::types::DatabaseInfo::DuckDB { db_path } => {
@@ -331,6 +320,7 @@ impl Storage {
                     },
                     "sqlite" => crate::database::types::DatabaseInfo::SQLite {
                         db_path: connection_data,
+                        passphrase: None,
                     },
                     "duckdb" => crate::database::types::DatabaseInfo::DuckDB {
                         db_path: connection_data,
@@ -641,5 +631,122 @@ impl Storage {
         conn.execute("DELETE FROM saved_queries WHERE id = ?1", [id])
             .context("Failed to delete saved query")?;
         Ok(())
+    }
+
+    fn get_or_create_app_key() -> anyhow::Result<String> {
+        let entry = Entry::new("pgpad", "app_storage_key")?;
+        match entry.get_password() {
+            Ok(pw) => Ok(pw),
+            Err(keyring::Error::NoEntry) => {
+                let mut buf = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut buf);
+                let key = hex::encode(buf);
+                entry.set_password(&key)?;
+                Ok(key)
+            }
+            Err(e) => Err(anyhow::anyhow!(e.to_string())),
+        }
+    }
+
+    fn apply_cipher_pragmas(conn: &mut Connection) -> anyhow::Result<()> {
+        conn.pragma_update(None, "cipher_compatibility", 4)?;
+        conn.pragma_update(None, "cipher_page_size", 4096)?;
+        let _ = conn.execute("PRAGMA cipher_memory_security = ON", []);
+        Ok(())
+    }
+
+    fn apply_common_pragmas(conn: &mut Connection) -> anyhow::Result<()> {
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = ON;
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = FULL;
+            PRAGMA busy_timeout = 30000;
+            PRAGMA case_sensitive_like = ON;
+            PRAGMA extended_result_codes = ON;
+            ",
+        )?;
+        Ok(())
+    }
+
+    fn open_encrypted(db_path: &PathBuf) -> anyhow::Result<Connection> {
+        let mut conn = Connection::open(db_path)?;
+        let key = Self::get_or_create_app_key()?;
+        conn.pragma_update(None, "key", &key)?;
+        Self::apply_cipher_pragmas(&mut conn)?;
+        Self::apply_common_pragmas(&mut conn)?;
+        Ok(conn)
+    }
+
+    fn open_plain(db_path: &PathBuf) -> anyhow::Result<Connection> {
+        let mut conn = Connection::open(db_path)?;
+        Self::apply_common_pragmas(&mut conn)?;
+        Ok(conn)
+    }
+
+    fn is_encrypted(conn: &mut Connection) -> bool {
+        match conn.pragma_query_value(None, "cipher_integrity_check", |row| row.get::<_, String>(0)) {
+            Ok(v) => v == "ok",
+            Err(_) => false,
+        }
+    }
+
+    fn open_or_migrate_encrypted(db_path: &PathBuf) -> anyhow::Result<Connection> {
+        let exists = std::fs::metadata(db_path).is_ok();
+        if !exists {
+            let mut conn = Self::open_encrypted(db_path)?;
+            let migrator = Migrator::new();
+            migrator.migrate(&mut conn)?;
+            return Ok(conn);
+        }
+
+        let mut conn_enc = match Self::open_encrypted(db_path) {
+            Ok(c) => c,
+            Err(_) => Self::open_plain(db_path)?,
+        };
+
+        if Self::is_encrypted(&mut conn_enc) {
+            let migrator = Migrator::new();
+            migrator.migrate(&mut conn_enc)?;
+            return Ok(conn_enc);
+        }
+
+        let plain = Self::open_plain(db_path)?;
+        drop(conn_enc);
+
+        let backup_path = db_path.with_extension("db.bak");
+        let new_path = db_path.with_extension("db.enc");
+        if std::fs::metadata(&new_path).is_ok() { let _ = std::fs::remove_file(&new_path); }
+
+        let mut plain_conn = plain;
+        let key = Self::get_or_create_app_key()?;
+        let attach_sql = format!("ATTACH DATABASE '{}' AS cipher_db KEY '{}';", new_path.display(), key);
+        plain_conn.execute_batch(&attach_sql)?;
+        plain_conn.execute_batch("SELECT sqlcipher_export('cipher_db');")?;
+        plain_conn.execute_batch("DETACH DATABASE cipher_db;")?;
+
+        std::fs::rename(db_path, &backup_path)?;
+        std::fs::rename(&new_path, db_path)?;
+
+        let mut enc_conn = Self::open_encrypted(db_path)?;
+        let ci = enc_conn
+            .pragma_query_value(None, "cipher_integrity_check", |row| row.get::<_, String>(0))
+            .unwrap_or_else(|_| String::from("error"));
+        anyhow::ensure!(ci == "ok", "cipher integrity check failed: {}", ci);
+        let migrator = Migrator::new();
+        migrator.migrate(&mut enc_conn)?;
+        Ok(enc_conn)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_key_is_hex32bytes() {
+        let key = Storage::get_or_create_app_key().expect("key");
+        assert_eq!(key.len(), 64);
+        assert!(key.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

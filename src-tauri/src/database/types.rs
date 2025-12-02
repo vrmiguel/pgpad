@@ -66,6 +66,7 @@ pub enum DatabaseInfo {
     },
     SQLite {
         db_path: String,
+        passphrase: Option<String>,
     },
     DuckDB {
         db_path: String,
@@ -155,6 +156,7 @@ impl DatabaseConnection {
                 },
                 Database::SQLite { db_path, .. } => DatabaseInfo::SQLite {
                     db_path: db_path.clone(),
+                    passphrase: None,
                 },
                 Database::DuckDB { db_path, .. } => DatabaseInfo::DuckDB {
                     db_path: db_path.clone(),
@@ -192,7 +194,7 @@ impl DatabaseConnection {
                 client: None,
                 backend_pid: None,
             },
-            DatabaseInfo::SQLite { db_path } => Database::SQLite {
+            DatabaseInfo::SQLite { db_path, .. } => Database::SQLite {
                 db_path,
                 connection: None,
             },

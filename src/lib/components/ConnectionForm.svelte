@@ -38,7 +38,9 @@
 	let databaseType = $state<'postgres' | 'sqlite' | 'duckdb' | 'oracle' | 'mssql'>('postgres');
 	let connectionString = $state('');
 	let caCertPath = $state<string>('');
-	let sqliteFilePath = $state('');
+    let sqliteFilePath = $state('');
+    let sqliteSqlcipher = $state(false);
+    let sqlitePassphrase = $state('');
 	let duckdbFilePath = $state('');
 	let oracleConnectionString = $state('');
 	let oracleWalletPath = $state<string>('');
@@ -125,9 +127,12 @@
 			errors.connectionString = 'Connection string is required';
 		}
 
-		if (databaseType === 'sqlite' && !sqliteFilePath.trim()) {
-			errors.sqliteFilePath = 'SQLite database file is required';
-		}
+        if (databaseType === 'sqlite' && !sqliteFilePath.trim()) {
+            errors.sqliteFilePath = 'SQLite database file is required';
+        }
+        if (databaseType === 'sqlite' && sqliteSqlcipher && !sqlitePassphrase.trim()) {
+            errors.sqlitePassphrase = 'Passphrase is required for SQLCipher';
+        }
 
 		if (databaseType === 'duckdb' && !duckdbFilePath.trim()) {
 			errors.duckdbFilePath = 'DuckDB database file is required';
@@ -142,7 +147,7 @@
 		return Object.keys(errors).length === 0;
 	}
 
-	async function openExistingDatabase() {
+async function openExistingDatabase() {
 		try {
 			const selectedPath = await Commands.pickSqliteDbDialog();
 			if (selectedPath) {
@@ -150,7 +155,23 @@
 				if (errors.sqliteFilePath) {
 					errors = { ...errors };
 					delete errors.sqliteFilePath;
-				}
+}
+
+async function openExistingSqlcipher() {
+    try {
+        const selectedPath = await Commands.pickSqlcipherDbDialog();
+        if (selectedPath) {
+            sqliteSqlcipher = true;
+            sqliteFilePath = selectedPath;
+            if (errors.sqliteFilePath) {
+                errors = { ...errors };
+                delete errors.sqliteFilePath;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to open SQLCipher file dialog:', error);
+    }
+}
 			}
 		} catch (error) {
 			console.error('Failed to open file dialog:', error);
@@ -223,16 +244,16 @@
 		isTestingConnection = true;
 		testResult = null;
 
-		const databaseInfo: DatabaseInfo =
-			databaseType === 'postgres'
+        const databaseInfo: DatabaseInfo =
+            databaseType === 'postgres'
 				? {
 						Postgres: {
 							connection_string: connectionString.trim(),
 							ca_cert_path: caCertPath.trim() || null
 						}
 					}
-				: databaseType === 'sqlite'
-					? { SQLite: { db_path: sqliteFilePath.trim() } }
+                : databaseType === 'sqlite'
+                    ? { SQLite: { db_path: sqliteFilePath.trim(), passphrase: sqliteSqlcipher ? sqlitePassphrase.trim() : null } }
 					: databaseType === 'duckdb'
 						? { DuckDB: { db_path: duckdbFilePath.trim() } }
 						: databaseType === 'mssql'
@@ -280,16 +301,16 @@
 		e.preventDefault();
 
 		if (validateForm()) {
-			const databaseInfo: DatabaseInfo =
-				databaseType === 'postgres'
+        const databaseInfo: DatabaseInfo =
+            databaseType === 'postgres'
 					? {
 							Postgres: {
 								connection_string: connectionString.trim(),
 								ca_cert_path: caCertPath.trim() || null
 							}
 						}
-					: databaseType === 'sqlite'
-						? { SQLite: { db_path: sqliteFilePath.trim() } }
+                : databaseType === 'sqlite'
+                    ? { SQLite: { db_path: sqliteFilePath.trim(), passphrase: sqliteSqlcipher ? sqlitePassphrase.trim() : null } }
 						: databaseType === 'duckdb'
 							? { DuckDB: { db_path: duckdbFilePath.trim() } }
 							: databaseType === 'mssql'
@@ -728,32 +749,59 @@
 									aria-describedby={describedby}
 									class={`shadow-sm transition-shadow ${errors.sqliteFilePath ? 'border-error' : ''}`}
 								/>
-								<div class="flex gap-2">
-									<Button
-										type="button"
-										variant="outline"
-										onclick={openExistingDatabase}
-										class="flex-1 gap-2 shadow-sm hover:shadow-md"
-									>
-										<FolderOpen class="h-4 w-4" />
-										Open Existing
-									</Button>
-									<Button
-										type="button"
-										variant="outline"
-										onclick={createNewDatabase}
-										class="flex-1 gap-2 shadow-sm hover:shadow-md"
-									>
-										<FilePlus class="h-4 w-4" />
-										Create New
-									</Button>
-								</div>
+                <div class="flex gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onclick={openExistingDatabase}
+                        class="flex-1 gap-2 shadow-sm hover:shadow-md"
+                    >
+                        <FolderOpen class="h-4 w-4" />
+                        Open Existing
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onclick={openExistingSqlcipher}
+                        class="flex-1 gap-2 shadow-sm hover:shadow-md"
+                    >
+                        <FolderOpen class="h-4 w-4" />
+                        Open SQLCipher
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onclick={createNewDatabase}
+                        class="flex-1 gap-2 shadow-sm hover:shadow-md"
+                    >
+                        <FilePlus class="h-4 w-4" />
+                        Create New
+                    </Button>
+                </div>
 							</div>
-						</FormRow>
-					</div>
-				</Tabs.Content>
+                        </FormRow>
+                        <div class="mt-4 grid grid-cols-2 gap-3">
+                            <div>
+                                <FormRow label="SQLCipher" forId="sqliteSqlcipher" size="sm">
+                                    <input id="sqliteSqlcipher" type="checkbox" bind:checked={sqliteSqlcipher} />
+                                </FormRow>
+                            </div>
+                            <div>
+                                <FormRow label="Passphrase" forId="sqlitePassphrase" size="sm" error={errors.sqlitePassphrase}>
+                                    <Input
+                                        id="sqlitePassphrase"
+                                        type="password"
+                                        bind:value={sqlitePassphrase}
+                                        placeholder="Enter passphrase"
+                                        class={`shadow-sm transition-shadow ${errors.sqlitePassphrase ? 'border-error' : ''}`}
+                                    />
+                                </FormRow>
+                            </div>
+                        </div>
+                    </div>
+                </Tabs.Content>
 
-				<Tabs.Content value="duckdb" class="mt-3">
+                <Tabs.Content value="duckdb" class="mt-3">
 					<div class="bg-card rounded-xl border p-5 shadow-sm">
 						<FormRow
 							label="Database File"

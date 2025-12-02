@@ -49,6 +49,20 @@ pub async fn open_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>, Err
 }
 
 #[tauri::command]
+pub async fn open_sqlcipher_db(app: tauri::AppHandle) -> Result<Option<String>, Error> {
+    let chosen_file = run_dialog(app, || {
+        AsyncFileDialog::new()
+            .set_title("Open a SQLCipher database file")
+            .add_filter("SQLCipher database", &["db", "sqlite", "sqlite3"])
+            .pick_file()
+    })
+    .await?
+    .map(|file| file.path().to_string_lossy().to_string());
+
+    Ok(chosen_file)
+}
+
+#[tauri::command]
 pub async fn open_duckdb_db(app: tauri::AppHandle) -> Result<Option<String>, Error> {
     let chosen_file = run_dialog(app, || {
         AsyncFileDialog::new()

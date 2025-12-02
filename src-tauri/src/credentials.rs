@@ -28,7 +28,10 @@ pub fn extract_sensitive_data(
 
             Ok((database_info, password))
         }
-        DatabaseInfo::SQLite { .. } => Ok((database_info, None)),
+        DatabaseInfo::SQLite { passphrase, .. } => {
+            let pw = passphrase.take();
+            Ok((database_info, pw))
+        }
         DatabaseInfo::DuckDB { .. } => Ok((database_info, None)),
         DatabaseInfo::Oracle {
             connection_string, ..
@@ -271,17 +274,19 @@ mod tests {
     }
 
     #[test]
-    fn sqlite_is_passthrough() {
+    fn sqlite_passphrase_extract() {
         let path = "/tmp/test.sqlite3".to_string();
-        let dbi = DatabaseInfo::SQLite {
-            db_path: path.clone(),
-        };
+        let pass = Some("secret".to_string());
+        let dbi = DatabaseInfo::SQLite { db_path: path.clone(), passphrase: pass.clone() };
 
         let (sanitized, pw) = extract_sensitive_data(dbi).expect("ok");
 
-        assert!(pw.is_none());
+        assert_eq!(pw.as_deref(), Some("secret"));
         match sanitized {
-            DatabaseInfo::SQLite { db_path } => assert_eq!(db_path, path),
+            DatabaseInfo::SQLite { db_path, passphrase } => {
+                assert_eq!(db_path, path);
+                assert!(passphrase.is_none());
+            }
             _ => panic!("expected SQLite variant"),
         }
     }
