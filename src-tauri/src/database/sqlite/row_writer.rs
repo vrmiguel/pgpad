@@ -59,7 +59,14 @@ impl RowWriter {
                     }
                 }
                 ValueRef::Integer(value) => write!(&mut self.buf, "{value}")?,
-                ValueRef::Real(value) => write!(&mut self.buf, "{value}")?,
+                ValueRef::Real(value) => {
+                    if value.is_finite() {
+                        write!(&mut self.buf, "{value}")?
+                    } else {
+                        // Stringify non-finite values (NaN, inf, -inf) to keep JSON valid
+                        self.write_json_string(&format!("{}", value));
+                    }
+                }
                 ValueRef::Text(value) => {
                     // If this is a JSON object or array, convert it so that it's picked up by JsonInspector in the front-end
             let is_json = {

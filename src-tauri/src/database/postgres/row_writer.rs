@@ -177,6 +177,15 @@ impl RowWriter {
                 }
                 self.buf.push(']');
             }
+            Type::VARCHAR_ARRAY | Type::BPCHAR_ARRAY | Type::NAME_ARRAY => {
+                let value: Vec<String> = row.try_get(column_index)?;
+                self.buf.push('[');
+                for (i, item) in value.iter().enumerate() {
+                    if i > 0 { self.buf.push(','); }
+                    self.write_json_string(item);
+                }
+                self.buf.push(']');
+            }
             Type::INT4_ARRAY => {
                 let value: Vec<i32> = row.try_get(column_index)?;
                 self.buf.push('[');
@@ -195,6 +204,15 @@ impl RowWriter {
                     if i > 0 {
                         self.buf.push(',');
                     }
+                    write!(&mut self.buf, "{}", item)?;
+                }
+                self.buf.push(']');
+            }
+            Type::INT2_ARRAY => {
+                let value: Vec<i16> = row.try_get(column_index)?;
+                self.buf.push('[');
+                for (i, item) in value.iter().enumerate() {
+                    if i > 0 { self.buf.push(','); }
                     write!(&mut self.buf, "{}", item)?;
                 }
                 self.buf.push(']');
@@ -234,6 +252,59 @@ impl RowWriter {
                 for (i, item) in value.iter().enumerate() {
                     if i > 0 { self.buf.push(','); }
                     write!(&mut self.buf, "{}", item)?;
+                }
+                self.buf.push(']');
+            }
+
+            Type::DATE_ARRAY => {
+                let value: Vec<chrono::NaiveDate> = row.try_get(column_index)?;
+                self.buf.push('[');
+                for (i, item) in value.iter().enumerate() {
+                    if i > 0 { self.buf.push(','); }
+                    self.write_json_string(&item.to_string());
+                }
+                self.buf.push(']');
+            }
+            Type::TIME_ARRAY => {
+                let value: Vec<chrono::NaiveTime> = row.try_get(column_index)?;
+                self.buf.push('[');
+                for (i, item) in value.iter().enumerate() {
+                    if i > 0 { self.buf.push(','); }
+                    self.write_json_string(&item.to_string());
+                }
+                self.buf.push(']');
+            }
+            Type::TIMESTAMP_ARRAY => {
+                let value: Vec<chrono::NaiveDateTime> = row.try_get(column_index)?;
+                self.buf.push('[');
+                for (i, item) in value.iter().enumerate() {
+                    if i > 0 { self.buf.push(','); }
+                    self.write_json_string(&item.to_string());
+                }
+                self.buf.push(']');
+            }
+            Type::TIMESTAMPTZ_ARRAY => {
+                let value: Vec<chrono::DateTime<chrono::Utc>> = row.try_get(column_index)?;
+                self.buf.push('[');
+                for (i, item) in value.iter().enumerate() {
+                    if i > 0 { self.buf.push(','); }
+                    match self.cfg.timestamp_tz_mode.as_str() {
+                        "local" => {
+                            let v = item.with_timezone(&chrono::Local);
+                            self.write_json_string(&v.to_rfc3339());
+                        }
+                        "offset" => self.write_json_string(&item.to_rfc3339()),
+                        _ => self.write_json_string(&item.to_string()),
+                    }
+                }
+                self.buf.push(']');
+            }
+            Type::JSON_ARRAY | Type::JSONB_ARRAY => {
+                let value: Vec<serde_json::Value> = row.try_get(column_index)?;
+                self.buf.push('[');
+                for (i, item) in value.iter().enumerate() {
+                    if i > 0 { self.buf.push(','); }
+                    self.buf.push_str(&item.to_string());
                 }
                 self.buf.push(']');
             }
