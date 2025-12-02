@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::{Arc, Mutex}};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use duckdb::Connection;
 
@@ -63,10 +66,15 @@ mod tests {
     #[tokio::test]
     async fn test_schema_introspection() -> anyhow::Result<()> {
         let conn = Connection::open_in_memory()?;
-        conn.execute_batch("CREATE SCHEMA IF NOT EXISTS test; CREATE TABLE test.users(id INT, name TEXT);")?;
+        conn.execute_batch(
+            "CREATE SCHEMA IF NOT EXISTS test; CREATE TABLE test.users(id INT, name TEXT);",
+        )?;
         let schema = get_database_schema(Arc::new(Mutex::new(conn))).await?;
         assert!(schema.schemas.iter().any(|s| s == "test"));
-        assert!(schema.tables.iter().any(|t| t.schema == "test" && t.name == "users"));
+        assert!(schema
+            .tables
+            .iter()
+            .any(|t| t.schema == "test" && t.name == "users"));
         Ok(())
     }
 }

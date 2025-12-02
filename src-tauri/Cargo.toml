@@ -46,6 +46,10 @@ oracle = "0.6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 tracing-log = "0.1"
+tiberius = { version = "0.12", default-features = false, features = ["rustls", "chrono", "tds73"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tokio-rustls = "0.26.0"
+rustls-pki-types = "1.7.0"
 
 [profile.release]
 panic = "abort"
@@ -56,3 +60,6 @@ strip = true
 
 [target.'cfg(unix)'.dev-dependencies]
 pgtemp = "0.6.0"
+tiberius = { version = "0.12", default-features = false, features = ["rustls", "chrono", "tds73"] }
+[features]
+mssql_tests = []

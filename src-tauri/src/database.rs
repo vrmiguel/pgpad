@@ -1,7 +1,8 @@
+pub mod duckdb;
+pub mod mssql;
+pub mod oracle;
 pub mod postgres;
 pub mod sqlite;
-pub mod duckdb;
-pub mod oracle;
 
 pub use postgres::tls::Certificates;
 

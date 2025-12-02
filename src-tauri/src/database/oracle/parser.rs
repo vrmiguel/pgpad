@@ -1,6 +1,9 @@
 use sqlparser::{ast::Statement, dialect::Dialect};
 
-use crate::database::{self, parser::{ParsedStatement, SqlDialectExt}};
+use crate::database::{
+    self,
+    parser::{ParsedStatement, SqlDialectExt},
+};
 
 pub fn parse_statements(query: &str) -> anyhow::Result<Vec<ParsedStatement>> {
     let q = query.trim();
@@ -8,19 +11,39 @@ pub fn parse_statements(query: &str) -> anyhow::Result<Vec<ParsedStatement>> {
 
     // Handle Oracle-specific statements without post-pass heuristics
     if upper.starts_with("DESCRIBE ") || upper.starts_with("DESC ") {
-        return Ok(vec![ParsedStatement { statement: q.into(), returns_values: true, is_read_only: true, explain_plan: false }]);
+        return Ok(vec![ParsedStatement {
+            statement: q.into(),
+            returns_values: true,
+            is_read_only: true,
+            explain_plan: false,
+        }]);
     }
 
     if upper.starts_with("EXPLAIN PLAN") {
-        return Ok(vec![ParsedStatement { statement: q.into(), returns_values: true, is_read_only: true, explain_plan: true }]);
+        return Ok(vec![ParsedStatement {
+            statement: q.into(),
+            returns_values: true,
+            is_read_only: true,
+            explain_plan: true,
+        }]);
     }
 
     if is_plsql_block(&upper) {
-        return Ok(vec![ParsedStatement { statement: q.into(), returns_values: false, is_read_only: false, explain_plan: false }]);
+        return Ok(vec![ParsedStatement {
+            statement: q.into(),
+            returns_values: false,
+            is_read_only: false,
+            explain_plan: false,
+        }]);
     }
 
     if upper.contains(" RETURNING INTO ") {
-        return Ok(vec![ParsedStatement { statement: q.into(), returns_values: true, is_read_only: false, explain_plan: false }]);
+        return Ok(vec![ParsedStatement {
+            statement: q.into(),
+            returns_values: true,
+            is_read_only: false,
+            explain_plan: false,
+        }]);
     }
 
     // Fallback to SQL parser with OracleDialect
@@ -37,7 +60,9 @@ impl Dialect for OracleDialect {
     fn is_identifier_part(&self, ch: char) -> bool {
         ch == '_' || ch.is_ascii_alphanumeric() || ch == '$' || ch == '#'
     }
-    fn supports_string_literal_backslash_escape(&self) -> bool { false }
+    fn supports_string_literal_backslash_escape(&self) -> bool {
+        false
+    }
 }
 
 impl SqlDialectExt for OracleDialect {

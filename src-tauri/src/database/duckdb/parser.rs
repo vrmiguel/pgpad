@@ -3,7 +3,10 @@ use sqlparser::{
     dialect::DuckDbDialect,
 };
 
-use crate::database::{self, parser::{ParsedStatement, SqlDialectExt}};
+use crate::database::{
+    self,
+    parser::{ParsedStatement, SqlDialectExt},
+};
 
 pub fn parse_statements(query: &str) -> anyhow::Result<Vec<ParsedStatement>> {
     database::parser::parse_statements(&DuckDbDialect {}, query)
@@ -54,10 +57,14 @@ fn pragma_returns_values(name: &ObjectName) -> bool {
         "enable_progress_bar",
     ];
 
-    let Some(first_part) = name.0.first() else { return false; };
+    let Some(first_part) = name.0.first() else {
+        return false;
+    };
     let ident = match first_part {
         ObjectNamePart::Identifier(ident) => ident,
         ObjectNamePart::Function(func) => &func.name,
     };
-    VALUE_RETURNING_PRAGMAS.iter().any(|&p| ident.value.eq_ignore_ascii_case(p))
+    VALUE_RETURNING_PRAGMAS
+        .iter()
+        .any(|&p| ident.value.eq_ignore_ascii_case(p))
 }

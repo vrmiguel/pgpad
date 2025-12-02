@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 use crate::database::types::{ColumnInfo, DatabaseSchema, TableInfo};
 use crate::Error;
 
-pub async fn get_database_schema(conn: Arc<Mutex<oracle::Connection>>) -> Result<DatabaseSchema, Error> {
+pub async fn get_database_schema(
+    conn: Arc<Mutex<oracle::Connection>>,
+) -> Result<DatabaseSchema, Error> {
     tauri::async_runtime::spawn_blocking(move || {
         let conn = conn.lock().map_err(|e| Error::Any(anyhow::anyhow!(format!("Mutex poisoned: {}", e))))?;
 

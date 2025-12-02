@@ -29,8 +29,20 @@ pub struct RowWriter {
 }
 
 impl RowWriter {
-    pub fn new() -> Self { Self { buf: String::new(), row_count: 0, cfg: RowFormatCfg::from_env() } }
-    pub fn with_settings(settings: Option<&crate::database::types::OracleSettings>) -> Self { Self { buf: String::new(), row_count: 0, cfg: RowFormatCfg::from_settings(settings) } }
+    pub fn new() -> Self {
+        Self {
+            buf: String::new(),
+            row_count: 0,
+            cfg: RowFormatCfg::from_env(),
+        }
+    }
+    pub fn with_settings(settings: Option<&crate::database::types::OracleSettings>) -> Self {
+        Self {
+            buf: String::new(),
+            row_count: 0,
+            cfg: RowFormatCfg::from_settings(settings),
+        }
+    }
 
     pub fn add_row(&mut self, row: &Row) -> Result<(), anyhow::Error> {
         if self.row_count == 0 {
@@ -135,17 +147,29 @@ impl RowWriter {
                 let s = value.to_string();
                 match self.cfg.numeric_policy.as_str() {
                     "never" => {
-                        if let Ok(i) = s.parse::<i128>() { write!(&mut self.buf, "{}", i)?; }
-                        else if let Ok(f) = s.parse::<f64>() { write!(&mut self.buf, "{}", f)?; }
-                        else { self.write_json_string(&s); }
+                        if let Ok(i) = s.parse::<i128>() {
+                            write!(&mut self.buf, "{}", i)?;
+                        } else if let Ok(f) = s.parse::<f64>() {
+                            write!(&mut self.buf, "{}", f)?;
+                        } else {
+                            self.write_json_string(&s);
+                        }
                     }
                     "precision_threshold" => {
                         let is_fractional = s.contains('.');
                         let digits_only = s.chars().filter(|c| c.is_ascii_digit()).count();
                         if !is_fractional && digits_only <= self.cfg.numeric_threshold {
-                            if let Ok(i) = s.parse::<i128>() { write!(&mut self.buf, "{}", i)?; } else { self.write_json_string(&s); }
+                            if let Ok(i) = s.parse::<i128>() {
+                                write!(&mut self.buf, "{}", i)?;
+                            } else {
+                                self.write_json_string(&s);
+                            }
                         } else if is_fractional && digits_only <= self.cfg.numeric_threshold {
-                            if let Ok(f) = s.parse::<f64>() { write!(&mut self.buf, "{}", f)?; } else { self.write_json_string(&s); }
+                            if let Ok(f) = s.parse::<f64>() {
+                                write!(&mut self.buf, "{}", f)?;
+                            } else {
+                                self.write_json_string(&s);
+                            }
                         } else {
                             self.write_json_string(&s);
                         }
@@ -181,7 +205,9 @@ impl RowWriter {
                 let value: Vec<String> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
                     self.write_json_string(item);
                 }
                 self.buf.push(']');
@@ -212,7 +238,9 @@ impl RowWriter {
                 let value: Vec<i16> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
                     write!(&mut self.buf, "{}", item)?;
                 }
                 self.buf.push(']');
@@ -221,9 +249,14 @@ impl RowWriter {
                 let value: Vec<f32> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
-                    if item.is_finite() { write!(&mut self.buf, "{}", item)?; }
-                    else { self.write_json_string(&format!("{}", item)); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
+                    if item.is_finite() {
+                        write!(&mut self.buf, "{}", item)?;
+                    } else {
+                        self.write_json_string(&format!("{}", item));
+                    }
                 }
                 self.buf.push(']');
             }
@@ -231,9 +264,14 @@ impl RowWriter {
                 let value: Vec<f64> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
-                    if item.is_finite() { write!(&mut self.buf, "{}", item)?; }
-                    else { self.write_json_string(&format!("{}", item)); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
+                    if item.is_finite() {
+                        write!(&mut self.buf, "{}", item)?;
+                    } else {
+                        self.write_json_string(&format!("{}", item));
+                    }
                 }
                 self.buf.push(']');
             }
@@ -241,7 +279,9 @@ impl RowWriter {
                 let value: Vec<uuid::Uuid> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
                     self.write_json_string(&item.to_string());
                 }
                 self.buf.push(']');
@@ -250,7 +290,9 @@ impl RowWriter {
                 let value: Vec<bool> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
                     write!(&mut self.buf, "{}", item)?;
                 }
                 self.buf.push(']');
@@ -260,7 +302,9 @@ impl RowWriter {
                 let value: Vec<chrono::NaiveDate> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
                     self.write_json_string(&item.to_string());
                 }
                 self.buf.push(']');
@@ -269,7 +313,9 @@ impl RowWriter {
                 let value: Vec<chrono::NaiveTime> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
                     self.write_json_string(&item.to_string());
                 }
                 self.buf.push(']');
@@ -278,7 +324,9 @@ impl RowWriter {
                 let value: Vec<chrono::NaiveDateTime> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
                     self.write_json_string(&item.to_string());
                 }
                 self.buf.push(']');
@@ -287,7 +335,9 @@ impl RowWriter {
                 let value: Vec<chrono::DateTime<chrono::Utc>> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
                     match self.cfg.timestamp_tz_mode.as_str() {
                         "local" => {
                             let v = item.with_timezone(&chrono::Local);
@@ -303,7 +353,9 @@ impl RowWriter {
                 let value: Vec<serde_json::Value> = row.try_get(column_index)?;
                 self.buf.push('[');
                 for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
+                    if i > 0 {
+                        self.buf.push(',');
+                    }
                     self.buf.push_str(&item.to_string());
                 }
                 self.buf.push(']');
@@ -359,12 +411,20 @@ impl RowWriter {
                 let len = bytes.bytes.len();
                 match self.cfg.bytes_format.as_str() {
                     "off" | "len" => self.write_json_string(&format!("Bytes({})", len)),
-                    "full_hex" => self.write_json_string(&format!("0x{}", hex::encode(bytes.bytes))),
+                    "full_hex" => {
+                        self.write_json_string(&format!("0x{}", hex::encode(bytes.bytes)))
+                    }
                     _ => {
                         let n = usize::min(len, self.cfg.bytes_chunk_size);
                         let hexp = hex::encode(&bytes.bytes[..n]);
-                        if n >= len { self.write_json_string(&format!("0x{}", hexp)); }
-                        else { self.write_json_string(&format!("Bytes({}) preview(0..{}): 0x{}…", len, n, hexp)); }
+                        if n >= len {
+                            self.write_json_string(&format!("0x{}", hexp));
+                        } else {
+                            self.write_json_string(&format!(
+                                "Bytes({}) preview(0..{}): 0x{}…",
+                                len, n, hexp
+                            ));
+                        }
                     }
                 }
             }
@@ -390,15 +450,65 @@ impl RowWriter {
         }
         self.buf.push('"');
     }
-
 }
 
-struct RowFormatCfg { bytes_format: String, bytes_chunk_size: usize, timestamp_tz_mode: String, numeric_policy: String, numeric_threshold: usize }
+struct RowFormatCfg {
+    bytes_format: String,
+    bytes_chunk_size: usize,
+    timestamp_tz_mode: String,
+    numeric_policy: String,
+    numeric_threshold: usize,
+}
 impl RowFormatCfg {
-    fn from_env() -> Self { Self { bytes_format: std::env::var("PGPAD_BYTES_FORMAT").unwrap_or_else(|_| String::from("len")).to_lowercase(), bytes_chunk_size: std::env::var("PGPAD_BYTES_CHUNK_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0).unwrap_or(4096), timestamp_tz_mode: std::env::var("PGPAD_TIMESTAMP_TZ_MODE").unwrap_or_else(|_| String::from("utc")).to_lowercase(), numeric_policy: std::env::var("PGPAD_NUMERIC_STRING_POLICY").unwrap_or_else(|_| String::from("precision_threshold")).to_lowercase(), numeric_threshold: std::env::var("PGPAD_NUMERIC_PRECISION_THRESHOLD").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0).unwrap_or(18) } }
-    fn from_settings(settings: Option<&crate::database::types::OracleSettings>) -> Self { if let Some(s) = settings { Self { bytes_format: s.bytes_format.clone().unwrap_or_else(|| "len".into()).to_lowercase(), bytes_chunk_size: s.bytes_chunk_size.unwrap_or(4096), timestamp_tz_mode: s.timestamp_tz_mode.clone().unwrap_or_else(|| "utc".into()).to_lowercase(), numeric_policy: s.numeric_string_policy.clone().unwrap_or_else(|| "precision_threshold".into()).to_lowercase(), numeric_threshold: s.numeric_precision_threshold.unwrap_or(18) } } else { Self::from_env() } }
+    fn from_env() -> Self {
+        Self {
+            bytes_format: std::env::var("PGPAD_BYTES_FORMAT")
+                .unwrap_or_else(|_| String::from("len"))
+                .to_lowercase(),
+            bytes_chunk_size: std::env::var("PGPAD_BYTES_CHUNK_SIZE")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|&n| n > 0)
+                .unwrap_or(4096),
+            timestamp_tz_mode: std::env::var("PGPAD_TIMESTAMP_TZ_MODE")
+                .unwrap_or_else(|_| String::from("utc"))
+                .to_lowercase(),
+            numeric_policy: std::env::var("PGPAD_NUMERIC_STRING_POLICY")
+                .unwrap_or_else(|_| String::from("precision_threshold"))
+                .to_lowercase(),
+            numeric_threshold: std::env::var("PGPAD_NUMERIC_PRECISION_THRESHOLD")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|&n| n > 0)
+                .unwrap_or(18),
+        }
+    }
+    fn from_settings(settings: Option<&crate::database::types::OracleSettings>) -> Self {
+        if let Some(s) = settings {
+            Self {
+                bytes_format: s
+                    .bytes_format
+                    .clone()
+                    .unwrap_or_else(|| "len".into())
+                    .to_lowercase(),
+                bytes_chunk_size: s.bytes_chunk_size.unwrap_or(4096),
+                timestamp_tz_mode: s
+                    .timestamp_tz_mode
+                    .clone()
+                    .unwrap_or_else(|| "utc".into())
+                    .to_lowercase(),
+                numeric_policy: s
+                    .numeric_string_policy
+                    .clone()
+                    .unwrap_or_else(|| "precision_threshold".into())
+                    .to_lowercase(),
+                numeric_threshold: s.numeric_precision_threshold.unwrap_or(18),
+            }
+        } else {
+            Self::from_env()
+        }
+    }
 }
- 
 
 #[cfg(all(test, unix))]
 mod tests {

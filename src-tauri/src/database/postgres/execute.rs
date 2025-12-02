@@ -46,8 +46,12 @@ pub async fn execute_query_with_params(
                     n = n * 10 + (bytes[i] - b'0') as usize;
                     i += 1;
                 }
-                if has && n > max_idx { max_idx = n; }
-            } else { i += 1; }
+                if has && n > max_idx {
+                    max_idx = n;
+                }
+            } else {
+                i += 1;
+            }
         }
         max_idx
     }
@@ -66,24 +70,41 @@ pub async fn execute_query_with_params(
             serde_json::Value::Null => ParamValue::StrOpt(None),
             serde_json::Value::Bool(b) => ParamValue::Bool(*b),
             serde_json::Value::Number(n) => {
-                if let Some(i) = n.as_i64() { ParamValue::I64(i) }
-                else if let Some(f) = n.as_f64() { ParamValue::F64(f) }
-                else { ParamValue::Str(n.to_string()) }
+                if let Some(i) = n.as_i64() {
+                    ParamValue::I64(i)
+                } else if let Some(f) = n.as_f64() {
+                    ParamValue::F64(f)
+                } else {
+                    ParamValue::Str(n.to_string())
+                }
             }
             serde_json::Value::String(s) => ParamValue::Str(s.clone()),
-            serde_json::Value::Array(_) | serde_json::Value::Object(_) => ParamValue::Json(tokio_postgres::types::Json(v.clone())),
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                ParamValue::Json(tokio_postgres::types::Json(v.clone()))
+            }
         }
     }
 
-    fn param_for_index(params: &serde_json::Map<String, serde_json::Value>, idx: usize) -> ParamValue {
+    fn param_for_index(
+        params: &serde_json::Map<String, serde_json::Value>,
+        idx: usize,
+    ) -> ParamValue {
         let k1 = idx.to_string();
         let k2 = format!("${}", idx);
         let k3 = format!("P{}", idx);
         let k4 = format!("p{}", idx);
-        if let Some(v) = params.get(&k1) { return map_param_value(v); }
-        if let Some(v) = params.get(&k2) { return map_param_value(v); }
-        if let Some(v) = params.get(&k3) { return map_param_value(v); }
-        if let Some(v) = params.get(&k4) { return map_param_value(v); }
+        if let Some(v) = params.get(&k1) {
+            return map_param_value(v);
+        }
+        if let Some(v) = params.get(&k2) {
+            return map_param_value(v);
+        }
+        if let Some(v) = params.get(&k3) {
+            return map_param_value(v);
+        }
+        if let Some(v) = params.get(&k4) {
+            return map_param_value(v);
+        }
         map_param_value(&serde_json::Value::Null)
     }
 
@@ -105,7 +126,8 @@ pub async fn execute_query_with_params(
     }
 
     if stmt.returns_values {
-        execute_query_with_results_params(client, &stmt.statement, sender, settings, &param_refs).await
+        execute_query_with_results_params(client, &stmt.statement, sender, settings, &param_refs)
+            .await
     } else {
         execute_modification_query_params(client, &stmt.statement, sender, &param_refs).await
     }
@@ -151,10 +173,21 @@ async fn execute_query_with_results(
         Ok(stream) => {
             pin_mut!(stream);
 
-            let batch_size = settings.and_then(|s| s.batch_size).or_else(|| env::var("PGPAD_BATCH_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0)).unwrap_or(50);
+            let batch_size = settings
+                .and_then(|s| s.batch_size)
+                .or_else(|| {
+                    env::var("PGPAD_BATCH_SIZE")
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .filter(|&n| n > 0)
+                })
+                .unwrap_or(50);
             let mut total_rows = 0;
 
-            let mut writer = match settings { Some(s) => RowWriter::with_settings(Some(s)), None => RowWriter::new() };
+            let mut writer = match settings {
+                Some(s) => RowWriter::with_settings(Some(s)),
+                None => RowWriter::new(),
+            };
 
             loop {
                 match stream.try_next().await {
@@ -247,7 +280,11 @@ async fn execute_query_with_results_params(
         Ok(stmt) => stmt,
         Err(e) => {
             let error_msg = format!("Query failed: {}", e);
-            sender.send(QueryExecEvent::Finished { elapsed_ms: started_at.elapsed().as_millis() as u64, affected_rows: 0, error: Some(error_msg.clone()) })?;
+            sender.send(QueryExecEvent::Finished {
+                elapsed_ms: started_at.elapsed().as_millis() as u64,
+                affected_rows: 0,
+                error: Some(error_msg.clone()),
+            })?;
             return Err(Error::Any(anyhow::anyhow!(error_msg)));
         }
     };
@@ -259,36 +296,67 @@ async fn execute_query_with_results_params(
     match client.query_raw(&prepared_stmt, slice_iter(params)).await {
         Ok(stream) => {
             pin_mut!(stream);
-            let batch_size = settings.and_then(|s| s.batch_size).or_else(|| env::var("PGPAD_BATCH_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0)).unwrap_or(50);
+            let batch_size = settings
+                .and_then(|s| s.batch_size)
+                .or_else(|| {
+                    env::var("PGPAD_BATCH_SIZE")
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .filter(|&n| n > 0)
+                })
+                .unwrap_or(50);
             let mut _total_rows = 0;
-            let mut writer = match settings { Some(s) => RowWriter::with_settings(Some(s)), None => RowWriter::new() };
+            let mut writer = match settings {
+                Some(s) => RowWriter::with_settings(Some(s)),
+                None => RowWriter::new(),
+            };
             loop {
                 match stream.try_next().await {
                     Ok(Some(row)) => {
                         writer.add_row(&row)?;
                         _total_rows += 1;
                         if writer.len() >= batch_size {
-                            sender.send(QueryExecEvent::Page { page_amount: writer.len(), page: writer.finish() })?;
+                            sender.send(QueryExecEvent::Page {
+                                page_amount: writer.len(),
+                                page: writer.finish(),
+                            })?;
                         }
                     }
-                    Ok(None) => { break; }
+                    Ok(None) => {
+                        break;
+                    }
                     Err(e) => {
                         let error_msg = format!("Query failed: {}", e);
-                        sender.send(QueryExecEvent::Finished { elapsed_ms: started_at.elapsed().as_millis() as u64, affected_rows: 0, error: Some(error_msg.clone()) })?;
+                        sender.send(QueryExecEvent::Finished {
+                            elapsed_ms: started_at.elapsed().as_millis() as u64,
+                            affected_rows: 0,
+                            error: Some(error_msg.clone()),
+                        })?;
                         return Err(Error::Any(anyhow::anyhow!(error_msg)));
                     }
                 }
             }
             if !writer.is_empty() {
-                sender.send(QueryExecEvent::Page { page_amount: writer.len(), page: writer.finish() })?;
+                sender.send(QueryExecEvent::Page {
+                    page_amount: writer.len(),
+                    page: writer.finish(),
+                })?;
             }
             let duration = started_at.elapsed().as_millis() as u64;
-            sender.send(QueryExecEvent::Finished { elapsed_ms: duration, affected_rows: 0, error: None })?;
+            sender.send(QueryExecEvent::Finished {
+                elapsed_ms: duration,
+                affected_rows: 0,
+                error: None,
+            })?;
             Ok(())
         }
         Err(e) => {
             let error_msg = format!("Query failed: {}", e);
-            sender.send(QueryExecEvent::Finished { elapsed_ms: started_at.elapsed().as_millis() as u64, affected_rows: 0, error: Some(error_msg.clone()) })?;
+            sender.send(QueryExecEvent::Finished {
+                elapsed_ms: started_at.elapsed().as_millis() as u64,
+                affected_rows: 0,
+                error: Some(error_msg.clone()),
+            })?;
             Err(Error::Any(anyhow::anyhow!(error_msg)))
         }
     }
@@ -304,12 +372,20 @@ async fn execute_modification_query_params(
     let started_at = std::time::Instant::now();
     match client.execute(query, params).await {
         Ok(rows_affected) => {
-            sender.send(QueryExecEvent::Finished { elapsed_ms: started_at.elapsed().as_millis() as u64, affected_rows: rows_affected as usize, error: None })?;
+            sender.send(QueryExecEvent::Finished {
+                elapsed_ms: started_at.elapsed().as_millis() as u64,
+                affected_rows: rows_affected as usize,
+                error: None,
+            })?;
             Ok(())
         }
         Err(e) => {
             let error_msg = format!("Query failed: {}", e);
-            sender.send(QueryExecEvent::Finished { elapsed_ms: started_at.elapsed().as_millis() as u64, affected_rows: 0, error: Some(error_msg.clone()) })?;
+            sender.send(QueryExecEvent::Finished {
+                elapsed_ms: started_at.elapsed().as_millis() as u64,
+                affected_rows: 0,
+                error: Some(error_msg.clone()),
+            })?;
             Err(Error::Any(anyhow::anyhow!(error_msg)))
         }
     }
@@ -504,6 +580,93 @@ mod tests {
             }
             other => panic!("Expected Finished event, got {:?}", other),
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_postgres_prepared_params() -> anyhow::Result<()> {
+        let db = PgTempDB::async_new().await;
+        let (client, conn) = tokio_postgres::connect(&db.connection_uri(), tokio_postgres::NoTls)
+            .await
+            .unwrap();
+        tokio::task::spawn(async move {
+            let _ = conn.await;
+        });
+        let client = Arc::new(client);
+        let mut parsed = parse_statements("SELECT $1::int AS x, $2::text AS y").unwrap();
+        let stmt = parsed.pop().unwrap();
+        let (sender, mut recv) = channel();
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "1".into(),
+            serde_json::Value::Number(serde_json::Number::from(7)),
+        );
+        params.insert("2".into(), serde_json::Value::String("ok".into()));
+        tokio::task::spawn({
+            let client = client.clone();
+            async move {
+                super::execute_query_with_params(&client, stmt, &sender, params, None)
+                    .await
+                    .unwrap();
+            }
+        });
+        let _ = recv.recv().await.unwrap();
+        let page = recv.recv().await.unwrap();
+        match page {
+            QueryExecEvent::Page { page, .. } => {
+                let v: serde_json::Value = serde_json::from_str(page.get())?;
+                assert_eq!(v, serde_json::json!([[7, "ok"]]));
+            }
+            _ => anyhow::bail!("Expected Page"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_postgres_cancel_and_reconnect_flow() -> anyhow::Result<()> {
+        let db = PgTempDB::async_new().await;
+        let (client, conn) = tokio_postgres::connect(&db.connection_uri(), tokio_postgres::NoTls)
+            .await
+            .unwrap();
+        tokio::task::spawn(async move {
+            let _ = conn.await;
+        });
+        let client = Arc::new(client);
+        let mgr = crate::database::stmt_manager::StatementManager::new();
+        let ids = mgr
+            .submit_query(
+                crate::database::types::DatabaseClient::Postgres {
+                    client: client.clone(),
+                },
+                "SELECT pg_sleep(3)",
+            )
+            .unwrap();
+        mgr.cancel_query(ids[0]).unwrap();
+        let status = mgr.get_query_status(ids[0]).unwrap();
+        assert!(matches!(status, crate::database::types::QueryStatus::Error));
+        let (client2, conn2) = tokio_postgres::connect(&db.connection_uri(), tokio_postgres::NoTls)
+            .await
+            .unwrap();
+        tokio::task::spawn(async move {
+            let _ = conn2.await;
+        });
+        let rows = client2.query("SELECT 1", &[]).await.unwrap();
+        let v: i32 = rows[0].get(0);
+        assert_eq!(v, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_postgres_schema_pagination() -> anyhow::Result<()> {
+        let db = PgTempDB::async_new().await;
+        let (client, conn) = tokio_postgres::connect(&db.connection_uri(), tokio_postgres::NoTls)
+            .await
+            .unwrap();
+        tokio::task::spawn(async move {
+            let _ = conn.await;
+        });
+        let rows = client.query("SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY 1,2 LIMIT $1 OFFSET $2", &[&10_i64, &0_i64]).await.unwrap();
+        assert!(rows.len() <= 10);
         Ok(())
     }
 }

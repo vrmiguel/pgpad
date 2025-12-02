@@ -30,9 +30,28 @@ pub fn extract_sensitive_data(
         }
         DatabaseInfo::SQLite { .. } => Ok((database_info, None)),
         DatabaseInfo::DuckDB { .. } => Ok((database_info, None)),
-        DatabaseInfo::Oracle { connection_string, .. } => {
-            let mut url = Url::parse(connection_string)
-                .context("Failed to parse connection string")?;
+        DatabaseInfo::Oracle {
+            connection_string, ..
+        } => {
+            let mut url =
+                Url::parse(connection_string).context("Failed to parse connection string")?;
+            let password = url.password().map(ToOwned::to_owned);
+            url.set_password(None).map_err(|_| {
+                Error::Any(anyhow::anyhow!(
+                    "Failed to remove password from connection string",
+                ))
+            })?;
+
+            connection_string.clear();
+            write!(connection_string, "{}", url)?;
+
+            Ok((database_info, password))
+        }
+        DatabaseInfo::Mssql {
+            connection_string, ..
+        } => {
+            let mut url =
+                Url::parse(connection_string).context("Failed to parse connection string")?;
             let password = url.password().map(ToOwned::to_owned);
             url.set_password(None).map_err(|_| {
                 Error::Any(anyhow::anyhow!(

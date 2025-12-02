@@ -1,7 +1,7 @@
-use serde_json::value::RawValue;
 use oracle::sql_type::{Blob, OracleType};
-use std::io::{Read, Seek, SeekFrom};
+use serde_json::value::RawValue;
 use std::fmt::Write;
+use std::io::{Read, Seek, SeekFrom};
 
 pub struct RowWriter {
     buf: String,
@@ -14,12 +14,27 @@ pub struct RowWriter {
 impl RowWriter {
     pub fn new(column_info: Vec<oracle::ColumnInfo>) -> Self {
         let cfg = RowFormatCfg::from_env();
-        Self { buf: String::new(), row_count: 0, column_info, cfg, sender: None }
+        Self {
+            buf: String::new(),
+            row_count: 0,
+            column_info,
+            cfg,
+            sender: None,
+        }
     }
 
-    pub fn with_settings(column_info: Vec<oracle::ColumnInfo>, settings: Option<&crate::database::types::OracleSettings>) -> Self {
+    pub fn with_settings(
+        column_info: Vec<oracle::ColumnInfo>,
+        settings: Option<&crate::database::types::OracleSettings>,
+    ) -> Self {
         let cfg = RowFormatCfg::from_settings(settings);
-        Self { buf: String::new(), row_count: 0, column_info, cfg, sender: None }
+        Self {
+            buf: String::new(),
+            row_count: 0,
+            column_info,
+            cfg,
+            sender: None,
+        }
     }
 
     pub fn with_sender(mut self, sender: crate::database::types::ExecSender) -> Self {
@@ -28,11 +43,17 @@ impl RowWriter {
     }
 
     pub fn add_row(&mut self, row: &oracle::Row, row_index: usize) -> Result<(), anyhow::Error> {
-        if self.row_count == 0 { self.buf.push('['); }
-        if self.row_count > 0 { self.buf.push(','); }
+        if self.row_count == 0 {
+            self.buf.push('[');
+        }
+        if self.row_count > 0 {
+            self.buf.push(',');
+        }
         self.buf.push('[');
         for i in 0..self.column_info.len() {
-            if i > 0 { self.buf.push(','); }
+            if i > 0 {
+                self.buf.push(',');
+            }
             let is_bool = is_boolean_candidate(&self.column_info[i]);
             let prefer_string_number = match self.column_info[i].oracle_type() {
                 OracleType::Number(precision, scale) => match self.cfg.numeric_policy.as_str() {
@@ -57,9 +78,13 @@ impl RowWriter {
                 match opt {
                     None => self.write_json_string("NULL"),
                     Some(v) => {
-                        if is_bool && v == 0 { self.buf.push_str("false"); }
-                        else if is_bool && v == 1 { self.buf.push_str("true"); }
-                        else { write!(&mut self.buf, "{}", v)?; }
+                        if is_bool && v == 0 {
+                            self.buf.push_str("false");
+                        } else if is_bool && v == 1 {
+                            self.buf.push_str("true");
+                        } else {
+                            write!(&mut self.buf, "{}", v)?;
+                        }
                     }
                 }
                 continue;
@@ -75,28 +100,42 @@ impl RowWriter {
 
             // Dates/timestamps handled via string branch below
 
-                if let Ok(opt) = row.get::<usize, Option<String>>(i) {
-                    match opt {
-                        None => self.write_json_string("NULL"),
-                        Some(s) => {
-                            let sl = s.trim();
-                            if is_bool && sl.len() == 1 {
+            if let Ok(opt) = row.get::<usize, Option<String>>(i) {
+                match opt {
+                    None => self.write_json_string("NULL"),
+                    Some(s) => {
+                        let sl = s.trim();
+                        if is_bool && sl.len() == 1 {
                             match sl.chars().next().unwrap() {
-                                'Y' | 'y' | 'T' | 't' | '1' => { self.buf.push_str("true"); }
-                                'N' | 'n' | 'F' | 'f' | '0' => { self.buf.push_str("false"); }
+                                'Y' | 'y' | 'T' | 't' | '1' => {
+                                    self.buf.push_str("true");
+                                }
+                                'N' | 'n' | 'F' | 'f' | '0' => {
+                                    self.buf.push_str("false");
+                                }
                                 _ => {
-                                    if val_is_json(s.as_bytes()) { self.buf.write_str(&s)?; }
-                                    else { self.write_json_string(&s); }
+                                    if val_is_json(s.as_bytes()) {
+                                        self.buf.write_str(&s)?;
+                                    } else {
+                                        self.write_json_string(&s);
+                                    }
                                 }
                             }
-                        } else if self.cfg.json_detection != "off" && s.len() >= self.cfg.json_min_length && val_is_json(s.as_bytes()) {
+                        } else if self.cfg.json_detection != "off"
+                            && s.len() >= self.cfg.json_min_length
+                            && val_is_json(s.as_bytes())
+                        {
                             self.buf.write_str(&s)?;
-                                } else {
+                        } else {
                             let is_large_text = is_large_text_candidate(&self.column_info[i]);
                             if is_large_text && s.len() > TEXT_PREVIEW_THRESHOLD {
                                 write_size_tag(&mut self.buf, "Clob", s.len());
                             } else {
-                                let s2 = if prefer_string_number { crate::database::oracle::numeric::normalize_number_string(&s) } else { s };
+                                let s2 = if prefer_string_number {
+                                    crate::database::oracle::numeric::normalize_number_string(&s)
+                                } else {
+                                    s
+                                };
                                 self.write_json_string(&s2);
                             }
                         }
@@ -115,16 +154,27 @@ impl RowWriter {
                         match raw_mode {
                             "off" | "len" => self.write_json_string(&format!("Bytes({})", len)),
                             "full_hex" => {
-                                let hex_full = if len > 0 { hex::encode(&bytes[..]) } else { String::new() };
+                                let hex_full = if len > 0 {
+                                    hex::encode(&bytes[..])
+                                } else {
+                                    String::new()
+                                };
                                 self.write_json_string(&format!("0x{}", hex_full));
                             }
                             _ => {
                                 let preview_len = usize::min(len, chunk_size);
-                                let hex_preview = if preview_len > 0 { hex::encode(&bytes[..preview_len]) } else { String::new() };
+                                let hex_preview = if preview_len > 0 {
+                                    hex::encode(&bytes[..preview_len])
+                                } else {
+                                    String::new()
+                                };
                                 if preview_len >= len {
                                     self.write_json_string(&format!("0x{}", hex_preview));
                                 } else {
-                                    self.write_json_string(&format!("Bytes({}) preview(0..{}): 0x{}…", len, preview_len, hex_preview));
+                                    self.write_json_string(&format!(
+                                        "Bytes({}) preview(0..{}): 0x{}…",
+                                        len, preview_len, hex_preview
+                                    ));
                                 }
                             }
                         }
@@ -140,28 +190,52 @@ impl RowWriter {
                         let mode = self.cfg.blob_stream.as_str();
                         let chunk = self.cfg.blob_chunk_size;
                         let total_len = match blob.seek(SeekFrom::End(0)) {
-                            Ok(p) => { let _ = blob.seek(SeekFrom::Start(0)); Some(p as usize) },
+                            Ok(p) => {
+                                let _ = blob.seek(SeekFrom::Start(0));
+                                Some(p as usize)
+                            }
                             Err(_) => None,
                         };
                         match mode {
                             "off" | "len" | "" => {
-                                if let Some(n) = total_len { self.write_json_string(&format!("Bytes({})", n)); } else { self.write_json_string("Bytes"); }
+                                if let Some(n) = total_len {
+                                    self.write_json_string(&format!("Bytes({})", n));
+                                } else {
+                                    self.write_json_string("Bytes");
+                                }
                             }
                             "preview" => {
                                 let mut buf = vec![0u8; chunk];
                                 match blob.read(&mut buf) {
                                     Ok(n) if n > 0 => {
                                         let hex_preview = hex::encode(&buf[..n]);
-                                        if let Some(t) = total_len { self.write_json_string(&format!("Bytes({}) preview(0..{}): 0x{}…", t, n, hex_preview)); }
-                                        else { self.write_json_string(&format!("Bytes preview(0..{}): 0x{}…", n, hex_preview)); }
+                                        if let Some(t) = total_len {
+                                            self.write_json_string(&format!(
+                                                "Bytes({}) preview(0..{}): 0x{}…",
+                                                t, n, hex_preview
+                                            ));
+                                        } else {
+                                            self.write_json_string(&format!(
+                                                "Bytes preview(0..{}): 0x{}…",
+                                                n, hex_preview
+                                            ));
+                                        }
                                     }
                                     _ => {
-                                        if let Some(t) = total_len { self.write_json_string(&format!("Bytes({})", t)); } else { self.write_json_string("Bytes"); }
+                                        if let Some(t) = total_len {
+                                            self.write_json_string(&format!("Bytes({})", t));
+                                        } else {
+                                            self.write_json_string("Bytes");
+                                        }
                                     }
                                 }
                             }
                             "stream" => {
-                                if let Some(n) = total_len { self.write_json_string(&format!("Bytes({})", n)); } else { self.write_json_string("Bytes"); }
+                                if let Some(n) = total_len {
+                                    self.write_json_string(&format!("Bytes({})", n));
+                                } else {
+                                    self.write_json_string("Bytes");
+                                }
                                 if let Some(s) = &self.sender {
                                     let mut offset = 0usize;
                                     let mut buf = vec![0u8; chunk];
@@ -179,7 +253,11 @@ impl RowWriter {
                                 }
                             }
                             _ => {
-                                if let Some(n) = total_len { self.write_json_string(&format!("Bytes({})", n)); } else { self.write_json_string("Bytes"); }
+                                if let Some(n) = total_len {
+                                    self.write_json_string(&format!("Bytes({})", n));
+                                } else {
+                                    self.write_json_string("Bytes");
+                                }
                             }
                         }
                     }
@@ -194,11 +272,17 @@ impl RowWriter {
         Ok(())
     }
 
-    pub fn len(&self) -> usize { self.row_count }
-    pub fn is_empty(&self) -> bool { self.row_count == 0 }
+    pub fn len(&self) -> usize {
+        self.row_count
+    }
+    pub fn is_empty(&self) -> bool {
+        self.row_count == 0
+    }
 
     pub fn finish(&mut self) -> Box<RawValue> {
-        if self.row_count == 0 { self.buf.push('['); }
+        if self.row_count == 0 {
+            self.buf.push('[');
+        }
         self.buf.push(']');
         let json = std::mem::take(&mut self.buf);
         self.row_count = 0;
@@ -214,7 +298,9 @@ impl RowWriter {
                 '\n' => self.buf.push_str("\\n"),
                 '\r' => self.buf.push_str("\\r"),
                 '\t' => self.buf.push_str("\\t"),
-                c if c.is_control() => { write!(&mut self.buf, "\\u{:04x}", c as u32).unwrap(); }
+                c if c.is_control() => {
+                    write!(&mut self.buf, "\\u{:04x}", c as u32).unwrap();
+                }
                 c => self.buf.push(c),
             }
         }
@@ -263,27 +349,66 @@ struct RowFormatCfg {
 impl RowFormatCfg {
     fn from_env() -> Self {
         Self {
-            raw_format: std::env::var("ORACLE_RAW_FORMAT").unwrap_or_else(|_| String::from("preview")).to_lowercase(),
-            raw_chunk_size: std::env::var("ORACLE_RAW_CHUNK_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n > 0).unwrap_or(16),
-            blob_stream: std::env::var("ORACLE_BLOB_STREAM").unwrap_or_else(|_| String::from("len")).to_lowercase(),
-            blob_chunk_size: std::env::var("ORACLE_BLOB_CHUNK_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n > 0).unwrap_or(4096),
-            numeric_policy: std::env::var("PGPAD_NUMERIC_STRING_POLICY").unwrap_or_else(|_| String::from("precision_threshold")).to_lowercase(),
-            numeric_threshold: std::env::var("PGPAD_NUMERIC_PRECISION_THRESHOLD").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0).unwrap_or(18),
-            json_detection: std::env::var("PGPAD_JSON_DETECTION").unwrap_or_else(|_| String::from("auto")).to_lowercase(),
-            json_min_length: std::env::var("PGPAD_JSON_MIN_LENGTH").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(1),
+            raw_format: std::env::var("ORACLE_RAW_FORMAT")
+                .unwrap_or_else(|_| String::from("preview"))
+                .to_lowercase(),
+            raw_chunk_size: std::env::var("ORACLE_RAW_CHUNK_SIZE")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|&n| n > 0)
+                .unwrap_or(16),
+            blob_stream: std::env::var("ORACLE_BLOB_STREAM")
+                .unwrap_or_else(|_| String::from("len"))
+                .to_lowercase(),
+            blob_chunk_size: std::env::var("ORACLE_BLOB_CHUNK_SIZE")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|&n| n > 0)
+                .unwrap_or(4096),
+            numeric_policy: std::env::var("PGPAD_NUMERIC_STRING_POLICY")
+                .unwrap_or_else(|_| String::from("precision_threshold"))
+                .to_lowercase(),
+            numeric_threshold: std::env::var("PGPAD_NUMERIC_PRECISION_THRESHOLD")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|&n| n > 0)
+                .unwrap_or(18),
+            json_detection: std::env::var("PGPAD_JSON_DETECTION")
+                .unwrap_or_else(|_| String::from("auto"))
+                .to_lowercase(),
+            json_min_length: std::env::var("PGPAD_JSON_MIN_LENGTH")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(1),
         }
     }
 
     fn from_settings(settings: Option<&crate::database::types::OracleSettings>) -> Self {
         if let Some(s) = settings {
             Self {
-                raw_format: s.raw_format.clone().unwrap_or_else(|| "preview".into()).to_lowercase(),
+                raw_format: s
+                    .raw_format
+                    .clone()
+                    .unwrap_or_else(|| "preview".into())
+                    .to_lowercase(),
                 raw_chunk_size: s.raw_chunk_size.unwrap_or(16),
-                blob_stream: s.blob_stream.clone().unwrap_or_else(|| "len".into()).to_lowercase(),
+                blob_stream: s
+                    .blob_stream
+                    .clone()
+                    .unwrap_or_else(|| "len".into())
+                    .to_lowercase(),
                 blob_chunk_size: s.blob_chunk_size.unwrap_or(4096),
-                numeric_policy: s.numeric_string_policy.clone().unwrap_or_else(|| "precision_threshold".into()).to_lowercase(),
+                numeric_policy: s
+                    .numeric_string_policy
+                    .clone()
+                    .unwrap_or_else(|| "precision_threshold".into())
+                    .to_lowercase(),
                 numeric_threshold: s.numeric_precision_threshold.unwrap_or(18),
-                json_detection: s.json_detection.clone().unwrap_or_else(|| "auto".into()).to_lowercase(),
+                json_detection: s
+                    .json_detection
+                    .clone()
+                    .unwrap_or_else(|| "auto".into())
+                    .to_lowercase(),
                 json_min_length: s.json_min_length.unwrap_or(1),
             }
         } else {

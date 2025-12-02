@@ -10,7 +10,10 @@ pub fn connect(user: &str, password: &str, connect_str: &str) -> Result<oracle::
                 .unwrap_or(64);
             let _ = conn.set_stmt_cache_size(cache_size);
             Ok(conn)
-        },
-        Err(e) => Err(Error::Any(anyhow::anyhow!("Failed to connect to Oracle: {}", e))),
+        }
+        Err(e) => Err(Error::Any(anyhow::anyhow!(
+            "Failed to connect to Oracle: {}",
+            e
+        ))),
     }
 }

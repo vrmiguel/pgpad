@@ -11,6 +11,7 @@ const DB_TYPE_POSTGRES: i32 = 1;
 const DB_TYPE_SQLITE: i32 = 2;
 const DB_TYPE_DUCKDB: i32 = 3;
 const DB_TYPE_ORACLE: i32 = 4;
+const DB_TYPE_MSSQL: i32 = 5;
 
 use crate::{database::types::ConnectionInfo, Result};
 
@@ -28,6 +29,7 @@ impl Migrator {
                 include_str!("../migrations/004.sql"),
                 include_str!("../migrations/005.sql"),
                 include_str!("../migrations/006.sql"),
+                include_str!("../migrations/007.sql"),
             ],
         }
     }
@@ -158,33 +160,52 @@ impl Storage {
             .lock()
             .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
-        let (db_type_id, connection_data, ca_cert_path, wallet_path, tns_alias) = match &connection.database_type {
-            crate::database::types::DatabaseInfo::Postgres {
-                connection_string,
-                ca_cert_path,
-            } => (
-                DB_TYPE_POSTGRES,
-                connection_string.as_str(),
-                ca_cert_path.as_deref(),
-                None,
-                None,
-            ),
-            crate::database::types::DatabaseInfo::SQLite { db_path } => {
-                (DB_TYPE_SQLITE, db_path.as_str(), None, None, None)
-            }
-            crate::database::types::DatabaseInfo::DuckDB { db_path } => {
-                (DB_TYPE_DUCKDB, db_path.as_str(), None, None, None)
-            }
-            crate::database::types::DatabaseInfo::Oracle { connection_string, wallet_path, tns_alias } => {
-                (DB_TYPE_ORACLE, connection_string.as_str(), None, wallet_path.as_deref(), tns_alias.as_deref())
-            }
-        };
+        let (db_type_id, connection_data, ca_cert_path, wallet_path, tns_alias) =
+            match &connection.database_type {
+                crate::database::types::DatabaseInfo::Postgres {
+                    connection_string,
+                    ca_cert_path,
+                } => (
+                    DB_TYPE_POSTGRES,
+                    connection_string.as_str(),
+                    ca_cert_path.as_deref(),
+                    None,
+                    None,
+                ),
+                crate::database::types::DatabaseInfo::SQLite { db_path } => {
+                    (DB_TYPE_SQLITE, db_path.as_str(), None, None, None)
+                }
+                crate::database::types::DatabaseInfo::DuckDB { db_path } => {
+                    (DB_TYPE_DUCKDB, db_path.as_str(), None, None, None)
+                }
+                crate::database::types::DatabaseInfo::Oracle {
+                    connection_string,
+                    wallet_path,
+                    tns_alias,
+                } => (
+                    DB_TYPE_ORACLE,
+                    connection_string.as_str(),
+                    None,
+                    wallet_path.as_deref(),
+                    tns_alias.as_deref(),
+                ),
+                crate::database::types::DatabaseInfo::Mssql {
+                    connection_string,
+                    ca_cert_path,
+                } => (
+                    DB_TYPE_MSSQL,
+                    connection_string.as_str(),
+                    ca_cert_path.as_deref(),
+                    None,
+                    None,
+                ),
+            };
 
         conn.execute(
-            "INSERT OR REPLACE INTO connections 
-             (id, name, connection_data, database_type_id, ca_cert_path, wallet_path, tns_alias, created_at, updated_at, sort_order) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 
-                ?9, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM connections))",
+            "INSERT OR REPLACE INTO connections
+             (id, name, connection_data, database_type_id, ca_cert_path, wallet_path, tns_alias, created_at, updated_at, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
+                 ?9, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM connections))",
             (
                 &connection.id.to_string(),
                 &connection.name,
@@ -195,7 +216,6 @@ impl Storage {
                 tns_alias,
                 now,
                 now,
-                
             ),
         )
         .context("Failed to save connection")?;
@@ -210,31 +230,50 @@ impl Storage {
             .lock()
             .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
 
-        let (db_type_id, connection_data, ca_cert_path, wallet_path, tns_alias) = match &connection.database_type {
-            crate::database::types::DatabaseInfo::Postgres {
-                connection_string,
-                ca_cert_path,
-            } => (
-                DB_TYPE_POSTGRES,
-                connection_string.as_str(),
-                ca_cert_path.as_deref(),
-                None,
-                None,
-            ),
-            crate::database::types::DatabaseInfo::SQLite { db_path } => {
-                (DB_TYPE_SQLITE, db_path.as_str(), None, None, None)
-            }
-            crate::database::types::DatabaseInfo::DuckDB { db_path } => {
-                (DB_TYPE_DUCKDB, db_path.as_str(), None, None, None)
-            }
-            crate::database::types::DatabaseInfo::Oracle { connection_string, wallet_path, tns_alias } => {
-                (DB_TYPE_ORACLE, connection_string.as_str(), None, wallet_path.as_deref(), tns_alias.as_deref())
-            }
-        };
+        let (db_type_id, connection_data, ca_cert_path, wallet_path, tns_alias) =
+            match &connection.database_type {
+                crate::database::types::DatabaseInfo::Postgres {
+                    connection_string,
+                    ca_cert_path,
+                } => (
+                    DB_TYPE_POSTGRES,
+                    connection_string.as_str(),
+                    ca_cert_path.as_deref(),
+                    None,
+                    None,
+                ),
+                crate::database::types::DatabaseInfo::SQLite { db_path } => {
+                    (DB_TYPE_SQLITE, db_path.as_str(), None, None, None)
+                }
+                crate::database::types::DatabaseInfo::DuckDB { db_path } => {
+                    (DB_TYPE_DUCKDB, db_path.as_str(), None, None, None)
+                }
+                crate::database::types::DatabaseInfo::Oracle {
+                    connection_string,
+                    wallet_path,
+                    tns_alias,
+                } => (
+                    DB_TYPE_ORACLE,
+                    connection_string.as_str(),
+                    None,
+                    wallet_path.as_deref(),
+                    tns_alias.as_deref(),
+                ),
+                crate::database::types::DatabaseInfo::Mssql {
+                    connection_string,
+                    ca_cert_path,
+                } => (
+                    DB_TYPE_MSSQL,
+                    connection_string.as_str(),
+                    ca_cert_path.as_deref(),
+                    None,
+                    None,
+                ),
+            };
 
         let updated_rows = conn
             .execute(
-                "UPDATE connections 
+                "UPDATE connections
              SET name = ?2, connection_data = ?3, database_type_id = ?4, ca_cert_path = ?5, wallet_path = ?7, tns_alias = ?8, updated_at = ?6
              WHERE id = ?1",
                 (
@@ -268,7 +307,7 @@ impl Storage {
             .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         let mut stmt = conn
             .prepare(
-                "SELECT c.id, c.name, c.connection_data, 
+                "SELECT c.id, c.name, c.connection_data,
                         COALESCE(dt.name, 'postgres') as db_type,
                         c.ca_cert_path, c.wallet_path, c.tns_alias
                  FROM connections c
@@ -300,6 +339,10 @@ impl Storage {
                         connection_string: connection_data,
                         wallet_path,
                         tns_alias,
+                    },
+                    "mssql" => crate::database::types::DatabaseInfo::Mssql {
+                        connection_string: connection_data,
+                        ca_cert_path,
                     },
                     _ => crate::database::types::DatabaseInfo::Postgres {
                         connection_string: connection_data, // Default to postgres for unknown types
@@ -363,7 +406,7 @@ impl Storage {
             .lock()
             .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         conn.execute(
-            "INSERT INTO query_history 
+            "INSERT INTO query_history
              (connection_id, query_text, executed_at, duration_ms, status, row_count, error_message)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             (
@@ -392,9 +435,9 @@ impl Storage {
             .map_err(|e| crate::Error::Any(anyhow::anyhow!("Mutex poisoned: {}", e)))?;
         let mut stmt = conn.prepare(
             "SELECT id, connection_id, query_text, executed_at, duration_ms, status, row_count, error_message
-             FROM query_history 
-             WHERE connection_id = ?1 
-             ORDER BY executed_at DESC 
+             FROM query_history
+             WHERE connection_id = ?1
+             ORDER BY executed_at DESC
              LIMIT ?2"
         ).context("Failed to prepare query history statement")?;
 
@@ -463,7 +506,7 @@ impl Storage {
 
         if query.id == 0 {
             conn.execute(
-                "INSERT INTO saved_queries 
+                "INSERT INTO saved_queries
                  (name, description, query_text, connection_id, tags, created_at, updated_at, favorite)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 (
@@ -480,8 +523,8 @@ impl Storage {
             Ok(conn.last_insert_rowid())
         } else {
             conn.execute(
-                "UPDATE saved_queries 
-                 SET name = ?1, description = ?2, query_text = ?3, connection_id = ?4, 
+                "UPDATE saved_queries
+                 SET name = ?1, description = ?2, query_text = ?3, connection_id = ?4,
                      tags = ?5, updated_at = ?6, favorite = ?7
                  WHERE id = ?8",
                 (
@@ -511,7 +554,7 @@ impl Storage {
         if let Some(conn_id) = connection_id {
             let mut stmt = conn.prepare(
                 "SELECT id, name, description, query_text, connection_id, tags, created_at, updated_at, favorite
-                 FROM saved_queries 
+                 FROM saved_queries
                  WHERE connection_id = ?1 OR connection_id IS NULL
                  ORDER BY favorite DESC, created_at DESC"
             ).context("Failed to prepare saved queries statement")?;
@@ -550,7 +593,7 @@ impl Storage {
         } else {
             let mut stmt = conn.prepare(
                 "SELECT id, name, description, query_text, connection_id, tags, created_at, updated_at, favorite
-                 FROM saved_queries 
+                 FROM saved_queries
                  ORDER BY favorite DESC, created_at DESC"
             ).context("Failed to prepare saved queries statement")?;
 

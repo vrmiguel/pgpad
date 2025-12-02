@@ -75,6 +75,10 @@ pub enum DatabaseInfo {
         wallet_path: Option<String>,
         tns_alias: Option<String>,
     },
+    Mssql {
+        connection_string: String,
+        ca_cert_path: Option<String>,
+    },
 }
 
 #[derive(Debug)]
@@ -99,6 +103,9 @@ pub enum DatabaseClient {
     Oracle {
         connection: Arc<Mutex<oracle::Connection>>,
     },
+    Mssql {
+        connection: Arc<Mutex<tiberius::Client<crate::database::mssql::connect::MssqlStream>>>,
+    },
 }
 
 #[derive(Debug)]
@@ -121,6 +128,12 @@ pub enum Database {
         wallet_path: Option<String>,
         tns_alias: Option<String>,
         connection: Option<Arc<Mutex<oracle::Connection>>>,
+    },
+    Mssql {
+        connection_string: String,
+        ca_cert_path: Option<String>,
+        connection:
+            Option<Arc<Mutex<tiberius::Client<crate::database::mssql::connect::MssqlStream>>>>,
     },
 }
 
@@ -145,10 +158,23 @@ impl DatabaseConnection {
                 Database::DuckDB { db_path, .. } => DatabaseInfo::DuckDB {
                     db_path: db_path.clone(),
                 },
-                Database::Oracle { connection_string, wallet_path, tns_alias, .. } => DatabaseInfo::Oracle {
+                Database::Oracle {
+                    connection_string,
+                    wallet_path,
+                    tns_alias,
+                    ..
+                } => DatabaseInfo::Oracle {
                     connection_string: connection_string.clone(),
                     wallet_path: wallet_path.clone(),
                     tns_alias: tns_alias.clone(),
+                },
+                Database::Mssql {
+                    connection_string,
+                    ca_cert_path,
+                    ..
+                } => DatabaseInfo::Mssql {
+                    connection_string: connection_string.clone(),
+                    ca_cert_path: ca_cert_path.clone(),
                 },
             },
         }
@@ -172,10 +198,22 @@ impl DatabaseConnection {
                 db_path,
                 connection: None,
             },
-            DatabaseInfo::Oracle { connection_string, wallet_path, tns_alias } => Database::Oracle {
+            DatabaseInfo::Oracle {
                 connection_string,
                 wallet_path,
                 tns_alias,
+            } => Database::Oracle {
+                connection_string,
+                wallet_path,
+                tns_alias,
+                connection: None,
+            },
+            DatabaseInfo::Mssql {
+                connection_string,
+                ca_cert_path,
+            } => Database::Mssql {
+                connection_string,
+                ca_cert_path,
                 connection: None,
             },
         };
@@ -194,6 +232,7 @@ impl DatabaseConnection {
             Database::SQLite { connection, .. } => connection.is_some(),
             Database::DuckDB { connection, .. } => connection.is_some(),
             Database::Oracle { connection, .. } => connection.is_some(),
+            Database::Mssql { connection, .. } => connection.is_some(),
         }
     }
 
@@ -233,9 +272,27 @@ impl DatabaseConnection {
             } => {
                 return Err(Error::Any(anyhow::anyhow!("DuckDB connection not active")));
             }
-            Database::Oracle { connection: Some(oracle_conn), .. } => DatabaseClient::Oracle { connection: oracle_conn.clone() },
-            Database::Oracle { connection: None, .. } => {
+            Database::Oracle {
+                connection: Some(oracle_conn),
+                ..
+            } => DatabaseClient::Oracle {
+                connection: oracle_conn.clone(),
+            },
+            Database::Oracle {
+                connection: None, ..
+            } => {
                 return Err(Error::Any(anyhow::anyhow!("Oracle connection not active")));
+            }
+            Database::Mssql {
+                connection: Some(mssql_conn),
+                ..
+            } => DatabaseClient::Mssql {
+                connection: mssql_conn.clone(),
+            },
+            Database::Mssql {
+                connection: None, ..
+            } => {
+                return Err(Error::Any(anyhow::anyhow!("MSSQL connection not active")));
             }
         };
 
@@ -329,4 +386,6 @@ pub struct OracleSettings {
     pub numeric_precision_threshold: Option<usize>,
     pub json_detection: Option<String>,
     pub json_min_length: Option<usize>,
+    pub money_as_string: Option<bool>,
+    pub money_decimals: Option<usize>,
 }
