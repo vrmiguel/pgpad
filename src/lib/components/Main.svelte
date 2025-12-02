@@ -53,6 +53,12 @@
 	);
 	const currentEditorContent = $derived(tabs.currentEditorContent);
 
+	const unsavedSet = $derived(
+		new SvelteSet<number>(
+			tabs.all.filter((t) => t.isDirty && t.type === 'script').map((t) => (t as ScriptTab).scriptId)
+		)
+	);
+
 	let isSidebarCollapsed = $state(false);
 	let lastResizeTime = $state(0);
 
@@ -62,6 +68,7 @@
 	let lastLoadedSchemaConnectionId = $state<string | null>(null);
 
 	let unlistenDisconnect: (() => void) | null = null;
+	let escapeHandler: ((e: KeyboardEvent) => void) | null = null;
 
 	if (selectedConnection === undefined) {
 		selectedConnection = null;
@@ -276,6 +283,22 @@
 		}
 
 		checkAndSaveSession().catch(console.error);
+	});
+
+	$effect(() => {
+		const open = showConnectionForm;
+		if (open && !escapeHandler) {
+			escapeHandler = (e: KeyboardEvent) => {
+				if (e.key === 'Escape') {
+					showConnectionForm = false;
+					editingConnection = null;
+				}
+			};
+			window.addEventListener('keydown', escapeHandler);
+		} else if (!open && escapeHandler) {
+			window.removeEventListener('keydown', escapeHandler);
+			escapeHandler = null;
+		}
 	});
 
 	// Handle saving with Ctrl+S
@@ -583,7 +606,7 @@
 	}
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 <div class="from-background via-background to-muted/20 flex h-full bg-gradient-to-br">
 	<ResizablePaneGroup direction="horizontal" class="flex-1" onLayoutChange={handlePaneResize}>
@@ -600,11 +623,7 @@
 				{establishingConnections}
 				{scripts}
 				{activeScriptId}
-				unsavedChanges={new SvelteSet(
-					tabs.all
-						.filter((t) => t.isDirty)
-						.map((t) => (t.type === 'script' ? (t as ScriptTab).scriptId : 0))
-				)}
+				unsavedChanges={unsavedSet}
 				{databaseSchema}
 				{loadingSchema}
 				{queryHistory}

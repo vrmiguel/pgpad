@@ -49,6 +49,20 @@ pub async fn open_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>, Err
 }
 
 #[tauri::command]
+pub async fn open_duckdb_db(app: tauri::AppHandle) -> Result<Option<String>, Error> {
+    let chosen_file = run_dialog(app, || {
+        AsyncFileDialog::new()
+            .set_title("Pick a DuckDB database file")
+            .add_filter("DuckDB database", &["duckdb", "db"])
+            .pick_file()
+    })
+    .await?
+    .map(|file| file.path().to_string_lossy().to_string());
+
+    Ok(chosen_file)
+}
+
+#[tauri::command]
 pub async fn save_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>, Error> {
     let chosen_file = run_dialog(app, || {
         AsyncFileDialog::new()
@@ -62,6 +76,19 @@ pub async fn save_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>, Err
 }
 
 #[tauri::command]
+pub async fn save_duckdb_db(app: tauri::AppHandle) -> Result<Option<String>, Error> {
+    let chosen_file = run_dialog(app, || {
+        AsyncFileDialog::new()
+            .set_title("Create a new DuckDB database file")
+            .add_filter("DuckDB database", &["duckdb", "db"])
+            .save_file()
+    })
+    .await?
+    .map(|file| file.path().to_string_lossy().to_string());
+
+    Ok(chosen_file)
+}
+#[tauri::command]
 pub async fn pick_ca_cert(app: tauri::AppHandle) -> Result<Option<String>, Error> {
     let chosen_file = run_dialog(app, || {
         AsyncFileDialog::new()
@@ -73,6 +100,19 @@ pub async fn pick_ca_cert(app: tauri::AppHandle) -> Result<Option<String>, Error
     .map(|file| file.path().to_string_lossy().to_string());
 
     Ok(chosen_file)
+}
+
+#[tauri::command]
+pub async fn pick_wallet_dir(app: tauri::AppHandle) -> Result<Option<String>, Error> {
+    let chosen_dir = run_dialog(app, || {
+        AsyncFileDialog::new()
+            .set_title("Pick Oracle wallet directory (TNS_ADMIN)")
+            .pick_folder()
+    })
+    .await?
+    .map(|file| file.path().to_string_lossy().to_string());
+
+    Ok(chosen_dir)
 }
 
 async fn run_dialog<F, Fut, T>(app: tauri::AppHandle, make_future: F) -> Result<Option<T>, Error>

@@ -12,6 +12,8 @@ pub enum Error {
     #[error(transparent)]
     Rusqlite(#[from] rusqlite::Error),
     #[error(transparent)]
+    Duckdb(#[from] duckdb::Error),
+    #[error(transparent)]
     Fmt(#[from] std::fmt::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),

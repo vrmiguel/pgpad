@@ -12,14 +12,15 @@ use crate::{
 
 /// Make sure to run this on a task where blocking is allowed.
 pub fn execute_query(
-    client: &Connection,
+    client: &rusqlite::Connection,
     stmt: ParsedStatement,
     sender: &ExecSender,
+    settings: Option<&crate::database::types::OracleSettings>,
 ) -> Result<(), Error> {
     let start = std::time::Instant::now();
 
     if stmt.returns_values {
-        execute_query_with_results(client, &stmt.statement, sender, start)?;
+        execute_query_with_results(client, &stmt.statement, sender, start, settings)?;
     } else {
         execute_modification_query(client, &stmt.statement, sender, start)?;
     }
@@ -28,10 +29,11 @@ pub fn execute_query(
 }
 
 fn execute_query_with_results(
-    client: &Connection,
+    client: &rusqlite::Connection,
     query: &str,
     sender: &ExecSender,
     started_at: Instant,
+    settings: Option<&crate::database::types::OracleSettings>,
 ) -> Result<(), Error> {
     log::info!("Starting SQLite query: {}", query);
 
@@ -49,16 +51,18 @@ fn execute_query_with_results(
                 Ok(mut rows) => {
                     sender.send(QueryExecEvent::TypesResolved { columns })?;
 
-                    let mut total_rows = 0;
-                    // TODO: make this configurable
-                    let batch_size = 50;
-                    let mut writer = RowWriter::new(column_types);
+                    let mut _total_rows = 0;
+                    let batch_size = settings.and_then(|s| s.batch_size).unwrap_or(50);
+                    let mut writer = match settings {
+                        Some(s) => RowWriter::with_settings(column_types, Some(s)),
+                        None => RowWriter::new(column_types),
+                    };
 
                     loop {
                         match rows.next() {
                             Ok(Some(row)) => {
                                 writer.add_row(row)?;
-                                total_rows += 1;
+                                _total_rows += 1;
 
                                 if writer.len() >= batch_size {
                                     sender.send(QueryExecEvent::Page {
@@ -80,8 +84,9 @@ fn execute_query_with_results(
                                     // TODO(vini): this is actually not necessarily true?
                                     //             Might not matter, though
                                     affected_rows: 0,
-                                    error: Some(error_msg),
+                                    error: Some(error_msg.clone()),
                                 })?;
+                                return Err(Error::Any(anyhow::anyhow!(error_msg)));
                             }
                         }
                     }
@@ -94,11 +99,7 @@ fn execute_query_with_results(
                     }
 
                     let duration = started_at.elapsed().as_millis() as u64;
-                    log::info!(
-                        "SQLite query completed: {} rows in {}ms",
-                        total_rows,
-                        duration
-                    );
+                    log::info!("SQLite query completed in {}ms", duration);
 
                     sender.send(QueryExecEvent::Finished {
                         elapsed_ms: started_at.elapsed().as_millis() as u64,
@@ -133,6 +134,226 @@ fn execute_query_with_results(
                 error: Some(error_msg.clone()),
             })?;
 
+            Err(Error::Any(anyhow::anyhow!(error_msg)))
+        }
+    }
+}
+
+pub fn execute_query_with_params(
+    client: &rusqlite::Connection,
+    stmt: ParsedStatement,
+    sender: &ExecSender,
+    params: serde_json::Map<String, serde_json::Value>,
+    settings: Option<&crate::database::types::OracleSettings>,
+) -> Result<(), Error> {
+    let start = std::time::Instant::now();
+    if stmt.returns_values {
+        execute_query_with_results_params(client, &stmt.statement, sender, start, params, settings)
+    } else {
+        execute_modification_query_params(client, &stmt.statement, sender, start, params)
+    }
+}
+
+fn execute_query_with_results_params(
+    client: &rusqlite::Connection,
+    query: &str,
+    sender: &ExecSender,
+    started_at: Instant,
+    params: serde_json::Map<String, serde_json::Value>,
+    settings: Option<&crate::database::types::OracleSettings>,
+) -> Result<(), Error> {
+    log::info!("Starting SQLite prepared query: {}", query);
+    match client.prepare(query) {
+        Ok(mut stmt) => {
+            let columns = stmt.columns();
+            let column_names = columns.iter().map(|c| c.name());
+            let column_types: Vec<_> = columns
+                .iter()
+                .map(|c| c.decl_type().map(ToString::to_string))
+                .collect();
+            let columns = serialize_as_json_array(column_names)?;
+            sender.send(QueryExecEvent::TypesResolved { columns })?;
+
+            let mut total_rows = 0;
+            let batch_size = settings.and_then(|s| s.batch_size).unwrap_or(50);
+            let mut writer = match settings {
+                Some(s) => RowWriter::with_settings(column_types, Some(s)),
+                None => RowWriter::new(column_types),
+            };
+
+            let mut owned_vals: Vec<(String, rusqlite::types::Value)> =
+                Vec::with_capacity(params.len());
+            for (k, v) in params.into_iter() {
+                let key = format!(":{}", k);
+                let val = match v {
+                    serde_json::Value::Null => rusqlite::types::Value::Null,
+                    serde_json::Value::Bool(b) => {
+                        rusqlite::types::Value::Integer(if b { 1 } else { 0 })
+                    }
+                    serde_json::Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            rusqlite::types::Value::Integer(i)
+                        } else if let Some(f) = n.as_f64() {
+                            rusqlite::types::Value::Real(f)
+                        } else {
+                            rusqlite::types::Value::Text(n.to_string())
+                        }
+                    }
+                    serde_json::Value::String(s) => rusqlite::types::Value::Text(s),
+                    other => rusqlite::types::Value::Text(other.to_string()),
+                };
+                owned_vals.push((key, val));
+            }
+            let mut named_params: Vec<(&str, &rusqlite::types::Value)> =
+                Vec::with_capacity(owned_vals.len());
+            for (name, val) in owned_vals.iter() {
+                named_params.push((name.as_str(), val));
+            }
+
+            match stmt.query(named_params.as_slice()) {
+                Ok(mut rows) => {
+                    loop {
+                        match rows.next() {
+                            Ok(Some(row)) => {
+                                writer.add_row(row)?;
+                                total_rows += 1;
+                                if writer.len() >= batch_size {
+                                    sender.send(QueryExecEvent::Page {
+                                        page_amount: writer.len(),
+                                        page: writer.finish(),
+                                    })?;
+                                }
+                            }
+                            Ok(None) => {
+                                break;
+                            }
+                            Err(e) => {
+                                log::error!("Error processing SQLite row: {}", e);
+                                let error_msg = format!("Query failed: {}", e);
+                                sender.send(QueryExecEvent::Finished {
+                                    elapsed_ms: started_at.elapsed().as_millis() as u64,
+                                    affected_rows: 0,
+                                    error: Some(error_msg.clone()),
+                                })?;
+                                return Err(Error::Any(anyhow::anyhow!(error_msg)));
+                            }
+                        }
+                    }
+
+                    if !writer.is_empty() {
+                        sender.send(QueryExecEvent::Page {
+                            page_amount: writer.len(),
+                            page: writer.finish(),
+                        })?;
+                    }
+
+                    let duration = started_at.elapsed().as_millis() as u64;
+                    log::info!(
+                        "SQLite prepared query completed: {} rows in {}ms",
+                        total_rows,
+                        duration
+                    );
+
+                    sender.send(QueryExecEvent::Finished {
+                        elapsed_ms: started_at.elapsed().as_millis() as u64,
+                        affected_rows: 0,
+                        error: None,
+                    })?;
+                    Ok(())
+                }
+                Err(e) => {
+                    log::error!("SQLite query execution failed: {:?}", e);
+                    let error_msg = format!("Query failed: {}", e);
+                    sender.send(QueryExecEvent::Finished {
+                        elapsed_ms: started_at.elapsed().as_millis() as u64,
+                        affected_rows: 0,
+                        error: Some(error_msg.clone()),
+                    })?;
+                    Err(Error::Any(anyhow::anyhow!(error_msg)))
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("SQLite statement preparation failed: {:?}", e);
+            let error_msg = format!("Query failed: {}", e);
+            sender.send(QueryExecEvent::Finished {
+                elapsed_ms: started_at.elapsed().as_millis() as u64,
+                affected_rows: 0,
+                error: Some(error_msg.clone()),
+            })?;
+            Err(Error::Any(anyhow::anyhow!(error_msg)))
+        }
+    }
+}
+
+fn execute_modification_query_params(
+    client: &rusqlite::Connection,
+    query: &str,
+    sender: &ExecSender,
+    started_at: Instant,
+    params: serde_json::Map<String, serde_json::Value>,
+) -> Result<(), Error> {
+    log::info!("Executing SQLite prepared modification query: {}", query);
+    match client.prepare(query) {
+        Ok(mut stmt) => {
+            let mut owned_vals: Vec<(String, rusqlite::types::Value)> =
+                Vec::with_capacity(params.len());
+            for (k, v) in params.into_iter() {
+                let key = format!(":{}", k);
+                let val = match v {
+                    serde_json::Value::Null => rusqlite::types::Value::Null,
+                    serde_json::Value::Bool(b) => {
+                        rusqlite::types::Value::Integer(if b { 1 } else { 0 })
+                    }
+                    serde_json::Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            rusqlite::types::Value::Integer(i)
+                        } else if let Some(f) = n.as_f64() {
+                            rusqlite::types::Value::Real(f)
+                        } else {
+                            rusqlite::types::Value::Text(n.to_string())
+                        }
+                    }
+                    serde_json::Value::String(s) => rusqlite::types::Value::Text(s),
+                    other => rusqlite::types::Value::Text(other.to_string()),
+                };
+                owned_vals.push((key, val));
+            }
+            let mut named_params: Vec<(&str, &rusqlite::types::Value)> =
+                Vec::with_capacity(owned_vals.len());
+            for (name, val) in owned_vals.iter() {
+                named_params.push((name.as_str(), val));
+            }
+
+            match stmt.execute(named_params.as_slice()) {
+                Ok(rows_affected) => {
+                    sender.send(QueryExecEvent::Finished {
+                        elapsed_ms: started_at.elapsed().as_millis() as u64,
+                        affected_rows: rows_affected,
+                        error: None,
+                    })?;
+                    Ok(())
+                }
+                Err(e) => {
+                    log::error!("Modification query failed: {:?}", e);
+                    let error_msg = format!("Query failed: {}", e);
+                    sender.send(QueryExecEvent::Finished {
+                        elapsed_ms: started_at.elapsed().as_millis() as u64,
+                        affected_rows: 0,
+                        error: Some(error_msg.clone()),
+                    })?;
+                    Err(Error::Any(anyhow::anyhow!(error_msg)))
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("SQLite statement preparation failed: {:?}", e);
+            let error_msg = format!("Query failed: {}", e);
+            sender.send(QueryExecEvent::Finished {
+                elapsed_ms: started_at.elapsed().as_millis() as u64,
+                affected_rows: 0,
+                error: Some(error_msg.clone()),
+            })?;
             Err(Error::Any(anyhow::anyhow!(error_msg)))
         }
     }
@@ -194,7 +415,7 @@ mod tests {
 
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().unwrap();
-            execute_query(&conn, stmt, &sender).unwrap();
+            execute_query(&conn, stmt, &sender, None).unwrap();
         });
 
         let mut events = Vec::new();
@@ -220,7 +441,7 @@ mod tests {
 
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().unwrap();
-            execute_query(&conn, stmt, &sender).unwrap();
+            execute_query(&conn, stmt, &sender, None).unwrap();
         });
 
         let event = recv
@@ -254,7 +475,7 @@ mod tests {
         let (sender, mut recv) = channel();
 
         tokio::task::spawn_blocking(move || {
-            execute_query(&conn, stmt, &sender).unwrap();
+            execute_query(&conn, stmt, &sender, None).unwrap();
         });
 
         let event = recv.recv().await.unwrap();
@@ -421,6 +642,73 @@ mod tests {
             }
             other => panic!("Expected Finished event, got {:?}", other),
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_prepared_params() -> anyhow::Result<()> {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let conn = Arc::new(Mutex::new(conn));
+        let mut parsed = parse_statements("SELECT :x AS x, :y AS y").unwrap();
+        let stmt = parsed.pop().unwrap();
+        let (sender, mut recv) = channel();
+        let mut params = serde_json::Map::new();
+        params.insert(
+            "x".into(),
+            serde_json::Value::Number(serde_json::Number::from(7)),
+        );
+        params.insert("y".into(), serde_json::Value::String("ok".into()));
+        tokio::task::spawn_blocking({
+            let conn = conn.clone();
+            move || {
+                let conn = conn.lock().unwrap();
+                super::execute_query_with_params(&conn, stmt, &sender, params, None).unwrap();
+            }
+        });
+        let _ = recv.recv().await.unwrap();
+        let page = recv.recv().await.unwrap();
+        match page {
+            QueryExecEvent::Page { page, .. } => {
+                let v: serde_json::Value = serde_json::from_str(page.get())?;
+                assert_eq!(v, serde_json::json!([[7, "ok"]]));
+            }
+            _ => anyhow::bail!("Expected Page"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_cancel_and_reconnect_flow() -> anyhow::Result<()> {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let conn = Arc::new(Mutex::new(conn));
+        let mgr = crate::database::stmt_manager::StatementManager::new();
+        let client = crate::database::types::DatabaseClient::SQLite {
+            connection: conn.clone(),
+        };
+        let ids = mgr.submit_query(client, "WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t WHERE x < 100000) SELECT * FROM t").unwrap();
+        mgr.cancel_query(ids[0]).unwrap();
+        let status = mgr.get_query_status(ids[0]).unwrap();
+        assert!(matches!(status, crate::database::types::QueryStatus::Error));
+        let conn2 = rusqlite::Connection::open_in_memory().unwrap();
+        let mut stmt = conn2.prepare("SELECT 1").unwrap();
+        let mut rows = stmt.query([]).unwrap();
+        let row = rows.next()?.unwrap();
+        let v: i64 = row.get(0)?;
+        assert_eq!(v, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_schema_pagination() -> anyhow::Result<()> {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE a(id INT); CREATE TABLE b(id INT);")?;
+        let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY name LIMIT ? OFFSET ?")?;
+        let mut rows = stmt.query(rusqlite::params![1_i64, 0_i64])?;
+        let mut cnt = 0;
+        while let Some(_r) = rows.next()? {
+            cnt += 1;
+        }
+        assert_eq!(cnt, 1);
         Ok(())
     }
 }

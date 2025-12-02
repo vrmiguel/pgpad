@@ -22,7 +22,7 @@ log = "0.4"
 tauri = { version = "2.9.2", features = ["macos-private-api"] }
 thiserror = "2.0.17"
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1", "with-uuid-1"] }
-tokio = { version = "1.0" }
+tokio = { version = "1.47", features = ["macros", "rt-multi-thread", "time", "sync"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 dashmap = "6.0"
 anyhow = "1.0.98"
@@ -32,6 +32,7 @@ webpki-roots = "1.0.2"
 tokio-postgres-rustls = "0.13.0"
 dirs = "6.0.0"
 rusqlite = { version = "0.37.0", features = ["bundled", "column_decltype"] }
+duckdb = { version = "1.4.2", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3.31"
 rustls-pemfile = "2.2.0"
@@ -41,7 +42,14 @@ sqlparser = "0.59.0"
 rfd = "0.15.4"
 keyring = { version = "3.2.0", features = ["apple-native", "windows-native", "sync-secret-service"] }
 url = "2.5.7"
-env_logger = "0.11.8"
+oracle = "0.6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+tracing-log = "0.1"
+tiberius = { version = "0.12", default-features = false, features = ["rustls", "chrono", "tds73"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tokio-rustls = "0.26.0"
+rustls-pki-types = "1.7.0"
 
 [profile.release]
 panic = "abort"
@@ -50,5 +58,16 @@ lto = true
 opt-level = 3
 strip = true
 
-[dev-dependencies]
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false
+
+[target.'cfg(unix)'.dev-dependencies]
 pgtemp = "0.6.0"
+tiberius = { version = "0.12", default-features = false, features = ["rustls", "chrono", "tds73"] }
+[features]
+mssql_tests = []

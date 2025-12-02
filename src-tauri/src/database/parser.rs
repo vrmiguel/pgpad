@@ -6,8 +6,9 @@ use sqlparser::{
 pub struct ParsedStatement {
     pub statement: String,
     pub returns_values: bool,
-    #[expect(unused)]
+    #[allow(unused)]
     pub is_read_only: bool,
+    pub explain_plan: bool,
 }
 
 pub trait SqlDialectExt {
@@ -144,10 +145,12 @@ where
         }
 
         let statement = parser.parse_statement()?;
+        let explain_plan = matches!(statement, Statement::Explain { .. });
         statements.push(ParsedStatement {
             statement: statement.to_string(),
             returns_values: T::returns_values(&statement),
             is_read_only: T::is_read_only(&statement),
+            explain_plan,
         });
     }
 

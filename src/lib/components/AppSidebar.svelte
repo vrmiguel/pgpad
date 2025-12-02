@@ -81,6 +81,18 @@
 		onLoadFromHistory
 	}: Props = $props();
 
+	const selectedDbType = $derived(
+		connections.find((c) => c.id === selectedConnection)?.database_type ?? null
+	);
+
+	const collapsedIconButtonClass =
+		'group flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 ease-out hover:bg-white/3 dark:hover:bg-white/5';
+	const collapsedIconClass =
+		'text-sidebar-foreground/70 group-hover:text-primary/90 h-5 w-5 transition-colors duration-200';
+	const triggerClass =
+		'dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white data-[state=active]:shadow';
+	const tabIconClass = 'text-sidebar-foreground/70 w-4';
+
 	function toggleSidebar() {
 		isSidebarCollapsed = !isSidebarCollapsed;
 		onToggleSidebar?.();
@@ -126,46 +138,34 @@
 		<div class="flex flex-1 flex-col items-center justify-start space-y-4 p-4">
 			<!-- Connections icon -->
 			<button
-				class="group flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 ease-out hover:bg-white/3 dark:hover:bg-white/5"
+				class={collapsedIconButtonClass}
 				onclick={() => switchTab('connections')}
 				title="Connections"
 			>
-				<Cable
-					class="text-sidebar-foreground/70 group-hover:text-primary/90 h-5 w-5 transition-colors duration-200"
-				/>
+				<Cable class={collapsedIconClass} />
 			</button>
 
 			<!-- items icon -->
 			<button
-				class="group flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 ease-out hover:bg-white/3 dark:hover:bg-white/5"
+				class={collapsedIconButtonClass}
 				onclick={() => switchTab('items')}
 				title="Database Items"
 			>
-				<TableProperties
-					class="text-sidebar-foreground/70 group-hover:text-primary/90 h-5 w-5 transition-colors duration-200"
-				/>
+				<TableProperties class={collapsedIconClass} />
 			</button>
 
 			<!-- Scripts icon -->
-			<button
-				class="group flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 ease-out hover:bg-white/3 dark:hover:bg-white/5"
-				onclick={() => switchTab('scripts')}
-				title="Scripts"
-			>
-				<FileJson
-					class="text-sidebar-foreground/70 group-hover:text-primary/90 h-5 w-5 transition-colors duration-200"
-				/>
+			<button class={collapsedIconButtonClass} onclick={() => switchTab('scripts')} title="Scripts">
+				<FileJson class={collapsedIconClass} />
 			</button>
 
 			<!-- History icon -->
 			<button
-				class="group flex h-12 w-12 items-center justify-center rounded-lg transition-all duration-200 ease-out hover:bg-white/3 dark:hover:bg-white/5"
+				class={collapsedIconButtonClass}
 				onclick={() => switchTab('history')}
 				title="Query History"
 			>
-				<History
-					class="text-sidebar-foreground/70 group-hover:text-primary/90 h-5 w-5 transition-colors duration-200"
-				/>
+				<History class={collapsedIconClass} />
 			</button>
 		</div>
 	{:else}
@@ -194,33 +194,17 @@
 					<Tabs.List
 						class="bg-dark-10 shadow-mini-inset bg-background flex h-8 w-full flex-row justify-evenly gap-1 rounded-sm border-none p-0.5 text-sm leading-[0.01em] font-semibold dark:border dark:border-neutral-600/30"
 					>
-						<Tabs.Trigger
-							value="connections"
-							title="Connections"
-							class="dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white data-[state=active]:shadow"
-						>
-							<Cable class="text-sidebar-foreground/70 w-4" />
+						<Tabs.Trigger value="connections" title="Connections" class={triggerClass}>
+							<Cable class={tabIconClass} />
 						</Tabs.Trigger>
-						<Tabs.Trigger
-							value="items"
-							title="Items"
-							class="dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white data-[state=active]:shadow"
-						>
-							<TableProperties class="text-sidebar-foreground/70 w-4" />
+						<Tabs.Trigger value="items" title="Items" class={triggerClass}>
+							<TableProperties class={tabIconClass} />
 						</Tabs.Trigger>
-						<Tabs.Trigger
-							value="scripts"
-							title="Scripts"
-							class="dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white data-[state=active]:shadow"
-						>
-							<FileJson class="text-sidebar-foreground/70 w-4" />
+						<Tabs.Trigger value="scripts" title="Scripts" class={triggerClass}>
+							<FileJson class={tabIconClass} />
 						</Tabs.Trigger>
-						<Tabs.Trigger
-							value="history"
-							title="History"
-							class="dark:data-[state=active]:bg-muted flex w-20 items-center justify-center rounded-[7px] bg-transparent data-[state=active]:bg-white data-[state=active]:shadow"
-						>
-							<History class="text-sidebar-foreground/70 w-4" />
+						<Tabs.Trigger value="history" title="History" class={triggerClass}>
+							<History class={tabIconClass} />
 						</Tabs.Trigger>
 					</Tabs.List>
 				</div>
@@ -245,6 +229,7 @@
 							{databaseSchema}
 							{loadingSchema}
 							{selectedConnection}
+							databaseType={selectedDbType}
 							onTableClick={handleTableClick}
 						/>
 					</Tabs.Content>

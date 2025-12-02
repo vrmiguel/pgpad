@@ -5,6 +5,9 @@
 	import type { SvelteSet } from 'svelte/reactivity';
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+	import IconSimpleIconsDuckdb from '~icons/simple-icons/duckdb';
+	import IconSimpleIconsOracle from '~icons/simple-icons/oracle';
+	import IconSimpleIconsMssql from '~icons/simple-icons/microsoftsqlserver';
 	import Button from './ui/button/button.svelte';
 
 	interface Props {
@@ -198,6 +201,12 @@
 								<IconCibPostgresql class="h-4 w-4" />
 							{:else if 'SQLite' in connection.database_type}
 								<IconSimpleIconsSqlite class="h-4 w-4" />
+							{:else if 'DuckDB' in connection.database_type}
+								<IconSimpleIconsDuckdb class="h-4 w-4" />
+							{:else if 'Oracle' in connection.database_type}
+								<IconSimpleIconsOracle class="h-4 w-4" />
+							{:else if 'Mssql' in connection.database_type}
+								<IconSimpleIconsMssql class="h-4 w-4" />
 							{/if}
 						</div>
 						<div class="text-foreground truncate text-sm font-medium">
@@ -212,6 +221,21 @@
 								{:else if 'SQLite' in connection.database_type}
 									{connection.database_type.SQLite.db_path.split('/').pop() ||
 										connection.database_type.SQLite.db_path}
+								{:else if 'DuckDB' in connection.database_type}
+									{connection.database_type.DuckDB.db_path.split('/').pop() ||
+										connection.database_type.DuckDB.db_path}
+								{:else if 'Mssql' in connection.database_type}
+									{connection.database_type.Mssql.connection_string.replace(
+										/^sqlserver:\/\/[^@]*@/,
+										''
+									)}
+									.replace(/;.*$/, '')}
+								{:else if 'Oracle' in connection.database_type}
+									{connection.database_type.Oracle.tns_alias ||
+										connection.database_type.Oracle.connection_string.replace(
+											/^oracle:\/\/[^@]*@/,
+											''
+										)}
 								{/if}
 							</div>
 						</div>

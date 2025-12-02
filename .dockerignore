@@ -1,0 +1,14 @@
+node_modules
+dist
+src-tauri/target
+.git
+.github
+.vscode
+.DS_Store
+**/*.log
+Cargo.lock
+target
+Dockerfile
+docker-compose.yml
+docker/
+

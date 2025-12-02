@@ -63,11 +63,23 @@ pub fn run() {
         .manage(app_state)
         .manage(certificates)
         .setup(|app| {
+            let default = if cfg!(debug_assertions) {
+                "trace,winit=error,tao=error,wry=error,tauri_runtime_wry=error,tokio_postgres=info,sqlparser=info,rustls=info"
+            } else {
+                "info,winit=error,tao=error,wry=error,tauri_runtime_wry=error,tokio_postgres=warn,sqlparser=warn,rustls=warn"
+            };
+            let _ = tracing_log::LogTracer::init();
             if cfg!(debug_assertions) {
-                env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(
-                    "trace,tokio_postgres=info,tao=info,sqlparser=info,rustls=info",
-                ))
-                .init();
+                let subscriber = tracing_subscriber::fmt()
+                    .with_env_filter(tracing_subscriber::EnvFilter::new(default))
+                    .finish();
+                let _ = tracing::subscriber::set_global_default(subscriber);
+            } else {
+                let subscriber = tracing_subscriber::fmt()
+                    .json()
+                    .with_env_filter(tracing_subscriber::EnvFilter::new(default))
+                    .finish();
+                let _ = tracing::subscriber::set_global_default(subscriber);
             }
 
             init::build_window(app)?;
@@ -90,12 +102,60 @@ pub fn run() {
             database::commands::get_query_status,
             database::commands::get_page_count,
             database::commands::get_columns,
+            database::commands::cancel_query,
             database::commands::get_connections,
             database::commands::remove_connection,
             database::commands::initialize_connections,
             database::commands::save_query_to_history,
             database::commands::get_query_history,
             database::commands::get_database_schema,
+            database::commands::set_reconnect_settings,
+            database::commands::get_reconnect_settings,
+            database::commands::set_variant_settings,
+            database::commands::get_variant_settings,
+            database::commands::get_mssql_check_constraints,
+            database::commands::get_mssql_unique_index_included_columns,
+            database::commands::get_postgres_indexes,
+            database::commands::get_postgres_index_columns,
+            database::commands::get_postgres_constraints,
+            database::commands::get_postgres_check_constraints,
+            database::commands::get_postgres_triggers,
+            database::commands::get_postgres_routines,
+            database::commands::get_postgres_views,
+            database::commands::get_postgres_view_definitions,
+            database::commands::get_postgres_foreign_keys,
+            database::commands::get_sqlite_indexes,
+            database::commands::get_sqlite_index_columns,
+            database::commands::get_sqlite_constraints,
+            database::commands::get_sqlite_triggers,
+            database::commands::get_sqlite_routines,
+            database::commands::get_sqlite_views,
+            database::commands::get_sqlite_view_definitions,
+            database::commands::get_sqlite_foreign_keys,
+            database::commands::get_duckdb_indexes,
+            database::commands::get_duckdb_index_columns,
+            database::commands::get_duckdb_constraints,
+            database::commands::get_duckdb_routines,
+            database::commands::get_duckdb_views,
+            database::commands::get_duckdb_view_definitions,
+            database::commands::get_duckdb_foreign_keys,
+            database::commands::get_oracle_settings,
+            database::commands::set_oracle_settings,
+            database::commands::get_oracle_indexes,
+            database::commands::get_mssql_indexes,
+            database::commands::get_mssql_constraints,
+            database::commands::get_mssql_triggers,
+            database::commands::get_mssql_routines,
+            database::commands::get_mssql_views,
+            database::commands::get_mssql_index_columns,
+            database::commands::get_mssql_trigger_events,
+            database::commands::get_mssql_routine_parameters,
+            database::commands::get_mssql_foreign_keys,
+            database::commands::get_mssql_view_definitions,
+            database::commands::cancel_mssql,
+            database::commands::cancel_and_reconnect_mssql,
+            database::commands::get_mssql_variant_base_type,
+            database::commands::get_mssql_unique_index_included_columns,
             database::commands::save_script,
             database::commands::update_script,
             database::commands::get_scripts,
@@ -107,7 +167,10 @@ pub fn run() {
             window::commands::close_window,
             window::commands::open_sqlite_db,
             window::commands::save_sqlite_db,
+            window::commands::open_duckdb_db,
+            window::commands::save_duckdb_db,
             window::commands::pick_ca_cert,
+            window::commands::pick_wallet_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

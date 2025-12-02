@@ -27,6 +27,7 @@ pub struct StatementInfo {
     pub first_page: Option<Box<RawValue>>,
     pub affected_rows: Option<usize>,
     pub error: Option<String>,
+    pub is_explain_plan: bool,
 }
 
 #[repr(u8)]
@@ -66,6 +67,18 @@ pub enum DatabaseInfo {
     SQLite {
         db_path: String,
     },
+    DuckDB {
+        db_path: String,
+    },
+    Oracle {
+        connection_string: String,
+        wallet_path: Option<String>,
+        tns_alias: Option<String>,
+    },
+    Mssql {
+        connection_string: String,
+        ca_cert_path: Option<String>,
+    },
 }
 
 #[derive(Debug)]
@@ -84,6 +97,15 @@ pub enum DatabaseClient {
     SQLite {
         connection: Arc<Mutex<rusqlite::Connection>>,
     },
+    DuckDB {
+        connection: Arc<Mutex<duckdb::Connection>>,
+    },
+    Oracle {
+        connection: Arc<Mutex<oracle::Connection>>,
+    },
+    Mssql {
+        connection: Arc<Mutex<tiberius::Client<crate::database::mssql::connect::MssqlStream>>>,
+    },
 }
 
 #[derive(Debug)]
@@ -92,10 +114,27 @@ pub enum Database {
         connection_string: String,
         ca_cert_path: Option<String>,
         client: Option<Arc<tokio_postgres::Client>>,
+        backend_pid: Option<i32>,
     },
     SQLite {
         db_path: String,
         connection: Option<Arc<Mutex<rusqlite::Connection>>>,
+    },
+    DuckDB {
+        db_path: String,
+        connection: Option<Arc<Mutex<duckdb::Connection>>>,
+    },
+    Oracle {
+        connection_string: String,
+        wallet_path: Option<String>,
+        tns_alias: Option<String>,
+        connection: Option<Arc<Mutex<oracle::Connection>>>,
+    },
+    Mssql {
+        connection_string: String,
+        ca_cert_path: Option<String>,
+        connection:
+            Option<Arc<Mutex<tiberius::Client<crate::database::mssql::connect::MssqlStream>>>>,
     },
 }
 
@@ -117,6 +156,27 @@ impl DatabaseConnection {
                 Database::SQLite { db_path, .. } => DatabaseInfo::SQLite {
                     db_path: db_path.clone(),
                 },
+                Database::DuckDB { db_path, .. } => DatabaseInfo::DuckDB {
+                    db_path: db_path.clone(),
+                },
+                Database::Oracle {
+                    connection_string,
+                    wallet_path,
+                    tns_alias,
+                    ..
+                } => DatabaseInfo::Oracle {
+                    connection_string: connection_string.clone(),
+                    wallet_path: wallet_path.clone(),
+                    tns_alias: tns_alias.clone(),
+                },
+                Database::Mssql {
+                    connection_string,
+                    ca_cert_path,
+                    ..
+                } => DatabaseInfo::Mssql {
+                    connection_string: connection_string.clone(),
+                    ca_cert_path: ca_cert_path.clone(),
+                },
             },
         }
     }
@@ -130,9 +190,32 @@ impl DatabaseConnection {
                 connection_string,
                 ca_cert_path,
                 client: None,
+                backend_pid: None,
             },
             DatabaseInfo::SQLite { db_path } => Database::SQLite {
                 db_path,
+                connection: None,
+            },
+            DatabaseInfo::DuckDB { db_path } => Database::DuckDB {
+                db_path,
+                connection: None,
+            },
+            DatabaseInfo::Oracle {
+                connection_string,
+                wallet_path,
+                tns_alias,
+            } => Database::Oracle {
+                connection_string,
+                wallet_path,
+                tns_alias,
+                connection: None,
+            },
+            DatabaseInfo::Mssql {
+                connection_string,
+                ca_cert_path,
+            } => Database::Mssql {
+                connection_string,
+                ca_cert_path,
                 connection: None,
             },
         };
@@ -149,6 +232,9 @@ impl DatabaseConnection {
         match &self.database {
             Database::Postgres { client, .. } => client.is_some(),
             Database::SQLite { connection, .. } => connection.is_some(),
+            Database::DuckDB { connection, .. } => connection.is_some(),
+            Database::Oracle { connection, .. } => connection.is_some(),
+            Database::Mssql { connection, .. } => connection.is_some(),
         }
     }
 
@@ -176,6 +262,39 @@ impl DatabaseConnection {
                 connection: None, ..
             } => {
                 return Err(Error::Any(anyhow::anyhow!("SQLite connection not active")));
+            }
+            Database::DuckDB {
+                connection: Some(duckdb_conn),
+                ..
+            } => DatabaseClient::DuckDB {
+                connection: duckdb_conn.clone(),
+            },
+            Database::DuckDB {
+                connection: None, ..
+            } => {
+                return Err(Error::Any(anyhow::anyhow!("DuckDB connection not active")));
+            }
+            Database::Oracle {
+                connection: Some(oracle_conn),
+                ..
+            } => DatabaseClient::Oracle {
+                connection: oracle_conn.clone(),
+            },
+            Database::Oracle {
+                connection: None, ..
+            } => {
+                return Err(Error::Any(anyhow::anyhow!("Oracle connection not active")));
+            }
+            Database::Mssql {
+                connection: Some(mssql_conn),
+                ..
+            } => DatabaseClient::Mssql {
+                connection: mssql_conn.clone(),
+            },
+            Database::Mssql {
+                connection: None, ..
+            } => {
+                return Err(Error::Any(anyhow::anyhow!("MSSQL connection not active")));
             }
         };
 
@@ -228,6 +347,17 @@ pub enum QueryExecEvent {
         /// JSON-serialized Vec<Vec<Json>>
         page: Page,
     },
+    #[allow(dead_code)]
+    BlobChunk {
+        #[allow(dead_code)]
+        row_index: usize,
+        #[allow(dead_code)]
+        column_index: usize,
+        #[allow(dead_code)]
+        offset: usize,
+        #[allow(dead_code)]
+        hex_chunk: String,
+    },
     Finished {
         #[allow(unused)]
         elapsed_ms: u64,
@@ -237,4 +367,27 @@ pub enum QueryExecEvent {
         /// If the query failed, this will contain the error message
         error: Option<String>,
     },
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OracleSettings {
+    pub raw_format: Option<String>,
+    pub raw_chunk_size: Option<usize>,
+    pub blob_stream: Option<String>,
+    pub blob_chunk_size: Option<usize>,
+    pub allow_db_link_ping: Option<bool>,
+    pub xplan_format: Option<String>,
+    pub xplan_mode: Option<String>,
+    pub reconnect_max_retries: Option<u32>,
+    pub reconnect_backoff_ms: Option<u64>,
+    pub stmt_cache_size: Option<u32>,
+    pub batch_size: Option<usize>,
+    pub bytes_format: Option<String>,
+    pub bytes_chunk_size: Option<usize>,
+    pub timestamp_tz_mode: Option<String>,
+    pub numeric_string_policy: Option<String>,
+    pub numeric_precision_threshold: Option<usize>,
+    pub json_detection: Option<String>,
+    pub json_min_length: Option<usize>,
+    pub money_as_string: Option<bool>,
+    pub money_decimals: Option<usize>,
 }

@@ -24,7 +24,7 @@ pub async fn get_database_schema(client: &Client) -> Result<DatabaseSchema, Erro
             ON t.table_name = c.table_name 
             AND t.table_schema = c.table_schema
         WHERE 
-            t.table_type = 'BASE TABLE'
+            t.table_type IN ('BASE TABLE','VIEW','MATERIALIZED VIEW')
             AND t.table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
         ORDER BY 
             t.table_schema, t.table_name, c.ordinal_position
