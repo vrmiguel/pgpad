@@ -3,8 +3,9 @@
 	import { Cable, Plus, Settings2, Unplug } from '@lucide/svelte';
 	import { MenuItem, PredefinedMenuItem, Menu } from '@tauri-apps/api/menu';
 	import type { SvelteSet } from 'svelte/reactivity';
-	import IconCibPostgresql from '~icons/cib/postgresql';
-	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+import IconCibPostgresql from '~icons/cib/postgresql';
+import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+import IconSimpleIconsDuckdb from '~icons/simple-icons/duckdb';
 	import Button from './ui/button/button.svelte';
 
 	interface Props {
@@ -194,11 +195,13 @@
 								<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
 							{/if}
 
-							{#if 'Postgres' in connection.database_type}
-								<IconCibPostgresql class="h-4 w-4" />
-							{:else if 'SQLite' in connection.database_type}
-								<IconSimpleIconsSqlite class="h-4 w-4" />
-							{/if}
+						{#if 'Postgres' in connection.database_type}
+							<IconCibPostgresql class="h-4 w-4" />
+						{:else if 'SQLite' in connection.database_type}
+							<IconSimpleIconsSqlite class="h-4 w-4" />
+						{:else if 'DuckDB' in connection.database_type}
+							<IconSimpleIconsDuckdb class="h-4 w-4" />
+						{/if}
 						</div>
 						<div class="text-foreground truncate text-sm font-medium">
 							<div class="min-w-0 flex-1 text-left">
@@ -206,12 +209,15 @@
 							</div>
 							<div class="text-muted-foreground truncate font-mono text-xs">
 								{#if 'Postgres' in connection.database_type}
-									{connection.database_type.Postgres.connection_string
-										.replace(/^postgresql?:\/\/[^@]*@/, '')
-										.replace(/\/[^?]*/, '')}
+								{connection.database_type.Postgres.connection_string
+									.replace(/^postgresql?:\/\/[^@]*@/, '')
+									.replace(/\/[^?]*/, '')}
 								{:else if 'SQLite' in connection.database_type}
 									{connection.database_type.SQLite.db_path.split('/').pop() ||
 										connection.database_type.SQLite.db_path}
+								{:else if 'DuckDB' in connection.database_type}
+									{connection.database_type.DuckDB.db_path.split('/').pop() ||
+										connection.database_type.DuckDB.db_path}
 								{/if}
 							</div>
 						</div>

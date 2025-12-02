@@ -13,7 +13,8 @@
 	} from '@lucide/svelte';
 
 	import IconCibPostgresql from '~icons/cib/postgresql';
-	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+import IconSimpleIconsDuckdb from '~icons/simple-icons/duckdb';
 
 	import { Commands, type DatabaseInfo, type ConnectionInfo } from '$lib/commands.svelte';
 	import { Tabs } from 'bits-ui';
@@ -28,10 +29,11 @@
 
 	let connectionName = $state(editingConnection?.name || '');
 
-	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
-	let connectionString = $state('');
-	let caCertPath = $state<string>('');
-	let sqliteFilePath = $state('');
+let databaseType = $state<'postgres' | 'sqlite' | 'duckdb'>('postgres');
+let connectionString = $state('');
+let caCertPath = $state<string>('');
+let sqliteFilePath = $state('');
+let duckdbFilePath = $state('');
 
 	if (editingConnection) {
 		if ('Postgres' in editingConnection.database_type) {
@@ -41,6 +43,9 @@
 		} else if ('SQLite' in editingConnection.database_type) {
 			databaseType = 'sqlite';
 			sqliteFilePath = editingConnection.database_type.SQLite.db_path;
+		} else if ('DuckDB' in editingConnection.database_type) {
+			databaseType = 'duckdb';
+			duckdbFilePath = editingConnection.database_type.DuckDB.db_path;
 		}
 	}
 	let errors = $state<Record<string, string>>({});
@@ -54,22 +59,26 @@
 	function validateForm(): boolean {
 		errors = {};
 
-		if (!connectionName.trim()) {
-			errors.name = 'Connection name is required';
-		}
+	if (!connectionName.trim()) {
+		errors.name = 'Connection name is required';
+	}
 
 		if (databaseType === 'postgres' && !connectionString.trim()) {
 			errors.connectionString = 'Connection string is required';
 		}
 
-		if (databaseType === 'sqlite' && !sqliteFilePath.trim()) {
-			errors.sqliteFilePath = 'SQLite database file is required';
-		}
+	if (databaseType === 'sqlite' && !sqliteFilePath.trim()) {
+		errors.sqliteFilePath = 'SQLite database file is required';
+	}
+
+	if (databaseType === 'duckdb' && !duckdbFilePath.trim()) {
+		errors.duckdbFilePath = 'DuckDB database file is required';
+	}
 
 		return Object.keys(errors).length === 0;
 	}
 
-	async function openExistingDatabase() {
+async function openExistingDatabase() {
 		try {
 			const selectedPath = await Commands.pickSqliteDbDialog();
 			if (selectedPath) {
@@ -78,14 +87,29 @@
 				if (errors.sqliteFilePath) {
 					errors = { ...errors };
 					delete errors.sqliteFilePath;
-				}
+}
+
+async function openExistingDuckdb() {
+	try {
+		const selectedPath = await Commands.pickDuckdbDbDialog();
+		if (selectedPath) {
+			duckdbFilePath = selectedPath;
+			if (errors.duckdbFilePath) {
+				errors = { ...errors };
+				delete errors.duckdbFilePath;
+			}
+		}
+	} catch (error) {
+		console.error('Failed to open DuckDB file dialog:', error);
+	}
+}
 			}
 		} catch (error) {
 			console.error('Failed to open file dialog:', error);
 		}
 	}
 
-	async function createNewDatabase() {
+async function createNewDatabase() {
 		try {
 			const selectedPath = await Commands.saveSqliteDbDialog();
 			if (selectedPath) {
@@ -94,7 +118,22 @@
 				if (errors.sqliteFilePath) {
 					errors = { ...errors };
 					delete errors.sqliteFilePath;
-				}
+}
+
+async function createNewDuckdb() {
+	try {
+		const selectedPath = await Commands.saveDuckdbDbDialog();
+		if (selectedPath) {
+			duckdbFilePath = selectedPath;
+			if (errors.duckdbFilePath) {
+				errors = { ...errors };
+				delete errors.duckdbFilePath;
+			}
+		}
+	} catch (error) {
+		console.error('Failed to create DuckDB database:', error);
+	}
+}
 			}
 		} catch (error) {
 			console.error('Failed to create database:', error);
@@ -122,7 +161,7 @@
 		isTestingConnection = true;
 		testResult = null;
 
-		const databaseInfo: DatabaseInfo =
+const databaseInfo: DatabaseInfo =
 			databaseType === 'postgres'
 				? {
 						Postgres: {
@@ -130,7 +169,9 @@
 							ca_cert_path: caCertPath.trim() || null
 						}
 					}
-				: { SQLite: { db_path: sqliteFilePath.trim() } };
+				: databaseType === 'sqlite'
+					? { SQLite: { db_path: sqliteFilePath.trim() } }
+					: { DuckDB: { db_path: duckdbFilePath.trim() } };
 
 		try {
 			const success = await Commands.testConnection(databaseInfo);
@@ -147,7 +188,7 @@
 		e.preventDefault();
 
 		if (validateForm()) {
-			const databaseInfo: DatabaseInfo =
+const databaseInfo: DatabaseInfo =
 				databaseType === 'postgres'
 					? {
 							Postgres: {
@@ -155,7 +196,9 @@
 								ca_cert_path: caCertPath.trim() || null
 							}
 						}
-					: { SQLite: { db_path: sqliteFilePath.trim() } };
+					: databaseType === 'sqlite'
+						? { SQLite: { db_path: sqliteFilePath.trim() } }
+						: { DuckDB: { db_path: duckdbFilePath.trim() } };
 
 			onSubmit(connectionName.trim(), databaseInfo);
 		}
@@ -202,7 +245,7 @@
 			</div>
 
 			<Tabs.Root bind:value={databaseType} class="w-full">
-				<Tabs.List class="bg-muted/20 grid w-full grid-cols-2 gap-1 rounded-lg p-1">
+			<Tabs.List class="bg-muted/20 grid w-full grid-cols-3 gap-1 rounded-lg p-1">
 					<Tabs.Trigger
 						value="postgres"
 						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
@@ -214,10 +257,17 @@
 						value="sqlite"
 						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
 					>
-						<IconSimpleIconsSqlite class="h-4 w-4" />
-						SQLite
-					</Tabs.Trigger>
-				</Tabs.List>
+					<IconSimpleIconsSqlite class="h-4 w-4" />
+					SQLite
+				</Tabs.Trigger>
+				<Tabs.Trigger
+					value="duckdb"
+					class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
+				>
+					<IconSimpleIconsDuckdb class="h-4 w-4" />
+					DuckDB
+				</Tabs.Trigger>
+			</Tabs.List>
 
 				<Tabs.Content value="postgres" class="mt-3">
 					<div class="bg-card rounded-xl border p-5 shadow-sm">
@@ -291,7 +341,7 @@
 					</div>
 				</Tabs.Content>
 
-				<Tabs.Content value="sqlite" class="mt-3">
+			<Tabs.Content value="sqlite" class="mt-3">
 					<div class="bg-card rounded-xl border p-5 shadow-sm">
 						<label for="sqliteFilePath" class="text-foreground mb-2 block text-sm font-semibold">
 							Database File <span class="text-error">*</span>
@@ -357,7 +407,59 @@
 							</div>
 						</div>
 					</div>
-				</Tabs.Content>
+			</Tabs.Content>
+
+			<Tabs.Content value="duckdb" class="mt-3">
+				<div class="bg-card rounded-xl border p-5 shadow-sm">
+					<label for="duckdbFilePath" class="text-foreground mb-2 block text-sm font-semibold">
+						Database File <span class="text-error">*</span>
+					</label>
+
+					<div class="space-y-3">
+						<Input
+							id="duckdbFilePath"
+							type="text"
+							bind:value={duckdbFilePath}
+							placeholder="No database selected..."
+							readonly
+							class={`shadow-sm transition-shadow ${errors.duckdbFilePath ? 'border-error' : ''}`}
+						/>
+
+						<div class="flex gap-2">
+							<Button type="button" variant="outline" onclick={openExistingDuckdb} class="flex-1 gap-2 shadow-sm hover:shadow-md">
+								<FolderOpen class="h-4 w-4" />
+								Open Existing
+							</Button>
+							<Button type="button" variant="outline" onclick={createNewDuckdb} class="flex-1 gap-2 shadow-sm hover:shadow-md">
+								<FilePlus class="h-4 w-4" />
+								Create New
+							</Button>
+						</div>
+					</div>
+
+					{#if errors.duckdbFilePath}
+						<p class="text-error mt-2 flex items-center gap-2 text-sm">
+							<AlertCircle class="h-4 w-4" />
+							{errors.duckdbFilePath}
+						</p>
+					{/if}
+
+					<div class="bg-primary/5 border-primary/20 mt-3 rounded-lg border p-3">
+						<div class="flex items-start gap-3">
+							<Info class="text-primary mt-0.5 h-4 w-4 flex-shrink-0" />
+							<div class="text-muted-foreground min-w-0 flex-1 text-sm">
+								<p class="mb-2 leading-relaxed">
+									Use <span class="text-foreground font-medium">Open Existing</span> to connect to an existing DuckDB database, or
+									<span class="text-foreground font-medium">Create New</span> to set up a new DuckDB database file.
+								</p>
+								<p class="text-xs leading-relaxed">
+									DuckDB databases are single files typically with the <span class="text-foreground font-medium">.duckdb</span> extension.
+								</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			</Tabs.Content>
 			</Tabs.Root>
 		</div>
 	</div>
