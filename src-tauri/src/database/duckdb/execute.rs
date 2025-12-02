@@ -196,11 +196,11 @@ fn execute_query_with_results_params(
             for i in 0..column_count { column_names.push(rows.as_ref().unwrap().column_name(i)?.to_string()); }
             let columns = serialize_as_json_array(column_names.iter().map(|s| s.as_str()))?;
             sender.send(QueryExecEvent::TypesResolved { columns })?;
-            let mut total_rows = 0;
+            let mut _total_rows = 0;
             let batch_size = settings.and_then(|s| s.batch_size).or_else(|| env::var("PGPAD_BATCH_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0)).unwrap_or(50);
             let column_decltypes = (0..column_count).map(|_| None).collect();
             let mut writer = match settings { Some(s) => RowWriter::with_settings(column_decltypes, Some(s)), None => RowWriter::new(column_decltypes) };
-            while let Some(row) = rows.next()? { writer.add_row(row)?; total_rows += 1; if writer.len() >= batch_size { sender.send(QueryExecEvent::Page { page_amount: writer.len(), page: writer.finish() })?; } }
+            while let Some(row) = rows.next()? { writer.add_row(row)?; _total_rows += 1; if writer.len() >= batch_size { sender.send(QueryExecEvent::Page { page_amount: writer.len(), page: writer.finish() })?; } }
             if !writer.is_empty() { sender.send(QueryExecEvent::Page { page_amount: writer.len(), page: writer.finish() })?; }
             sender.send(QueryExecEvent::Finished { elapsed_ms: started_at.elapsed().as_millis() as u64, affected_rows: 0, error: None })?;
             Ok(())

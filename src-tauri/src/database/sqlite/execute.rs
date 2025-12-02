@@ -198,7 +198,7 @@ fn execute_query_with_results_params(
             let mut named_params: Vec<(&str, &rusqlite::types::Value)> = Vec::with_capacity(owned_vals.len());
             for (name, val) in owned_vals.iter() { named_params.push((name.as_str(), val)); }
 
-            match stmt.query_named(named_params.as_slice()) {
+            match stmt.query(named_params.as_slice()) {
                 Ok(mut rows) => {
                     loop {
                         match rows.next() {
@@ -279,7 +279,7 @@ fn execute_modification_query_params(
             let mut named_params: Vec<(&str, &rusqlite::types::Value)> = Vec::with_capacity(owned_vals.len());
             for (name, val) in owned_vals.iter() { named_params.push((name.as_str(), val)); }
 
-            match stmt.execute_named(named_params.as_slice()) {
+            match stmt.execute(named_params.as_slice()) {
                 Ok(rows_affected) => {
                     sender.send(QueryExecEvent::Finished { elapsed_ms: started_at.elapsed().as_millis() as u64, affected_rows: rows_affected, error: None })?;
                     Ok(())

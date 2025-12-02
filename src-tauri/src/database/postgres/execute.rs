@@ -58,7 +58,6 @@ pub async fn execute_query_with_params(
         Bool(bool),
         Str(String),
         StrOpt(Option<String>),
-        Bytes(Vec<u8>),
         Json(tokio_postgres::types::Json<serde_json::Value>),
     }
 
@@ -101,7 +100,6 @@ pub async fn execute_query_with_params(
             ParamValue::Bool(v) => param_refs.push(v),
             ParamValue::Str(v) => param_refs.push(v),
             ParamValue::StrOpt(v) => param_refs.push(v),
-            ParamValue::Bytes(v) => param_refs.push(v),
             ParamValue::Json(v) => param_refs.push(v),
         }
     }
@@ -262,13 +260,13 @@ async fn execute_query_with_results_params(
         Ok(stream) => {
             pin_mut!(stream);
             let batch_size = settings.and_then(|s| s.batch_size).or_else(|| env::var("PGPAD_BATCH_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0)).unwrap_or(50);
-            let mut total_rows = 0;
+            let mut _total_rows = 0;
             let mut writer = match settings { Some(s) => RowWriter::with_settings(Some(s)), None => RowWriter::new() };
             loop {
                 match stream.try_next().await {
                     Ok(Some(row)) => {
                         writer.add_row(&row)?;
-                        total_rows += 1;
+                        _total_rows += 1;
                         if writer.len() >= batch_size {
                             sender.send(QueryExecEvent::Page { page_amount: writer.len(), page: writer.finish() })?;
                         }
