@@ -84,7 +84,7 @@ impl RowWriter {
                     let micros = match unit { TimeUnit::Second => v * 1_000_000, TimeUnit::Millisecond => v * 1_000, TimeUnit::Microsecond => v, TimeUnit::Nanosecond => v / 1_000 };
                     let secs = micros.div_euclid(1_000_000);
                     let sub_us = micros.rem_euclid(1_000_000);
-                    let dt = chrono::DateTime::<chrono::Utc>::from_timestamp(secs, (sub_us as u32) * 1000).map(|d| d.naive_utc());
+                    let dt = chrono::DateTime::<chrono::Utc>::from_timestamp(secs, (sub_us as u32) * 1000);
                     if let Some(dt) = dt { self.write_json_string(&dt.to_string()); }
                     else { self.write_json_string(&format!("{}", v)); }
                 }
@@ -132,7 +132,6 @@ impl RowWriter {
                     }
                 }
                 other => {
-                    // Attempt owned conversion for complex types
                     if let Ok(val) = row.get::<usize, Value>(i) {
                         self.write_duck_value_json(&val);
                     } else {
@@ -215,7 +214,7 @@ impl RowWriter {
                 let micros = match unit { TimeUnit::Second => *v * 1_000_000, TimeUnit::Millisecond => *v * 1_000, TimeUnit::Microsecond => *v, TimeUnit::Nanosecond => *v / 1_000 };
                 let secs = micros.div_euclid(1_000_000);
                 let sub_us = micros.rem_euclid(1_000_000);
-                let dt = chrono::DateTime::<chrono::Utc>::from_timestamp(secs, (sub_us as u32) * 1000).map(|d| d.naive_utc());
+                let dt = chrono::DateTime::<chrono::Utc>::from_timestamp(secs, (sub_us as u32) * 1000);
                 if let Some(dt) = dt { self.write_json_string(&dt.to_string()); } else { self.write_json_string(&format!("{}", v)); }
             }
             Value::Text(s) => self.write_json_string(s),
@@ -259,7 +258,8 @@ impl RowWriter {
                 let mut parts = Vec::new();
                 if years != 0 { parts.push(format!("{} year", years)); }
                 if mons != 0 { parts.push(format!("{} mons", mons)); }
-                if *days != 0 { parts.push(format!("{} days", days)); }
+                let days = *days;
+                if days != 0 { parts.push(format!("{days} days")); }
                 let time_part = if sub_us == 0 { format!("{:02}:{:02}:{:02}", h, m, s) } else { format!("{:02}:{:02}:{:02}.{:06}", h, m, s, sub_us) };
                 parts.push(time_part);
                 self.write_json_string(&parts.join(" "));
@@ -289,7 +289,7 @@ impl RowWriter {
                 let mut first = true;
                 for (k, v) in map.iter() {
                     if !first { self.buf.push(','); } else { first = false; }
-                    let ks = format!("{:?}", k);
+                    let ks = format!("{k:?}");
                     self.write_json_string(&ks);
                     self.buf.push(':');
                     self.write_duck_value_json(v);
