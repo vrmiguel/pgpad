@@ -243,6 +243,31 @@ pub async fn connect_to_database(
             connection: sqlite_conn,
         } => match rusqlite::Connection::open(&db_path) {
             Ok(conn) => {
+                // Apply optional session settings
+                let _ = (|| -> Result<(), Error> {
+                    let busy = std::env::var("PGPAD_SQLITE_BUSY_TIMEOUT_MS")
+                        .ok()
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(30000);
+                    conn.execute_batch(&format!(
+                        "PRAGMA foreign_keys = ON;\nPRAGMA busy_timeout = {};\nPRAGMA case_sensitive_like = ON;\nPRAGMA extended_result_codes = ON;",
+                        busy
+                    ))
+                    .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    if let Ok(mode) = std::env::var("PGPAD_SQLITE_JOURNAL_MODE") {
+                        if !mode.trim().is_empty() {
+                            let sql = format!("PRAGMA journal_mode = {}", mode);
+                            let _ = conn.execute_batch(&sql);
+                        }
+                    }
+                    if let Ok(sync) = std::env::var("PGPAD_SQLITE_SYNCHRONOUS") {
+                        if !sync.trim().is_empty() {
+                            let sql = format!("PRAGMA synchronous = {}", sync);
+                            let _ = conn.execute_batch(&sql);
+                        }
+                    }
+                    Ok(())
+                })();
                 *sqlite_conn = Some(Arc::new(Mutex::new(conn)));
                 connection.connected = true;
 
