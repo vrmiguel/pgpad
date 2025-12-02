@@ -52,9 +52,7 @@ fn execute_query_with_results(
                     sender.send(QueryExecEvent::TypesResolved { columns })?;
 
                     let mut _total_rows = 0;
-                    let batch_size = settings
-                        .and_then(|s| s.batch_size)
-                        .unwrap_or(50);
+                    let batch_size = settings.and_then(|s| s.batch_size).unwrap_or(50);
                     let mut writer = match settings {
                         Some(s) => RowWriter::with_settings(column_types, Some(s)),
                         None => RowWriter::new(column_types),
@@ -177,9 +175,7 @@ fn execute_query_with_results_params(
             sender.send(QueryExecEvent::TypesResolved { columns })?;
 
             let mut total_rows = 0;
-                    let batch_size = settings
-                        .and_then(|s| s.batch_size)
-                        .unwrap_or(50);
+            let batch_size = settings.and_then(|s| s.batch_size).unwrap_or(50);
             let mut writer = match settings {
                 Some(s) => RowWriter::with_settings(column_types, Some(s)),
                 None => RowWriter::new(column_types),
