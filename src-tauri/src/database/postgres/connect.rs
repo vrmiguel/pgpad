@@ -14,8 +14,12 @@ pub async fn connect(
 ) -> Result<(Client, ConnectionCheck), Error> {
     use tokio_postgres::config::SslMode;
 
+    if config.get_hosts().is_empty() {
+        return Err(anyhow::anyhow!("No host provided in Postgres connection configuration").into());
+    }
+
     let client = match config.get_ssl_mode() {
-        SslMode::Require | SslMode::Prefer => {
+        SslMode::Require => {
             let certificate_store = if let Some(cert_path) = ca_cert_path {
                 certificates.with_custom_cert(cert_path).await?
             } else {
@@ -36,7 +40,39 @@ pub async fn connect(
 
             (client, conn_check)
         }
-        // Mostly SslMode::Disable, but the enum was marked as non_exhaustive
+        SslMode::Prefer => {
+            let certificate_store = if let Some(cert_path) = ca_cert_path {
+                certificates.with_custom_cert(cert_path).await?
+            } else {
+                certificates.read().await?
+            };
+
+            let rustls_config = rustls::ClientConfig::builder()
+                .with_root_certificates(certificate_store)
+                .with_no_client_auth();
+            let tls = tokio_postgres_rustls::MakeRustlsConnect::new(rustls_config);
+
+            match config.connect(tls).await {
+                Ok((client, conn)) => {
+                    let conn_check =
+                        tauri::async_runtime::spawn(check_connection::<MakeRustlsConnect>(conn));
+                    (client, conn_check)
+                }
+                Err(e) => {
+                    log::warn!(
+                        "TLS connection failed under sslmode=Prefer, falling back to NoTls: {}",
+                        e
+                    );
+                    let (client, conn) = config
+                        .connect(NoTls)
+                        .await
+                        .with_context(|| format!("Failed to connect to Postgres '{config:?}'"))?;
+                    let conn_check = tauri::async_runtime::spawn(check_connection::<NoTls>(conn));
+                    (client, conn_check)
+                }
+            }
+        }
+        // Other modes (including SslMode::Disable)
         _other => {
             let (client, conn) = config
                 .connect(NoTls)
