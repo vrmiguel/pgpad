@@ -313,66 +313,66 @@ pub async fn execute_query_with_params(
             .map_err(|e| Error::Any(anyhow::anyhow!(format!("Enable SHOWPLAN failed: {}", e))))?;
 
         {
-        let mut stream = query.query(client).await.map_err(|e| {
-            Error::Any(anyhow::anyhow!(map_mssql_error(&format!(
-                "Prepared explain failed: {}",
-                e
-            ))))
-        })?;
+            let mut stream = query.query(client).await.map_err(|e| {
+                Error::Any(anyhow::anyhow!(map_mssql_error(&format!(
+                    "Prepared explain failed: {}",
+                    e
+                ))))
+            })?;
 
-        let mut writer = RowWriter::with_settings(settings);
-        let mut columns_sent = false;
-        while let Some(item) = stream
-            .try_next()
-            .await
-            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?
-        {
-            match item {
-                QueryItem::Metadata(meta) => {
-                    if !columns_sent {
-                        let cols: Vec<String> = meta
-                            .columns()
-                            .iter()
-                            .map(|c| c.name().to_string())
-                            .collect();
-                        let cols_json = serde_json::to_string(&cols)
-                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
-                        sender
-                            .send(crate::database::types::QueryExecEvent::TypesResolved {
-                                columns: serde_json::value::RawValue::from_string(cols_json)
-                                    .unwrap(),
-                            })
-                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
-                        columns_sent = true;
+            let mut writer = RowWriter::with_settings(settings);
+            let mut columns_sent = false;
+            while let Some(item) = stream
+                .try_next()
+                .await
+                .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?
+            {
+                match item {
+                    QueryItem::Metadata(meta) => {
+                        if !columns_sent {
+                            let cols: Vec<String> = meta
+                                .columns()
+                                .iter()
+                                .map(|c| c.name().to_string())
+                                .collect();
+                            let cols_json = serde_json::to_string(&cols)
+                                .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                            sender
+                                .send(crate::database::types::QueryExecEvent::TypesResolved {
+                                    columns: serde_json::value::RawValue::from_string(cols_json)
+                                        .unwrap(),
+                                })
+                                .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                            columns_sent = true;
+                        }
                     }
-                }
-                QueryItem::Row(row) => {
-                    writer
-                        .add_row(&row)
-                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
-                    let batch = batch_size();
-                    if writer.len() >= batch {
-                        let page = writer.finish();
-                        sender
-                            .send(crate::database::types::QueryExecEvent::Page {
-                                page_amount: 0,
-                                page,
-                            })
+                    QueryItem::Row(row) => {
+                        writer
+                            .add_row(&row)
                             .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let batch = batch_size();
+                        if writer.len() >= batch {
+                            let page = writer.finish();
+                            sender
+                                .send(crate::database::types::QueryExecEvent::Page {
+                                    page_amount: 0,
+                                    page,
+                                })
+                                .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        }
                     }
                 }
             }
-        }
 
-        if !writer.is_empty() {
-            let page = writer.finish();
-            sender
-                .send(crate::database::types::QueryExecEvent::Page {
-                    page_amount: 0,
-                    page,
-                })
-                .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
-        }
+            if !writer.is_empty() {
+                let page = writer.finish();
+                sender
+                    .send(crate::database::types::QueryExecEvent::Page {
+                        page_amount: 0,
+                        page,
+                    })
+                    .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+            }
         }
         client
             .simple_query("SET SHOWPLAN_XML OFF")

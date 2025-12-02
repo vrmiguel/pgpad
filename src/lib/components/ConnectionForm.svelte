@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+    import FormRow from '$lib/components/ui/FormRow.svelte';
 	import {
 		Cable,
 		X,
@@ -13,10 +14,12 @@
 	} from '@lucide/svelte';
 
 	import IconCibPostgresql from '~icons/cib/postgresql';
-import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
-import IconSimpleIconsDuckdb from '~icons/simple-icons/duckdb';
+	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+	import IconSimpleIconsDuckdb from '~icons/simple-icons/duckdb';
+	import IconSimpleIconsOracle from '~icons/simple-icons/oracle';
+	import IconSimpleIconsMssql from '~icons/simple-icons/microsoftsqlserver';
 
-	import { Commands, type DatabaseInfo, type ConnectionInfo } from '$lib/commands.svelte';
+import { Commands, type DatabaseInfo, type ConnectionInfo, type OracleSettings } from '$lib/commands.svelte';
 	import { Tabs } from 'bits-ui';
 
 	interface Props {
@@ -29,13 +32,56 @@ import IconSimpleIconsDuckdb from '~icons/simple-icons/duckdb';
 
 	let connectionName = $state(editingConnection?.name || '');
 
-let databaseType = $state<'postgres' | 'sqlite' | 'duckdb'>('postgres');
-let connectionString = $state('');
-let caCertPath = $state<string>('');
-let sqliteFilePath = $state('');
-let duckdbFilePath = $state('');
+	let databaseType = $state<'postgres' | 'sqlite' | 'duckdb' | 'oracle' | 'mssql' >('postgres');
+	let connectionString = $state('');
+	let caCertPath = $state<string>('');
+	let sqliteFilePath = $state('');
+	let duckdbFilePath = $state('');
+	let oracleConnectionString = $state('');
+	let oracleWalletPath = $state<string>('');
+let oracleTnsAlias = $state<string>('');
 
-	if (editingConnection) {
+// Oracle advanced settings (per-connection)
+let oracleSettings: OracleSettings | null = $state(null);
+let loadingOracleSettings = $state(false);
+let savingOracleSettings = $state(false);
+
+async function loadOracleSettingsForEditing() {
+    if (databaseType !== 'oracle' || !editingConnection) return;
+    loadingOracleSettings = true;
+    try {
+        oracleSettings = await Commands.getOracleSettings(editingConnection.id);
+    } catch (e) {
+        oracleSettings = null;
+    } finally {
+        loadingOracleSettings = false;
+    }
+}
+
+function updateOracleSetting<K extends keyof OracleSettings>(key: K, value: OracleSettings[K]) {
+    if (!oracleSettings) oracleSettings = {} as OracleSettings;
+    oracleSettings[key] = value;
+}
+
+async function saveOracleSettings() {
+    if (databaseType !== 'oracle' || !editingConnection || !oracleSettings) return;
+    savingOracleSettings = true;
+    try {
+        await Commands.setOracleSettings(oracleSettings, editingConnection.id);
+    } finally {
+        savingOracleSettings = false;
+    }
+}
+
+$effect(() => {
+    const dt = databaseType;
+    const ec = editingConnection;
+    if (dt === 'oracle' && ec) {
+        loadOracleSettingsForEditing();
+    }
+});
+
+    if (editingConnection) {
 		if ('Postgres' in editingConnection.database_type) {
 			databaseType = 'postgres';
 			connectionString = editingConnection.database_type.Postgres.connection_string;
@@ -46,8 +92,17 @@ let duckdbFilePath = $state('');
 		} else if ('DuckDB' in editingConnection.database_type) {
 			databaseType = 'duckdb';
 			duckdbFilePath = editingConnection.database_type.DuckDB.db_path;
-		}
-	}
+        } else if ('Mssql' in editingConnection.database_type) {
+            databaseType = 'mssql';
+            connectionString = editingConnection.database_type.Mssql.connection_string;
+            caCertPath = editingConnection.database_type.Mssql.ca_cert_path || '';
+        } else if ('Oracle' in editingConnection.database_type) {
+            databaseType = 'oracle';
+            oracleConnectionString = editingConnection.database_type.Oracle.connection_string;
+            oracleWalletPath = editingConnection.database_type.Oracle.wallet_path || '';
+            oracleTnsAlias = editingConnection.database_type.Oracle.tns_alias || '';
+        }
+    }
 	let errors = $state<Record<string, string>>({});
 	let isTestingConnection = $state(false);
 	let testResult = $state<'success' | 'error' | null>(null);
@@ -56,37 +111,47 @@ let duckdbFilePath = $state('');
 	const modalTitle = $derived(isEditing ? 'Edit Connection' : 'Add Connection');
 	const submitButtonText = $derived(isEditing ? 'Update Connection' : 'Add Connection');
 
-	function validateForm(): boolean {
+    function validateForm(): boolean {
 		errors = {};
 
 	if (!connectionName.trim()) {
 		errors.name = 'Connection name is required';
 	}
 
-		if (databaseType === 'postgres' && !connectionString.trim()) {
-			errors.connectionString = 'Connection string is required';
-		}
+    if (databaseType === 'postgres' && !connectionString.trim()) {
+        errors.connectionString = 'Connection string is required';
+    }
 
 	if (databaseType === 'sqlite' && !sqliteFilePath.trim()) {
 		errors.sqliteFilePath = 'SQLite database file is required';
 	}
 
-	if (databaseType === 'duckdb' && !duckdbFilePath.trim()) {
-		errors.duckdbFilePath = 'DuckDB database file is required';
-	}
+    if (databaseType === 'duckdb' && !duckdbFilePath.trim()) {
+        errors.duckdbFilePath = 'DuckDB database file is required';
+    }
+    if (databaseType === 'mssql' && !connectionString.trim()) {
+        errors.connectionString = 'Connection string is required';
+    }
+    if (databaseType === 'oracle' && !oracleConnectionString.trim()) {
+        errors.connectionString = 'Connection string is required';
+    }
 
 		return Object.keys(errors).length === 0;
 	}
 
 async function openExistingDatabase() {
-		try {
-			const selectedPath = await Commands.pickSqliteDbDialog();
-			if (selectedPath) {
-				sqliteFilePath = selectedPath;
-
-				if (errors.sqliteFilePath) {
-					errors = { ...errors };
-					delete errors.sqliteFilePath;
+	try {
+		const selectedPath = await Commands.pickSqliteDbDialog();
+		if (selectedPath) {
+			sqliteFilePath = selectedPath;
+			if (errors.sqliteFilePath) {
+				errors = { ...errors };
+				delete errors.sqliteFilePath;
+			}
+		}
+	} catch (error) {
+		console.error('Failed to open file dialog:', error);
+	}
 }
 
 async function openExistingDuckdb() {
@@ -103,21 +168,20 @@ async function openExistingDuckdb() {
 		console.error('Failed to open DuckDB file dialog:', error);
 	}
 }
-			}
-		} catch (error) {
-			console.error('Failed to open file dialog:', error);
-		}
-	}
 
 async function createNewDatabase() {
-		try {
-			const selectedPath = await Commands.saveSqliteDbDialog();
-			if (selectedPath) {
-				sqliteFilePath = selectedPath;
-
-				if (errors.sqliteFilePath) {
-					errors = { ...errors };
-					delete errors.sqliteFilePath;
+	try {
+		const selectedPath = await Commands.saveSqliteDbDialog();
+		if (selectedPath) {
+			sqliteFilePath = selectedPath;
+			if (errors.sqliteFilePath) {
+				errors = { ...errors };
+				delete errors.sqliteFilePath;
+			}
+		}
+	} catch (error) {
+		console.error('Failed to create database:', error);
+	}
 }
 
 async function createNewDuckdb() {
@@ -134,11 +198,6 @@ async function createNewDuckdb() {
 		console.error('Failed to create DuckDB database:', error);
 	}
 }
-			}
-		} catch (error) {
-			console.error('Failed to create database:', error);
-		}
-	}
 
 	async function selectCaCert() {
 		try {
@@ -155,23 +214,27 @@ async function createNewDuckdb() {
 		caCertPath = '';
 	}
 
-	async function testConnection() {
+async function testConnection() {
 		if (!validateForm()) return;
 
 		isTestingConnection = true;
 		testResult = null;
 
 const databaseInfo: DatabaseInfo =
-			databaseType === 'postgres'
-				? {
-						Postgres: {
-							connection_string: connectionString.trim(),
-							ca_cert_path: caCertPath.trim() || null
+				databaseType === 'postgres'
+					? {
+							Postgres: {
+								connection_string: connectionString.trim(),
+								ca_cert_path: caCertPath.trim() || null
+							}
 						}
-					}
-				: databaseType === 'sqlite'
-					? { SQLite: { db_path: sqliteFilePath.trim() } }
-					: { DuckDB: { db_path: duckdbFilePath.trim() } };
+					: databaseType === 'sqlite'
+						? { SQLite: { db_path: sqliteFilePath.trim() } }
+						: databaseType === 'duckdb'
+							? { DuckDB: { db_path: duckdbFilePath.trim() } }
+							: databaseType === 'mssql'
+								? { Mssql: { connection_string: connectionString.trim(), ca_cert_path: caCertPath.trim() || null } }
+								: { Oracle: { connection_string: oracleConnectionString.trim(), wallet_path: oracleWalletPath.trim() || null, tns_alias: oracleTnsAlias.trim() || null } };
 
 		try {
 			const success = await Commands.testConnection(databaseInfo);
@@ -184,21 +247,40 @@ const databaseInfo: DatabaseInfo =
 		}
 	}
 
+async function selectOracleWalletDir() {
+	try {
+		const selectedPath = await Commands.pickOracleWalletDir();
+		if (selectedPath) {
+			oracleWalletPath = selectedPath;
+		}
+	} catch (error) {
+		console.error('Failed to select wallet directory:', error);
+	}
+}
+
+function clearOracleWalletDir() {
+	oracleWalletPath = '';
+}
+
 	function handleSubmit(e: Event) {
 		e.preventDefault();
 
 		if (validateForm()) {
-const databaseInfo: DatabaseInfo =
-				databaseType === 'postgres'
-					? {
-							Postgres: {
-								connection_string: connectionString.trim(),
-								ca_cert_path: caCertPath.trim() || null
-							}
-						}
-					: databaseType === 'sqlite'
-						? { SQLite: { db_path: sqliteFilePath.trim() } }
-						: { DuckDB: { db_path: duckdbFilePath.trim() } };
+			const databaseInfo: DatabaseInfo =
+							databaseType === 'postgres'
+								? {
+										Postgres: {
+											connection_string: connectionString.trim(),
+											ca_cert_path: caCertPath.trim() || null
+										}
+									}
+								: databaseType === 'sqlite'
+									? { SQLite: { db_path: sqliteFilePath.trim() } }
+									: databaseType === 'duckdb'
+										? { DuckDB: { db_path: duckdbFilePath.trim() } }
+										: databaseType === 'mssql'
+											? { Mssql: { connection_string: connectionString.trim(), ca_cert_path: caCertPath.trim() || null } }
+											: { Oracle: { connection_string: oracleConnectionString.trim(), wallet_path: oracleWalletPath.trim() || null, tns_alias: oracleTnsAlias.trim() || null } };
 
 			onSubmit(connectionName.trim(), databaseInfo);
 		}
@@ -213,7 +295,7 @@ const databaseInfo: DatabaseInfo =
 			</div>
 			<h2 class="text-foreground text-xl font-bold">{modalTitle}</h2>
 		</div>
-		<Button type="button" variant="ghost" size="icon-sm" onclick={onCancel} class="hover:shadow-md">
+        <Button type="button" variant="ghost" size="icon-sm" onclick={onCancel} class="hover:shadow-md">
 			<X class="h-4 w-4" />
 		</Button>
 	</div>
@@ -244,8 +326,8 @@ const databaseInfo: DatabaseInfo =
 				Database Type <span class="text-error">*</span>
 			</div>
 
-			<Tabs.Root bind:value={databaseType} class="w-full">
-			<Tabs.List class="bg-muted/20 grid w-full grid-cols-3 gap-1 rounded-lg p-1">
+            <Tabs.Root bind:value={databaseType} class="w-full">
+            <Tabs.List class="bg-muted/20 grid w-full grid-cols-5 gap-1 rounded-lg p-1">
 					<Tabs.Trigger
 						value="postgres"
 						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
@@ -267,208 +349,260 @@ const databaseInfo: DatabaseInfo =
 					<IconSimpleIconsDuckdb class="h-4 w-4" />
 					DuckDB
 				</Tabs.Trigger>
-			</Tabs.List>
+                <Tabs.Trigger
+                    value="mssql"
+                    class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
+                >
+                    <IconSimpleIconsMssql class="h-4 w-4" />
+                    MSSQL
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                    value="oracle"
+                    class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
+                >
+                    Oracle
+                </Tabs.Trigger>
+            </Tabs.List>
 
-				<Tabs.Content value="postgres" class="mt-3">
-					<div class="bg-card rounded-xl border p-5 shadow-sm">
-						<label for="connectionString" class="text-foreground mb-2 block text-sm font-semibold">
-							Connection String <span class="text-error">*</span>
-						</label>
-						<Input
-							id="connectionString"
-							type="text"
-							bind:value={connectionString}
-							placeholder="postgresql://username:password@localhost:5432/database"
-							class={`shadow-sm transition-shadow focus:shadow-md ${errors.connectionString ? 'border-error focus:ring-error/30' : 'focus:ring-primary/30'}`}
-						/>
-						{#if errors.connectionString}
-							<p class="text-error mt-2 flex items-center gap-2 text-sm">
-								<AlertCircle class="h-4 w-4" />
-								{errors.connectionString}
-							</p>
-						{/if}
+                <Tabs.Content value="postgres" class="mt-3">
+                    <div class="bg-card rounded-xl border p-5 shadow-sm">
+                        <FormRow label="Connection String" forId="connectionString" required error={errors.connectionString} size="sm" let:describedby>
+                            <Input id="connectionString" type="text" bind:value={connectionString} aria-describedby={describedby}
+                                placeholder="postgresql://username:password@localhost:5432/database"
+                                class={`shadow-sm transition-shadow focus:shadow-md ${errors.connectionString ? 'border-error focus:ring-error/30' : 'focus:ring-primary/30'}`}
+                            />
+                        </FormRow>
 
-						<div class="mt-4">
-							<label for="caCertPath" class="text-foreground mb-2 block text-sm font-semibold">
-								CA Certificate
-							</label>
+                        <div class="mt-4">
+                            <FormRow label="CA Certificate" forId="caCertPath" description="Provide a custom CA certificate file (.pem, .crt, .cer) for SSL/TLS connections if required." size="sm" let:describedby>
+                                <div class="space-y-2">
+                                    <div class="flex gap-2">
+                                        <Input id="caCertPath" type="text" bind:value={caCertPath} placeholder="No certificate selected..." readOnly aria-describedby={describedby} class="flex-1 shadow-sm transition-shadow" />
+                                        <Button type="button" variant="outline" size="sm" onclick={selectCaCert} class="gap-2 shadow-sm hover:shadow-md">
+                                            <FileCheck class="h-4 w-4" />
+                                            Select
+                                        </Button>
+                                        {#if caCertPath}
+                                            <Button type="button" variant="ghost" size="sm" onclick={clearCaCert} title="Clear certificate" class="px-2">
+                                                <X class="h-4 w-4" />
+                                        </Button>
+                                    {/if}
+                                    </div>
+                                </div>
+                            </FormRow>
+                            </div>
+                            </div>
+                </Tabs.Content>
 
-							<div class="space-y-2">
-								<div class="flex gap-2">
-									<Input
-										id="caCertPath"
-										type="text"
-										bind:value={caCertPath}
-										placeholder="No certificate selected..."
-										readonly
-										class="flex-1 shadow-sm transition-shadow"
-									/>
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										onclick={selectCaCert}
-										class="gap-2 shadow-sm hover:shadow-md"
-									>
-										<FileCheck class="h-4 w-4" />
-										Select
-									</Button>
-									{#if caCertPath}
-										<Button
-											type="button"
-											variant="ghost"
-											size="sm"
-											onclick={clearCaCert}
-											title="Clear certificate"
-											class="px-2"
-										>
-											<X class="h-4 w-4" />
-										</Button>
-									{/if}
-								</div>
+            <Tabs.Content value="oracle" class="mt-3">
+                <div class="bg-card rounded-xl border p-5 shadow-sm">
+                    <label for="oracleConnectionString" class="text-foreground mb-2 block text-sm font-semibold">
+                        Connection String <span class="text-error">*</span>
+                    </label>
+                    <Input
+                        id="oracleConnectionString"
+                        type="text"
+                        bind:value={oracleConnectionString}
+                        placeholder="oracle://user:password@host:1521/service"
+                        class={`shadow-sm transition-shadow focus:shadow-md ${errors.connectionString ? 'border-error focus:ring-error/30' : 'focus:ring-primary/30'}`}
+                    />
+                    {#if errors.connectionString}
+                        <p class="text-error mt-2 flex items-center gap-2 text-sm">
+                            <AlertCircle class="h-4 w-4" />
+                            {errors.connectionString}
+                        </p>
+                    {/if}
 
-								<div class="bg-muted/20 border-muted/40 rounded-lg border p-2.5">
-									<div class="flex items-start gap-2">
-										<Info class="text-muted-foreground mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-										<p class="text-muted-foreground text-xs leading-relaxed">
-											Provide a custom CA certificate file (.pem, .crt, .cer) for SSL/TLS
-											connections if required.
-										</p>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-				</Tabs.Content>
+                    <div class="mt-4 grid grid-cols-2 gap-3">
+                        <div>
+                            <FormRow label="Wallet Path (TNS_ADMIN)" forId="oracleWalletPath" description="Select the directory containing Oracle wallet files and sqlnet.ora. This sets TNS_ADMIN for secure connections." size="sm">
+                                <div class="flex gap-2" let:describedby>
+                                    <Input id="oracleWalletPath" type="text" bind:value={oracleWalletPath} placeholder="Optional" readOnly aria-describedby={describedby} class="flex-1 shadow-sm transition-shadow" />
+                                    <Button type="button" variant="outline" size="sm" onclick={selectOracleWalletDir} class="gap-2 shadow-sm hover:shadow-md">Select</Button>
+                                    {#if oracleWalletPath}
+                                        <Button type="button" variant="ghost" size="sm" onclick={clearOracleWalletDir} title="Clear wallet path" class="px-2">
+                                            <X class="h-4 w-4" />
+                                        </Button>
+                                    {/if}
+                                </div>
+                            </FormRow>
+                        </div>
+                        <div>
+                            <FormRow label="TNS Alias" forId="oracleTnsAlias" size="sm">
+                                <Input id="oracleTnsAlias" type="text" bind:value={oracleTnsAlias} placeholder="Optional" class="shadow-sm transition-shadow" />
+                            </FormRow>
+                        </div>
+                    </div>
+                </div>
+
+                {#if editingConnection}
+                <div class="mt-4 rounded-lg border p-4">
+                    <h3 class="mb-3 text-sm font-medium">Oracle Settings (this connection)</h3>
+                    {#if loadingOracleSettings}
+                        <div class="text-sm">Loading settings…</div>
+                    {:else}
+                            <div class="grid grid-cols-1 gap-3">
+                            <FormRow label="Oracle XPLAN format" forId="ora_xplan_format" size="sm">
+                                <select id="ora_xplan_format" class="rounded border px-2 py-1 w-full"
+                                    value={oracleSettings?.xplan_format ?? ''}
+                                    onchange={(e) => updateOracleSetting('xplan_format', (e.target as HTMLSelectElement).value as any)}
+                                >
+                                    <option value="TYPICAL">TYPICAL</option>
+                                    <option value="BASIC">BASIC</option>
+                                    <option value="ALL">ALL</option>
+                                    <option value="ALLSTATS LAST">ALLSTATS LAST</option>
+                                </select>
+                            </FormRow>
+                            <FormRow label="XPLAN mode" forId="ora_xplan_mode" size="sm">
+                                <select id="ora_xplan_mode" class="rounded border px-2 py-1 w-full"
+                                    value={oracleSettings?.xplan_mode ?? ''}
+                                    onchange={(e) => updateOracleSetting('xplan_mode', (e.target as HTMLSelectElement).value as any)}
+                                >
+                                    <option value="display">display</option>
+                                    <option value="display_cursor">display_cursor</option>
+                                </select>
+                            </FormRow>
+                            <FormRow label="RAW format" forId="ora_raw_format" size="sm">
+                                <select id="ora_raw_format" class="rounded border px-2 py-1 w-full"
+                                    value={oracleSettings?.raw_format ?? ''}
+                                    onchange={(e) => updateOracleSetting('raw_format', (e.target as HTMLSelectElement).value as any)}
+                                >
+                                    <option value="preview">preview</option>
+                                    <option value="hex">hex</option>
+                                </select>
+                            </FormRow>
+                            <FormRow label="RAW chunk size" forId="ora_raw_chunk_size" size="sm">
+                                <input id="ora_raw_chunk_size" class="rounded border px-2 py-1 w-32" type="number" min="1"
+                                    value={oracleSettings?.raw_chunk_size ?? ''}
+                                    oninput={(e) => updateOracleSetting('raw_chunk_size', Number((e.target as HTMLInputElement).value) || undefined)}
+                                />
+                            </FormRow>
+                            <FormRow label="BLOB streaming" forId="ora_blob_stream" size="sm">
+                                <select id="ora_blob_stream" class="rounded border px-2 py-1 w-full"
+                                    value={oracleSettings?.blob_stream ?? ''}
+                                    onchange={(e) => updateOracleSetting('blob_stream', (e.target as HTMLSelectElement).value as any)}
+                                >
+                                    <option value="len">len</option>
+                                    <option value="stream">stream</option>
+                                </select>
+                            </FormRow>
+                            <FormRow label="BLOB chunk size" forId="ora_blob_chunk_size" size="sm">
+                                <input id="ora_blob_chunk_size" class="rounded border px-2 py-1 w-32" type="number" min="1"
+                                    value={oracleSettings?.blob_chunk_size ?? ''}
+                                    oninput={(e) => updateOracleSetting('blob_chunk_size', Number((e.target as HTMLInputElement).value) || undefined)}
+                                />
+                            </FormRow>
+
+                            <FormRow label="Allow DB link ping" forId="ora_allow_db_link_ping" size="sm">
+                                <input id="ora_allow_db_link_ping" type="checkbox"
+                                    checked={!!oracleSettings?.allow_db_link_ping}
+                                    onchange={(e) => updateOracleSetting('allow_db_link_ping', (e.target as HTMLInputElement).checked)}
+                                />
+                            </FormRow>
+                            <FormRow label="Reconnect max retries" forId="ora_reconnect_max_retries" size="sm">
+                                <input id="ora_reconnect_max_retries" class="rounded border px-2 py-1 w-32" type="number" min="0"
+                                    value={oracleSettings?.reconnect_max_retries ?? ''}
+                                    oninput={(e) => updateOracleSetting('reconnect_max_retries', Number((e.target as HTMLInputElement).value) || 0)}
+                                />
+                            </FormRow>
+                            <FormRow label="Reconnect backoff (ms)" forId="ora_reconnect_backoff_ms" size="sm">
+                                <input id="ora_reconnect_backoff_ms" class="rounded border px-2 py-1 w-40" type="number" min="0"
+                                    value={oracleSettings?.reconnect_backoff_ms ?? ''}
+                                    oninput={(e) => updateOracleSetting('reconnect_backoff_ms', Number((e.target as HTMLInputElement).value) || 0)}
+                                />
+                            </FormRow>
+                            <FormRow label="Statement cache size" forId="ora_stmt_cache_size" size="sm">
+                                <input id="ora_stmt_cache_size" class="rounded border px-2 py-1 w-32" type="number" min="0"
+                                    value={oracleSettings?.stmt_cache_size ?? ''}
+                                    oninput={(e) => updateOracleSetting('stmt_cache_size', Number((e.target as HTMLInputElement).value) || 0)}
+                                />
+                            </FormRow>
+                            <div class="mt-3 flex gap-2">
+                            <Button variant="outline" onclick={saveOracleSettings} disabled={savingOracleSettings}>
+                                {savingOracleSettings ? 'Saving…' : 'Save Settings'}
+                            </Button>
+                            </div>
+                </div>
+                {/if}
+                </div>
+                {/if}
+            </Tabs.Content>
 
 			<Tabs.Content value="sqlite" class="mt-3">
-					<div class="bg-card rounded-xl border p-5 shadow-sm">
-						<label for="sqliteFilePath" class="text-foreground mb-2 block text-sm font-semibold">
-							Database File <span class="text-error">*</span>
-						</label>
-
-						<div class="space-y-3">
-							<Input
-								id="sqliteFilePath"
-								type="text"
-								bind:value={sqliteFilePath}
-								placeholder="No database selected..."
-								readonly
-								class={`shadow-sm transition-shadow ${errors.sqliteFilePath ? 'border-error' : ''}`}
-							/>
-
+				<div class="bg-card rounded-xl border p-5 shadow-sm">
+					<FormRow label="Database File" forId="sqliteFilePath" required error={errors.sqliteFilePath} description="Use Open Existing to select an existing SQLite file or Create New to make a new one (.db, .sqlite, .sqlite3)." size="sm">
+						<div class="space-y-3" let:describedby>
+							<Input id="sqliteFilePath" type="text" bind:value={sqliteFilePath} placeholder="No database selected..." readonly aria-describedby={describedby} class={`shadow-sm transition-shadow ${errors.sqliteFilePath ? 'border-error' : ''}`} />
 							<div class="flex gap-2">
-								<Button
-									type="button"
-									variant="outline"
-									onclick={openExistingDatabase}
-									class="flex-1 gap-2 shadow-sm hover:shadow-md"
-								>
+                                <Button type="button" variant="outline" onclick={openExistingDatabase} class="flex-1 gap-2 shadow-sm hover:shadow-md">
 									<FolderOpen class="h-4 w-4" />
 									Open Existing
 								</Button>
-								<Button
-									type="button"
-									variant="outline"
-									onclick={createNewDatabase}
-									class="flex-1 gap-2 shadow-sm hover:shadow-md"
-								>
+                                <Button type="button" variant="outline" onclick={createNewDatabase} class="flex-1 gap-2 shadow-sm hover:shadow-md">
 									<FilePlus class="h-4 w-4" />
 									Create New
 								</Button>
 							</div>
 						</div>
-
-						{#if errors.sqliteFilePath}
-							<p class="text-error mt-2 flex items-center gap-2 text-sm">
-								<AlertCircle class="h-4 w-4" />
-								{errors.sqliteFilePath}
-							</p>
-						{/if}
-
-						<div class="bg-primary/5 border-primary/20 mt-3 rounded-lg border p-3">
-							<div class="flex items-start gap-3">
-								<Info class="text-primary mt-0.5 h-4 w-4 flex-shrink-0" />
-								<div class="text-muted-foreground min-w-0 flex-1 text-sm">
-									<p class="mb-2 leading-relaxed">
-										Use <span class="text-foreground font-medium">Open Existing</span> to connect to
-										an existing database, or
-										<span class="text-foreground font-medium">Create New</span> to set up a new SQLite
-										database file.
-									</p>
-									<p class="text-xs leading-relaxed">
-										SQLite databases are single files with <span class="text-foreground font-medium"
-											>.db</span
-										>,
-										<span class="text-foreground font-medium">.sqlite</span>, or
-										<span class="text-foreground font-medium">.sqlite3</span> extensions.
-									</p>
-								</div>
-							</div>
-						</div>
-					</div>
+					</FormRow>
+				</div>
 			</Tabs.Content>
 
 			<Tabs.Content value="duckdb" class="mt-3">
 				<div class="bg-card rounded-xl border p-5 shadow-sm">
-					<label for="duckdbFilePath" class="text-foreground mb-2 block text-sm font-semibold">
-						Database File <span class="text-error">*</span>
-					</label>
-
-					<div class="space-y-3">
-						<Input
-							id="duckdbFilePath"
-							type="text"
-							bind:value={duckdbFilePath}
-							placeholder="No database selected..."
-							readonly
-							class={`shadow-sm transition-shadow ${errors.duckdbFilePath ? 'border-error' : ''}`}
-						/>
-
-						<div class="flex gap-2">
-							<Button type="button" variant="outline" onclick={openExistingDuckdb} class="flex-1 gap-2 shadow-sm hover:shadow-md">
-								<FolderOpen class="h-4 w-4" />
-								Open Existing
-							</Button>
-							<Button type="button" variant="outline" onclick={createNewDuckdb} class="flex-1 gap-2 shadow-sm hover:shadow-md">
-								<FilePlus class="h-4 w-4" />
-								Create New
-							</Button>
-						</div>
-					</div>
-
-					{#if errors.duckdbFilePath}
-						<p class="text-error mt-2 flex items-center gap-2 text-sm">
-							<AlertCircle class="h-4 w-4" />
-							{errors.duckdbFilePath}
-						</p>
-					{/if}
-
-					<div class="bg-primary/5 border-primary/20 mt-3 rounded-lg border p-3">
-						<div class="flex items-start gap-3">
-							<Info class="text-primary mt-0.5 h-4 w-4 flex-shrink-0" />
-							<div class="text-muted-foreground min-w-0 flex-1 text-sm">
-								<p class="mb-2 leading-relaxed">
-									Use <span class="text-foreground font-medium">Open Existing</span> to connect to an existing DuckDB database, or
-									<span class="text-foreground font-medium">Create New</span> to set up a new DuckDB database file.
-								</p>
-								<p class="text-xs leading-relaxed">
-									DuckDB databases are single files typically with the <span class="text-foreground font-medium">.duckdb</span> extension.
-								</p>
+					<FormRow label="Database File" forId="duckdbFilePath" required error={errors.duckdbFilePath} description="Use Open Existing to select an existing DuckDB file or Create New to make a new one (.duckdb)." size="sm">
+						<div class="space-y-3" let:describedby>
+                        <Input id="duckdbFilePath" type="text" bind:value={duckdbFilePath} placeholder="No database selected..." readOnly aria-describedby={describedby} class={`shadow-sm transition-shadow ${errors.duckdbFilePath ? 'border-error' : ''}`} />
+							<div class="flex gap-2">
+                                <Button type="button" variant="outline" onclick={openExistingDuckdb} class="flex-1 gap-2 shadow-sm hover:shadow-md">
+									<FolderOpen class="h-4 w-4" />
+									Open Existing
+								</Button>
+                                <Button type="button" variant="outline" onclick={createNewDuckdb} class="flex-1 gap-2 shadow-sm hover:shadow-md">
+									<FilePlus class="h-4 w-4" />
+									Create New
+								</Button>
 							</div>
 						</div>
-					</div>
-				</div>
-			</Tabs.Content>
+                    </FormRow>
+                </div>
+            </Tabs.Content>
+
+			<Tabs.Content value="mssql" class="mt-3">
+                <div class="bg-card rounded-xl border p-5 shadow-sm">
+                    <FormRow label="Connection String" forId="mssqlConnectionString" required error={errors.connectionString} size="sm" let:describedby>
+                        <Input id="mssqlConnectionString" type="text" bind:value={connectionString} aria-describedby={describedby}
+                            placeholder="sqlserver://user:pass@host:1433;database=dbname"
+                            class={`shadow-sm transition-shadow focus:shadow-md ${errors.connectionString ? 'border-error focus:ring-error/30' : 'focus:ring-primary/30'}`}
+                        />
+                    </FormRow>
+
+                    <div class="mt-4">
+                        <FormRow label="CA Certificate" forId="mssqlCaCertPath" description="Provide a custom CA certificate (.pem, .crt, .cer) if your server requires a specific CA for TLS." size="sm" let:describedby>
+                            <div class="space-y-2">
+                                <div class="flex gap-2">
+                                    <Input id="mssqlCaCertPath" type="text" bind:value={caCertPath} placeholder="No certificate selected..." readOnly aria-describedby={describedby} class="flex-1 shadow-sm transition-shadow" />
+                                    <Button type="button" variant="outline" size="sm" onclick={selectCaCert} class="gap-2 shadow-sm hover:shadow-md">
+                                        <FileCheck class="h-4 w-4" />
+                                        Select
+                                    </Button>
+                                    {#if caCertPath}
+                                        <Button type="button" variant="ghost" size="sm" onclick={clearCaCert} title="Clear certificate" class="px-2">
+                                            <X class="h-4 w-4" />
+                                        </Button>
+                                    {/if}
+                                </div>
+                            </div>
+                        </FormRow>
+                    </div>
+                </div>
+				</Tabs.Content>
 			</Tabs.Root>
 		</div>
 	</div>
 
 	<div class="border-border/50 flex items-center gap-3 border-t pt-5">
-		<Button
-			type="button"
-			variant="outline"
-			onclick={testConnection}
+        <Button type="button" variant="outline" onclick={testConnection}
 			disabled={isTestingConnection}
 			class="gap-2 shadow-sm hover:shadow-md"
 		>
@@ -500,7 +634,7 @@ const databaseInfo: DatabaseInfo =
 
 		<div class="flex-1"></div>
 
-		<Button type="button" variant="outline" onclick={onCancel} class="shadow-sm hover:shadow-md">
+        <Button type="button" variant="outline" onclick={onCancel} class="shadow-sm hover:shadow-md">
 			Cancel
 		</Button>
 		<Button type="submit" class="gap-2 shadow-md hover:shadow-lg">

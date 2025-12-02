@@ -64,9 +64,9 @@ pub fn run() {
         .manage(certificates)
         .setup(|app| {
             let default = if cfg!(debug_assertions) {
-                "trace,tokio_postgres=info,tao=info,sqlparser=info,rustls=info"
+                "trace,winit=error,tao=error,wry=error,tauri_runtime_wry=error,tokio_postgres=info,sqlparser=info,rustls=info"
             } else {
-                "info,tokio_postgres=warn,tao=warn,sqlparser=warn,rustls=warn"
+                "info,winit=error,tao=error,wry=error,tauri_runtime_wry=error,tokio_postgres=warn,sqlparser=warn,rustls=warn"
             };
             let _ = tracing_log::LogTracer::init();
             if cfg!(debug_assertions) {
@@ -141,6 +141,7 @@ pub fn run() {
             database::commands::get_duckdb_foreign_keys,
             database::commands::get_oracle_settings,
             database::commands::set_oracle_settings,
+            database::commands::get_oracle_indexes,
             database::commands::get_mssql_indexes,
             database::commands::get_mssql_constraints,
             database::commands::get_mssql_triggers,

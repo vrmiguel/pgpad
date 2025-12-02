@@ -18,9 +18,11 @@ export interface StatementInfo {
 }
 
 export type DatabaseInfo =
-	| { Postgres: { connection_string: string; ca_cert_path?: string | null } }
-	| { SQLite: { db_path: string } }
-	| { DuckDB: { db_path: string } };
+    | { Postgres: { connection_string: string; ca_cert_path?: string | null } }
+    | { Mssql: { connection_string: string; ca_cert_path?: string | null } }
+    | { Oracle: { connection_string: string; wallet_path?: string | null; tns_alias?: string | null } }
+    | { SQLite: { db_path: string } }
+    | { DuckDB: { db_path: string } };
 
 export interface ConnectionInfo {
 	id: string;
@@ -60,15 +62,50 @@ export interface DatabaseSchema {
 }
 
 export interface Script {
-	id: number;
-	name: string;
-	description: string | null;
-	query_text: string;
-	connection_id: string | null;
-	tags: string | null;
-	created_at: number;
-	updated_at: number;
-	favorite: boolean;
+    id: number;
+    name: string;
+    description: string | null;
+    query_text: string;
+    connection_id: string | null;
+    tags: string | null;
+    created_at: number;
+    updated_at: number;
+    favorite: boolean;
+}
+
+export interface OracleSettings {
+    raw_format?: string;
+    raw_chunk_size?: number;
+    blob_stream?: string;
+    blob_chunk_size?: number;
+    allow_db_link_ping?: boolean;
+    xplan_format?: string;
+    reconnect_max_retries?: number;
+    reconnect_backoff_ms?: number;
+    stmt_cache_size?: number;
+}
+
+export interface OracleSettings {
+    raw_format?: string;
+    raw_chunk_size?: number;
+    blob_stream?: string;
+    blob_chunk_size?: number;
+    allow_db_link_ping?: boolean;
+    xplan_format?: string;
+    xplan_mode?: string;
+    reconnect_max_retries?: number;
+    reconnect_backoff_ms?: number;
+    stmt_cache_size?: number;
+    batch_size?: number;
+    bytes_format?: string;
+    bytes_chunk_size?: number;
+    timestamp_tz_mode?: string;
+    numeric_string_policy?: string;
+    numeric_precision_threshold?: number;
+    json_detection?: string;
+    json_min_length?: number;
+    money_as_string?: boolean;
+    money_decimals?: number;
 }
 
 export class Commands {
@@ -208,8 +245,44 @@ export class Commands {
 		return await invoke('save_duckdb_db');
 	}
 
-	static async pickCaCert(): Promise<string | null> {
-		return await invoke('pick_ca_cert');
+    static async pickCaCert(): Promise<string | null> {
+        return await invoke('pick_ca_cert');
+    }
+
+    static async pickOracleWalletDir(): Promise<string | null> {
+        return await invoke('pick_wallet_dir');
+    }
+
+    static async getOracleSettings(connectionId?: string): Promise<OracleSettings> {
+        return await invoke('get_oracle_settings', { connectionId: connectionId || null });
+    }
+
+    static async setOracleSettings(settings: OracleSettings, connectionId?: string): Promise<void> {
+        await invoke('set_oracle_settings', { connectionId: connectionId || null, settings });
+    }
+
+    static async getOracleIndexes(
+        connectionId: string,
+        tableName?: string,
+        indexName?: string,
+        page?: number,
+        limit?: number
+    ): Promise<string> {
+        return await invoke('get_oracle_indexes', {
+            connectionId,
+            tableName: tableName || null,
+            indexName: indexName || null,
+            page,
+            limit
+        });
+    }
+
+	static async getMssqlCheckConstraints(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_check_constraints', { connectionId, page, pageSize });
+	}
+
+	static async getMssqlUniqueIndexIncludedColumns(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_unique_index_included_columns', { connectionId, page, pageSize });
 	}
 
 	static async submitQuery(connectionId: string, query: string): Promise<QueryId[]> {
@@ -234,5 +307,57 @@ export class Commands {
 
 	static async getColumns(queryId: QueryId): Promise<string[] | null> {
 		return await invoke('get_columns', { queryId });
+	}
+
+	static async getMssqlIndexes(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_indexes', { connectionId, page, pageSize });
+	}
+
+	static async getMssqlConstraints(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_constraints', { connectionId, page, pageSize });
+	}
+
+	static async getMssqlTriggers(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_triggers', { connectionId, page, pageSize });
+	}
+
+	static async getMssqlRoutines(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_routines', { connectionId, page, pageSize });
+	}
+
+	static async getMssqlViews(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_views', { connectionId, page, pageSize });
+	}
+
+	static async getMssqlIndexColumns(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_index_columns', { connectionId, page, pageSize });
+	}
+
+	static async getMssqlTriggerEvents(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_trigger_events', { connectionId, page, pageSize });
+	}
+
+	static async getMssqlRoutineParameters(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_routine_parameters', { connectionId, page, pageSize });
+	}
+
+	static async getMssqlForeignKeys(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_foreign_keys', { connectionId, page, pageSize });
+	}
+
+	static async getMssqlViewDefinitions(connectionId: string, page?: number, pageSize?: number): Promise<string> {
+		return await invoke('get_mssql_view_definitions', { connectionId, page, pageSize });
+	}
+
+	static async cancelMssql(connectionId: string): Promise<void> {
+		await invoke('cancel_mssql', { connectionId });
+	}
+
+	static async cancelAndReconnectMssql(connectionId: string): Promise<void> {
+		await invoke('cancel_and_reconnect_mssql', { connectionId });
+	}
+
+	static async getMssqlVariantBaseType(connectionId: string, value: string): Promise<string | null> {
+		return await invoke('get_mssql_variant_base_type', { connectionId, value });
 	}
 }

@@ -441,8 +441,8 @@
 	class="relative flex h-full flex-col"
 	tabindex="0"
 	role="application"
-	onfocus={() => (hasFocus = true)}
-	onblur={() => (hasFocus = false)}
+    on:focus={() => (hasFocus = true)}
+    on:blur={() => (hasFocus = false)}
 >
 	<!-- Table content -->
 	<div class="table-container flex-1 overflow-hidden" bind:this={tableContainer}>
@@ -461,7 +461,7 @@
 										variant="ghost"
 										size="sm"
 										class="hover:bg-accent/30 -ml-1 h-5 flex-1 justify-start p-1 text-xs font-medium"
-										onclick={() => customSorting.toggleSort(columnIndex)}
+                                        on:click={() => customSorting.toggleSort(columnIndex)}
 									>
 										{columnName}
 										{#if customSorting.getSortDirection(columnIndex) === 'asc'}
@@ -478,7 +478,7 @@
 											.resizing.isResizing && tableState.resizing.columnIndex === columnIndex
 											? 'bg-blue-500'
 											: ''}"
-										onmousedown={(event) => startColumnResize(columnIndex, event)}
+                                        on:mousedown={(event) => startColumnResize(columnIndex, event)}
 										type="button"
 										aria-label="Resize column"
 									></button>
@@ -519,7 +519,7 @@
 											<button
 												class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
 												title={CellFormatter.formatCellTitle(cellValue)}
-												onclick={() => handleSimpleCellClick(cellValue, rowId, columnId)}
+                                                on:click={() => handleSimpleCellClick(cellValue, rowId, columnId)}
 											>
 												<div class="cell-content flex items-center pr-6">
 													<span class="min-w-0 flex-1 truncate font-mono text-xs"
@@ -530,7 +530,7 @@
 											<button
 												class="hover:bg-accent/60 focus:ring-primary/30 absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 transition-all duration-150 focus:ring-1 focus:outline-none"
 												title="Inspect JSON"
-												onclick={(e) => handleJsonInspectorOpen(cellValue, e)}
+                                                on:click={(e) => handleJsonInspectorOpen(cellValue, e)}
 												type="button"
 											>
 												<MoreHorizontal
@@ -542,7 +542,7 @@
 										<button
 											class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
 											title={CellFormatter.formatCellTitle(cellValue)}
-											onclick={() => handleSimpleCellClick(cellValue, rowId, columnId)}
+                                            on:click={() => handleSimpleCellClick(cellValue, rowId, columnId)}
 										>
 											{#if cellType === 'null'}
 												<span class="cell-content text-muted-foreground text-xs italic"
@@ -615,7 +615,7 @@
 				<Button
 					variant="ghost"
 					size="sm"
-					onclick={() => customNavigation.previousPage()}
+                    on:click={() => customNavigation.previousPage()}
 					disabled={!customNavigation.canPreviousPage()}
 					class="h-6 w-6 p-0"
 				>
@@ -626,7 +626,7 @@
 					<Button
 						variant="ghost"
 						size="sm"
-						onclick={() => customNavigation.setPageIndex(0)}
+                        on:click={() => customNavigation.setPageIndex(0)}
 						class="h-6 px-2 text-xs"
 					>
 						1
@@ -640,7 +640,7 @@
 					<Button
 						variant="ghost"
 						size="sm"
-						onclick={() => customNavigation.previousPage()}
+                        on:click={() => customNavigation.previousPage()}
 						class="h-6 px-2 text-xs"
 					>
 						{currentPageIndex}
@@ -655,7 +655,7 @@
 					<Button
 						variant="ghost"
 						size="sm"
-						onclick={() => customNavigation.nextPage()}
+                        on:click={() => customNavigation.nextPage()}
 						class="h-6 px-2 text-xs"
 					>
 						{currentPageIndex + 2}
@@ -669,7 +669,7 @@
 					<Button
 						variant="ghost"
 						size="sm"
-						onclick={() => customNavigation.setPageIndex(pageCount - 1)}
+                        on:click={() => customNavigation.setPageIndex(pageCount - 1)}
 						class="h-6 px-2 text-xs"
 					>
 						{pageCount}
@@ -679,7 +679,7 @@
 				<Button
 					variant="ghost"
 					size="sm"
-					onclick={() => customNavigation.nextPage()}
+                    on:click={() => customNavigation.nextPage()}
 					disabled={!customNavigation.canNextPage()}
 					class="h-6 w-6 p-0"
 				>

@@ -31,7 +31,7 @@ interface TableViewTab extends BaseTab {
 type TabType = 'script' | 'table-view';
 type AnyTab = ScriptTab | TableViewTab;
 
-export type SidebarTabState = 'connections' | 'items' | 'scripts' | 'history';
+export type SidebarTabState = 'connections' | 'items' | 'scripts' | 'history' | 'settings' | 'oracle-admin' | 'mssql-admin';
 
 interface SessionData {
 	nextTempId?: number;

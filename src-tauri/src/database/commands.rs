@@ -23,6 +23,7 @@ use crate::{
     storage::{QueryHistoryEntry, SavedQuery},
     AppState,
 };
+use ::oracle::sql_type;
 
 #[tauri::command]
 pub async fn add_connection(
@@ -984,6 +985,150 @@ pub async fn get_session_state(state: tauri::State<'_, AppState>) -> Result<Opti
     Ok(session_data)
 }
 
+#[tauri::command]
+pub async fn get_oracle_indexes(
+    connection_id: Uuid,
+    table_name: Option<String>,
+    index_name: Option<String>,
+    page: Option<usize>,
+    limit: Option<usize>,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, Error> {
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::Oracle {
+            connection: Some(conn),
+            ..
+        } => {
+            let mut indexes: Vec<serde_json::Value> = Vec::new();
+            let mut total_count: i64 = 0;
+            let page_num = page.unwrap_or(1);
+            let per_page = limit.unwrap_or(50);
+            let offset: i64 = ((page_num.max(1) - 1) * per_page) as i64;
+            let mut idx_names: Vec<String> = Vec::new();
+            if let Ok(client) = conn.lock() {
+                let mut where_clauses: Vec<String> = Vec::new();
+                let mut binds_count: Vec<&dyn sql_type::ToSql> = Vec::new();
+                let mut binds_page: Vec<&dyn sql_type::ToSql>;
+                let mut bind_values_count: Vec<String> = Vec::new();
+                where_clauses.push("i.table_name NOT LIKE 'BIN$%'".into());
+                if let Some(tn) = table_name.as_ref() {
+                    where_clauses.push("UPPER(i.table_name) = :1".into());
+                    let tn_upper = tn.to_uppercase();
+                    bind_values_count.push(tn_upper);
+                }
+                if let Some(iname) = index_name.as_ref() {
+                    let pos = if bind_values_count.is_empty() { 1 } else { 2 };
+                    where_clauses.push(format!("UPPER(i.index_name) LIKE :{}", pos));
+                    let like = iname.to_uppercase();
+                    let likep = if like.contains('%') {
+                        like
+                    } else {
+                        format!("%{}%", like)
+                    };
+                    bind_values_count.push(likep);
+                }
+                for v in &bind_values_count {
+                    binds_count.push(v);
+                }
+                let where_sql = if where_clauses.is_empty() {
+                    String::new()
+                } else {
+                    format!(" WHERE {}", where_clauses.join(" AND "))
+                };
+                let count_sql = format!("SELECT COUNT(*) FROM user_indexes i{}", where_sql);
+                if let Ok(mut rows) = client.query(&count_sql, &binds_count[..]) {
+                    if let Some(Ok(row)) = rows.next() {
+                        total_count = row.get::<usize, i64>(0).unwrap_or(0);
+                    }
+                }
+                binds_page = binds_count.clone();
+                let order_sql = String::from(" ORDER BY i.table_name, i.index_name ");
+                let page_sql = format!(
+                    "SELECT * FROM (
+                        SELECT i.index_name, i.table_name, i.index_type, i.uniqueness, i.status, TO_CHAR(i.created, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS created, s.bytes AS size_bytes,
+                               ROW_NUMBER() OVER (ORDER BY i.table_name, i.index_name) AS rn
+                        FROM user_indexes i
+                        JOIN user_segments s ON i.index_name = s.segment_name
+                        {}{}
+                    ) WHERE rn > :{} AND rn <= :{}",
+                    where_sql,
+                    order_sql,
+                    binds_page.len() + 1,
+                    binds_page.len() + 2
+                );
+                binds_page.push(&offset);
+                let end = offset + per_page as i64;
+                binds_page.push(&end);
+                if let Ok(rows) = client.query(&page_sql, &binds_page[..]) {
+                    for row in rows.flatten() {
+                        let index_name: String = row.get(0).unwrap_or_default();
+                        let table_name_v: String = row.get(1).unwrap_or_default();
+                        let index_type: String = row.get(2).unwrap_or_default();
+                        let uniqueness: String = row.get(3).unwrap_or_default();
+                        let status: String = row.get(4).unwrap_or_default();
+                        let created: String = row.get(5).unwrap_or_default();
+                        let size_bytes: i64 = row.get(6).unwrap_or(0);
+                        idx_names.push(index_name.clone());
+                        let obj = serde_json::json!({
+                            "index_name": index_name,
+                            "table_name": table_name_v,
+                            "index_type": index_type,
+                            "uniqueness": uniqueness,
+                            "status": status,
+                            "created": created,
+                            "size_bytes": size_bytes,
+                            "column_names": []
+                        });
+                        indexes.push(obj);
+                    }
+                }
+                if !idx_names.is_empty() {
+                    let qcols = "SELECT index_name, column_name, column_position, descend FROM user_ind_columns WHERE index_name IN (:1) ORDER BY index_name, column_position";
+                    for name in idx_names.iter() {
+                        if let Ok(mut rows) = client.query(qcols, &[name]) {
+                            let mut cols_map: Vec<String> = Vec::new();
+                            while let Some(Ok(row)) = rows.next() {
+                                let col_name: String = row.get(1).unwrap_or_default();
+                                cols_map.push(col_name);
+                            }
+                            for it in indexes.iter_mut() {
+                                if it.get("index_name").and_then(|v| v.as_str())
+                                    == Some(name.as_str())
+                                {
+                                    if let Some(arr) = it.get_mut("column_names") {
+                                        *arr = serde_json::Value::Array(
+                                            cols_map
+                                                .iter()
+                                                .map(|c| serde_json::Value::String(c.clone()))
+                                                .collect(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                return Err(Error::Any(anyhow::anyhow!(
+                    "Oracle connection mutex poisoned"
+                )));
+            }
+            let result = serde_json::json!({
+                "indexes": indexes,
+                "total_count": total_count,
+                "page": page_num
+            });
+            Ok(result.to_string())
+        }
+        _ => Err(Error::Any(anyhow::anyhow!("Oracle connection not active"))),
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ReconnectSettings {
     max_retries: u32,
@@ -1318,12 +1463,88 @@ pub async fn get_duckdb_foreign_keys(
 
 #[tauri::command]
 pub async fn get_mssql_indexes(
-    _connection_id: Uuid,
-    _page: Option<usize>,
-    _page_size: Option<usize>,
-    _state: tauri::State<'_, AppState>,
+    connection_id: Uuid,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String, Error> {
-    Ok("[]".into())
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::Mssql {
+            connection: Some(conn),
+            ..
+        } => {
+            let result = tauri::async_runtime::spawn_blocking({
+                let conn = conn.clone();
+                let page = page.unwrap_or(0);
+                let page_size = page_size.unwrap_or(50);
+                move || match conn.lock() {
+                    Ok(mut client) => tauri::async_runtime::block_on(async move {
+                        use futures_util::TryStreamExt;
+                        use tiberius::{Query, QueryItem};
+                        let count_sql = "SELECT COUNT(*) FROM sys.indexes i JOIN sys.tables t ON i.object_id = t.object_id JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE i.is_hypothetical = 0";
+                        let mut count_stream = Query::new(count_sql)
+                            .query(&mut client)
+                            .await
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let mut total_rows: i64 = 0;
+                        if let Some(QueryItem::Row(r)) = count_stream
+                            .try_next()
+                            .await
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))? {
+                            let v: Option<i64> = r.try_get(0).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                            total_rows = v.unwrap_or(0);
+                        }
+                        drop(count_stream);
+                        let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+                        let offset = (page as i64) * (page_size as i64);
+                        let mut q = Query::new("SELECT s.name AS schema_name, t.name AS table_name, i.name AS index_name, i.is_unique, i.is_primary_key FROM sys.indexes i JOIN sys.tables t ON i.object_id = t.object_id JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE i.is_hypothetical = 0 ORDER BY s.name, t.name, i.name OFFSET @P1 ROWS FETCH NEXT @P2 ROWS ONLY");
+                        q.bind(offset);
+                        q.bind(page_size as i64);
+                        let mut stream = q
+                            .query(&mut client)
+                            .await
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let mut data: Vec<serde_json::Value> = Vec::new();
+                        while let Some(item) = stream
+                            .try_next()
+                            .await
+                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))? {
+                            if let QueryItem::Row(row) = item {
+                                let schema_name: Option<&str> = row.try_get(0).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                                let table_name: Option<&str> = row.try_get(1).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                                let index_name: Option<&str> = row.try_get(2).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                                let is_unique: Option<bool> = row.try_get(3).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                                let is_primary: Option<bool> = row.try_get(4).map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+                                data.push(serde_json::json!({
+                                    "schema_name": schema_name.unwrap_or(""),
+                                    "table_name": table_name.unwrap_or(""),
+                                    "index_name": index_name.unwrap_or(""),
+                                    "is_unique": is_unique.unwrap_or(false),
+                                    "is_primary": is_primary.unwrap_or(false)
+                                }));
+                            }
+                        }
+                        let payload = serde_json::json!({
+                            "data": data,
+                            "total_pages": total_pages,
+                            "current_page": page
+                        });
+                        Ok::<String, Error>(payload.to_string())
+                    }),
+                    Err(_) => Err(Error::Any(anyhow::anyhow!("MSSQL connection mutex poisoned"))),
+                }
+            })
+            .await
+            .unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
+            Ok(result)
+        }
+        _ => Err(Error::Any(anyhow::anyhow!("MSSQL connection not active"))),
+    }
 }
 
 #[tauri::command]

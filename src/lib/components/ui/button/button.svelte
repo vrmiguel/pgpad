@@ -79,8 +79,8 @@
 		bind:this={ref}
 		data-slot="button"
 		class={cn(buttonVariants({ variant, size }), className)}
-		{type}
-		{disabled}
+		type={type}
+		disabled={disabled}
 		{...restProps}
 	>
 		{@render children?.()}
