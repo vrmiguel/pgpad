@@ -58,6 +58,14 @@ lto = true
 opt-level = 3
 strip = true
 
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false
+
 [target.'cfg(unix)'.dev-dependencies]
 pgtemp = "0.6.0"
 tiberius = { version = "0.12", default-features = false, features = ["rustls", "chrono", "tds73"] }

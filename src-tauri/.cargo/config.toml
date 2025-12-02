@@ -1,3 +1,2 @@
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=bfd"]
-
+rustflags = ["-C", "debuginfo=0", "-C", "link-arg=-fuse-ld=bfd"]
