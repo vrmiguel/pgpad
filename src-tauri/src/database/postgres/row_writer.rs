@@ -177,15 +177,6 @@ impl RowWriter {
                 }
                 self.buf.push(']');
             }
-            Type::INT2_ARRAY => {
-                let value: Vec<i16> = row.try_get(column_index)?;
-                self.buf.push('[');
-                for (i, item) in value.iter().enumerate() {
-                    if i > 0 { self.buf.push(','); }
-                    write!(&mut self.buf, "{}", item)?;
-                }
-                self.buf.push(']');
-            }
             Type::INT4_ARRAY => {
                 let value: Vec<i32> = row.try_get(column_index)?;
                 self.buf.push('[');
