@@ -35,6 +35,9 @@ pub async fn connect(
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to connect to Postgres: {}", e))?;
 
+            if let Err(e) = client.batch_execute("SET application_name = 'pgpad'").await {
+                log::warn!("Failed to set application_name: {}", e);
+            }
             let conn_check =
                 tauri::async_runtime::spawn(check_connection::<MakeRustlsConnect>(conn));
 
@@ -54,6 +57,9 @@ pub async fn connect(
 
             match config.connect(tls).await {
                 Ok((client, conn)) => {
+                    if let Err(e) = client.batch_execute("SET application_name = 'pgpad'").await {
+                        log::warn!("Failed to set application_name: {}", e);
+                    }
                     let conn_check =
                         tauri::async_runtime::spawn(check_connection::<MakeRustlsConnect>(conn));
                     (client, conn_check)
@@ -79,6 +85,9 @@ pub async fn connect(
                 .await
                 .with_context(|| format!("Failed to connect to Postgres '{config:?}'",))?;
 
+            if let Err(e) = client.batch_execute("SET application_name = 'pgpad'").await {
+                log::warn!("Failed to set application_name: {}", e);
+            }
             let conn_check = tauri::async_runtime::spawn(check_connection::<NoTls>(conn));
 
             (client, conn_check)
