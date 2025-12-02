@@ -22,6 +22,12 @@ pub async fn connect(
         SslMode::Require => {
             let certificate_store = if let Some(cert_path) = ca_cert_path {
                 certificates.with_custom_cert(cert_path).await?
+            } else if let Ok(env_path) = std::env::var("PGPAD_CA_CERT_PATH") {
+                if !env_path.is_empty() {
+                    certificates.with_custom_cert(&env_path).await?
+                } else {
+                    certificates.read().await?
+                }
             } else {
                 certificates.read().await?
             };
@@ -38,6 +44,7 @@ pub async fn connect(
             if let Err(e) = client.batch_execute("SET application_name = 'pgpad'").await {
                 log::warn!("Failed to set application_name: {}", e);
             }
+            apply_optional_session_settings(&client).await;
             let conn_check =
                 tauri::async_runtime::spawn(check_connection::<MakeRustlsConnect>(conn));
 
@@ -46,6 +53,12 @@ pub async fn connect(
         SslMode::Prefer => {
             let certificate_store = if let Some(cert_path) = ca_cert_path {
                 certificates.with_custom_cert(cert_path).await?
+            } else if let Ok(env_path) = std::env::var("PGPAD_CA_CERT_PATH") {
+                if !env_path.is_empty() {
+                    certificates.with_custom_cert(&env_path).await?
+                } else {
+                    certificates.read().await?
+                }
             } else {
                 certificates.read().await?
             };
@@ -60,6 +73,7 @@ pub async fn connect(
                     if let Err(e) = client.batch_execute("SET application_name = 'pgpad'").await {
                         log::warn!("Failed to set application_name: {}", e);
                     }
+                    apply_optional_session_settings(&client).await;
                     let conn_check =
                         tauri::async_runtime::spawn(check_connection::<MakeRustlsConnect>(conn));
                     (client, conn_check)
@@ -88,6 +102,7 @@ pub async fn connect(
             if let Err(e) = client.batch_execute("SET application_name = 'pgpad'").await {
                 log::warn!("Failed to set application_name: {}", e);
             }
+            apply_optional_session_settings(&client).await;
             let conn_check = tauri::async_runtime::spawn(check_connection::<NoTls>(conn));
 
             (client, conn_check)
@@ -106,6 +121,47 @@ where
     match res {
         Ok(()) => log::info!("Connected successfully"),
         Err(err) => log::error!("Error or disconnect: {:?}", err),
+    }
+}
+
+async fn apply_optional_session_settings(client: &Client) {
+    if let Ok(v) = std::env::var("PGPAD_STATEMENT_TIMEOUT_MS") {
+        if let Ok(ms) = v.parse::<u64>() {
+            if ms > 0 {
+                let stmt = format!("SET statement_timeout = '{}ms'", ms);
+                if let Err(e) = client.batch_execute(&stmt).await {
+                    log::warn!("Failed to set statement_timeout: {}", e);
+                }
+            }
+        }
+    }
+    if let Ok(v) = std::env::var("PGPAD_IDLE_TX_TIMEOUT_MS") {
+        if let Ok(ms) = v.parse::<u64>() {
+            if ms > 0 {
+                let stmt = format!(
+                    "SET idle_in_transaction_session_timeout = '{}ms'",
+                    ms
+                );
+                if let Err(e) = client.batch_execute(&stmt).await {
+                    log::warn!(
+                        "Failed to set idle_in_transaction_session_timeout: {}",
+                        e
+                    );
+                }
+            }
+        }
+    }
+    if let Ok(v) = client.query_one("SHOW server_version", &[]).await {
+        let ver: &str = v.get(0);
+        log::info!("Connected to Postgres server_version={}", ver);
+    }
+    if let Ok(sp) = std::env::var("PGPAD_SEARCH_PATH") {
+        if !sp.trim().is_empty() {
+            let stmt = format!("SET search_path = {}", sp);
+            if let Err(e) = client.batch_execute(&stmt).await {
+                log::warn!("Failed to set search_path: {}", e);
+            }
+        }
     }
 }
 
