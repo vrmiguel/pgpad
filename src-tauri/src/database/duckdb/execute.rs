@@ -26,6 +26,16 @@ pub fn execute_query(
     Ok(())
 }
 
+pub fn execute_query_with_params(
+    client: &Connection,
+    stmt: ParsedStatement,
+    sender: &ExecSender,
+    _params: serde_json::Map<String, serde_json::Value>,
+    settings: Option<&crate::database::types::OracleSettings>,
+) -> Result<(), Error> {
+    execute_query(client, stmt, sender, settings)
+}
+
 fn execute_query_with_results(
     client: &Connection,
     query: &str,

@@ -224,6 +224,13 @@ fn execute_query_with_results_params(
                         sender.send(QueryExecEvent::Page { page_amount: writer.len(), page: writer.finish() })?;
                     }
 
+                    let duration = started_at.elapsed().as_millis() as u64;
+                    log::info!(
+                        "SQLite prepared query completed: {} rows in {}ms",
+                        total_rows,
+                        duration
+                    );
+
                     sender.send(QueryExecEvent::Finished { elapsed_ms: started_at.elapsed().as_millis() as u64, affected_rows: 0, error: None })?;
                     Ok(())
                 }
