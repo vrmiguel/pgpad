@@ -51,15 +51,13 @@
 	const activeScriptId = $derived(
 		tabs.active?.type === 'script' ? (tabs.active as ScriptTab).scriptId : null
 	);
-const currentEditorContent = $derived(tabs.currentEditorContent);
+	const currentEditorContent = $derived(tabs.currentEditorContent);
 
-const unsavedSet = $derived(
-    new SvelteSet<number>(
-        tabs.all
-            .filter((t) => t.isDirty && t.type === 'script')
-            .map((t) => (t as ScriptTab).scriptId)
-    )
-);
+	const unsavedSet = $derived(
+		new SvelteSet<number>(
+			tabs.all.filter((t) => t.isDirty && t.type === 'script').map((t) => (t as ScriptTab).scriptId)
+		)
+	);
 
 	let isSidebarCollapsed = $state(false);
 	let lastResizeTime = $state(0);
@@ -69,8 +67,8 @@ const unsavedSet = $derived(
 	let queryHistory = $state<QueryHistoryEntry[]>([]);
 	let lastLoadedSchemaConnectionId = $state<string | null>(null);
 
-let unlistenDisconnect: (() => void) | null = null;
-let escapeHandler: ((e: KeyboardEvent) => void) | null = null;
+	let unlistenDisconnect: (() => void) | null = null;
+	let escapeHandler: ((e: KeyboardEvent) => void) | null = null;
 
 	if (selectedConnection === undefined) {
 		selectedConnection = null;
@@ -275,7 +273,7 @@ let escapeHandler: ((e: KeyboardEvent) => void) | null = null;
 		}
 	});
 
-onDestroy(() => {
+	onDestroy(() => {
 		if (unlistenDisconnect) {
 			unlistenDisconnect();
 		}
@@ -285,23 +283,23 @@ onDestroy(() => {
 		}
 
 		checkAndSaveSession().catch(console.error);
-});
+	});
 
-$effect(() => {
-    const open = showConnectionForm;
-    if (open && !escapeHandler) {
-        escapeHandler = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                showConnectionForm = false;
-                editingConnection = null;
-            }
-        };
-        window.addEventListener('keydown', escapeHandler);
-    } else if (!open && escapeHandler) {
-        window.removeEventListener('keydown', escapeHandler);
-        escapeHandler = null;
-    }
-});
+	$effect(() => {
+		const open = showConnectionForm;
+		if (open && !escapeHandler) {
+			escapeHandler = (e: KeyboardEvent) => {
+				if (e.key === 'Escape') {
+					showConnectionForm = false;
+					editingConnection = null;
+				}
+			};
+			window.addEventListener('keydown', escapeHandler);
+		} else if (!open && escapeHandler) {
+			window.removeEventListener('keydown', escapeHandler);
+			escapeHandler = null;
+		}
+	});
 
 	// Handle saving with Ctrl+S
 	function handleKeydown(event: KeyboardEvent) {
@@ -625,7 +623,7 @@ $effect(() => {
 				{establishingConnections}
 				{scripts}
 				{activeScriptId}
-                unsavedChanges={unsavedSet}
+				unsavedChanges={unsavedSet}
 				{databaseSchema}
 				{loadingSchema}
 				{queryHistory}

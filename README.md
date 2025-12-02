@@ -75,6 +75,7 @@ npm run tauri dev
 ### Build installers (artifacts)
 
 - Using Docker directly:
+
   - `docker build --target artifacts --output type=local,dest=./out .`
   - Bundles appear under `./out/bundle` (AppImage/deb/rpm on Linux).
 

@@ -116,18 +116,20 @@
 	{#if isSidebarCollapsed}
 		<div class="border-sidebar-border/50 border-b p-3">
 			<div class="flex flex-col items-center gap-3">
-                <button
-                    class="hover:bg-sidebar-accent/80 rounded-lg p-2 transition-all duration-200 hover:shadow-md"
-                    onclick={toggleSidebar}
-                    title="Expand sidebar">
+				<button
+					class="hover:bg-sidebar-accent/80 rounded-lg p-2 transition-all duration-200 hover:shadow-md"
+					onclick={toggleSidebar}
+					title="Expand sidebar"
+				>
 					<ChevronRight class="text-sidebar-foreground/70 h-4 w-4" />
 				</button>
-                <Button
-                    size="icon-sm"
-                    variant="outline"
-                    class="shadow-md hover:shadow-lg"
-                    onclick={showConnectionForm}
-                    title="Add Connection">
+				<Button
+					size="icon-sm"
+					variant="outline"
+					class="shadow-md hover:shadow-lg"
+					onclick={showConnectionForm}
+					title="Add Connection"
+				>
 					<Plus class="h-4 w-4" />
 				</Button>
 			</div>
@@ -135,36 +137,34 @@
 
 		<div class="flex flex-1 flex-col items-center justify-start space-y-4 p-4">
 			<!-- Connections icon -->
-            <button
-                class={collapsedIconButtonClass}
-                onclick={() => switchTab('connections')}
-                title="Connections"
-            >
+			<button
+				class={collapsedIconButtonClass}
+				onclick={() => switchTab('connections')}
+				title="Connections"
+			>
 				<Cable class={collapsedIconClass} />
 			</button>
 
 			<!-- items icon -->
-            <button
-                class={collapsedIconButtonClass}
-                onclick={() => switchTab('items')}
-                title="Database Items"
-            >
+			<button
+				class={collapsedIconButtonClass}
+				onclick={() => switchTab('items')}
+				title="Database Items"
+			>
 				<TableProperties class={collapsedIconClass} />
 			</button>
 
 			<!-- Scripts icon -->
-            <button
-                class={collapsedIconButtonClass}
-                onclick={() => switchTab('scripts')}
-                title="Scripts">
+			<button class={collapsedIconButtonClass} onclick={() => switchTab('scripts')} title="Scripts">
 				<FileJson class={collapsedIconClass} />
 			</button>
 
 			<!-- History icon -->
-            <button
-                class={collapsedIconButtonClass}
-                onclick={() => switchTab('history')}
-                title="Query History">
+			<button
+				class={collapsedIconButtonClass}
+				onclick={() => switchTab('history')}
+				title="Query History"
+			>
 				<History class={collapsedIconClass} />
 			</button>
 		</div>
@@ -178,11 +178,11 @@
 				/>
 				<h1 class="text-sidebar-foreground text-xl font-bold">PgPad</h1>
 			</div>
-            <button
-                class="hover:bg-sidebar-accent/80 rounded-lg p-2 transition-all duration-200 hover:shadow-md"
-                onclick={toggleSidebar}
-                title="Collapse sidebar"
-            >
+			<button
+				class="hover:bg-sidebar-accent/80 rounded-lg p-2 transition-all duration-200 hover:shadow-md"
+				onclick={toggleSidebar}
+				title="Collapse sidebar"
+			>
 				<ChevronLeft class="text-sidebar-foreground/70 h-4 w-4" />
 			</button>
 		</div>
@@ -191,65 +191,48 @@
 			<Tabs.Root value={sidebarTabState} class="flex h-full flex-col">
 				<!-- Triggers  -->
 				<div class="border-b p-2">
-				<Tabs.List
-					class="bg-dark-10 shadow-mini-inset bg-background flex h-8 w-full flex-row justify-evenly gap-1 rounded-sm border-none p-0.5 text-sm leading-[0.01em] font-semibold dark:border dark:border-neutral-600/30"
-				>
-					<Tabs.Trigger
-						value="connections"
-						title="Connections"
-						class={triggerClass}
+					<Tabs.List
+						class="bg-dark-10 shadow-mini-inset bg-background flex h-8 w-full flex-row justify-evenly gap-1 rounded-sm border-none p-0.5 text-sm leading-[0.01em] font-semibold dark:border dark:border-neutral-600/30"
 					>
-						<Cable class={tabIconClass} />
-					</Tabs.Trigger>
-					<Tabs.Trigger
-						value="items"
-						title="Items"
-						class={triggerClass}
-					>
-						<TableProperties class={tabIconClass} />
-					</Tabs.Trigger>
-					<Tabs.Trigger
-						value="scripts"
-						title="Scripts"
-						class={triggerClass}
-					>
-						<FileJson class={tabIconClass} />
-					</Tabs.Trigger>
-					<Tabs.Trigger
-						value="history"
-						title="History"
-					class={triggerClass}
-					>
-						<History class={tabIconClass} />
-					</Tabs.Trigger>
-					
-				</Tabs.List>
-			</div>
+						<Tabs.Trigger value="connections" title="Connections" class={triggerClass}>
+							<Cable class={tabIconClass} />
+						</Tabs.Trigger>
+						<Tabs.Trigger value="items" title="Items" class={triggerClass}>
+							<TableProperties class={tabIconClass} />
+						</Tabs.Trigger>
+						<Tabs.Trigger value="scripts" title="Scripts" class={triggerClass}>
+							<FileJson class={tabIconClass} />
+						</Tabs.Trigger>
+						<Tabs.Trigger value="history" title="History" class={triggerClass}>
+							<History class={tabIconClass} />
+						</Tabs.Trigger>
+					</Tabs.List>
+				</div>
 
 				<!-- Contents -->
 				<div class="min-h-0 flex-1 p-2">
 					<Tabs.Content value="connections" class="h-full">
-					<Connections
-						{connections}
-						{establishingConnections}
-						{selectedConnection}
-						{onDisconnectConnection}
-						{onDeleteConnection}
-						{onEditConnection}
-						{onConnectToDatabase}
-						{showConnectionForm}
-						{onSelectConnection}
-					/>
-				</Tabs.Content>
-				<Tabs.Content value="items" class="h-full">
-					<DatabaseSchemaItems
-						{databaseSchema}
-						{loadingSchema}
-						{selectedConnection}
-						databaseType={selectedDbType}
-						onTableClick={handleTableClick}
-					/>
-				</Tabs.Content>
+						<Connections
+							{connections}
+							{establishingConnections}
+							{selectedConnection}
+							{onDisconnectConnection}
+							{onDeleteConnection}
+							{onEditConnection}
+							{onConnectToDatabase}
+							{showConnectionForm}
+							{onSelectConnection}
+						/>
+					</Tabs.Content>
+					<Tabs.Content value="items" class="h-full">
+						<DatabaseSchemaItems
+							{databaseSchema}
+							{loadingSchema}
+							{selectedConnection}
+							databaseType={selectedDbType}
+							onTableClick={handleTableClick}
+						/>
+					</Tabs.Content>
 					<Tabs.Content value="scripts" class="h-full">
 						<Scripts
 							{scripts}

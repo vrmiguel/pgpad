@@ -1,112 +1,115 @@
 <script lang="ts">
-import { Button } from '$lib/components/ui/button';
-import { Commands, type OracleSettings } from '$lib/commands.svelte';
- 
+	import { Button } from '$lib/components/ui/button';
+	import { Commands, type OracleSettings } from '$lib/commands.svelte';
 
-interface Props {
-    selectedConnection: string | null;
-    selectedDbType?: unknown;
-}
+	interface Props {
+		selectedConnection: string | null;
+		selectedDbType?: unknown;
+	}
 
-let { selectedConnection = $bindable(null), selectedDbType = $bindable() }: Props = $props();
+	let { selectedConnection = $bindable(null), selectedDbType = $bindable() }: Props = $props();
 
-    let scope = $state<'connection' | 'global'>(selectedConnection ? 'connection' : 'global');
-    let settings = $state<OracleSettings | null>(null);
-    let loading = $state(false);
-    let saving = $state(false);
-    let reconnecting = $state(false);
-    let lastSettingsKey = $state<string | null>(null);
+	let scope = $state<'connection' | 'global'>(selectedConnection ? 'connection' : 'global');
+	let settings = $state<OracleSettings | null>(null);
+	let loading = $state(false);
+	let saving = $state(false);
+	let reconnecting = $state(false);
+	let lastSettingsKey = $state<string | null>(null);
 
-$effect(() => {
-    if (!selectedConnection) {
-        if (scope !== 'global') {
-            scope = 'global';
-        }
-    }
-});
+	$effect(() => {
+		if (!selectedConnection) {
+			if (scope !== 'global') {
+				scope = 'global';
+			}
+		}
+	});
 
-$effect(() => {
-    const connId = scope === 'connection' ? (selectedConnection ?? null) : null;
-    const key = `${scope}:${connId ?? ''}`;
-    if (lastSettingsKey === key) return;
-    lastSettingsKey = key;
-    loadSettings(connId ?? undefined);
-});
+	$effect(() => {
+		const connId = scope === 'connection' ? (selectedConnection ?? null) : null;
+		const key = `${scope}:${connId ?? ''}`;
+		if (lastSettingsKey === key) return;
+		lastSettingsKey = key;
+		loadSettings(connId ?? undefined);
+	});
 
-    async function loadSettings(connId?: string) {
-        loading = true;
-        try {
-            settings = await Commands.getOracleSettings(connId);
-        } catch (e) {
-            console.error('Failed to load settings', e);
-            settings = null;
-        } finally {
-            loading = false;
-        }
-    }
+	async function loadSettings(connId?: string) {
+		loading = true;
+		try {
+			settings = await Commands.getOracleSettings(connId);
+		} catch (e) {
+			console.error('Failed to load settings', e);
+			settings = null;
+		} finally {
+			loading = false;
+		}
+	}
 
-    
+	async function save() {
+		if (!settings) return;
+		saving = true;
+		try {
+			const connId = scope === 'connection' ? (selectedConnection ?? undefined) : undefined;
+			await Commands.setOracleSettings(settings, connId);
+		} catch (e) {
+			console.error('Failed to save settings', e);
+		} finally {
+			saving = false;
+		}
+	}
 
-    async function save() {
-        if (!settings) return;
-        saving = true;
-        try {
-            const connId = scope === 'connection' ? selectedConnection ?? undefined : undefined;
-            await Commands.setOracleSettings(settings, connId);
-        } catch (e) {
-            console.error('Failed to save settings', e);
-        } finally {
-            saving = false;
-        }
-    }
-
-    async function reconnect() {
-        if (!selectedConnection) return;
-        reconnecting = true;
-        try {
-            await Commands.disconnectFromDatabase(selectedConnection);
-            await Commands.connectToDatabase(selectedConnection);
-        } catch (e) {
-            console.error('Failed to reconnect', e);
-        } finally {
-            reconnecting = false;
-        }
-    }
+	async function reconnect() {
+		if (!selectedConnection) return;
+		reconnecting = true;
+		try {
+			await Commands.disconnectFromDatabase(selectedConnection);
+			await Commands.connectToDatabase(selectedConnection);
+		} catch (e) {
+			console.error('Failed to reconnect', e);
+		} finally {
+			reconnecting = false;
+		}
+	}
 </script>
 
 <div class="flex h-full flex-col gap-4 p-4">
-    <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold">Settings</h2>
-        <div class="sticky top-0 z-10 flex items-center gap-3 flex-wrap">
-            <label class="flex items-center gap-2 text-sm">
-                <span>Scope</span>
-                <select class="rounded border px-2 py-1 w-28"
-                    bind:value={scope}
-                    disabled={!selectedConnection}
-                >
-                    <option value="connection">Connection</option>
-                    <option value="global">Global</option>
-                </select>
-            </label>
-            <Button onclick={save} disabled={saving || loading} variant="outline">
-                {saving ? 'Saving…' : 'Save'}
-            </Button>
-            <Button onclick={reconnect} disabled={!selectedConnection || reconnecting}>
-                {reconnecting ? 'Reconnecting…' : 'Reconnect'}
-            </Button>
-        </div>
-    </div>
+	<div class="flex items-center justify-between">
+		<h2 class="text-lg font-semibold">Settings</h2>
+		<div class="sticky top-0 z-10 flex flex-wrap items-center gap-3">
+			<label class="flex items-center gap-2 text-sm">
+				<span>Scope</span>
+				<select
+					class="w-28 rounded border px-2 py-1"
+					bind:value={scope}
+					disabled={!selectedConnection}
+				>
+					<option value="connection">Connection</option>
+					<option value="global">Global</option>
+				</select>
+			</label>
+			<Button onclick={save} disabled={saving || loading} variant="outline">
+				{saving ? 'Saving…' : 'Save'}
+			</Button>
+			<Button onclick={reconnect} disabled={!selectedConnection || reconnecting}>
+				{reconnecting ? 'Reconnecting…' : 'Reconnect'}
+			</Button>
+		</div>
+	</div>
 
-    {#if loading}
-        <div class="text-sm text-muted-foreground">Loading settings…</div>
-    {:else}
-        <div class="rounded-lg border p-5">
-            <h3 class="mb-3 text-base font-semibold">Global Settings</h3>
-            <p class="text-sm text-muted-foreground">Oracle‑specific settings have been moved to the connection dialog (Edit → Oracle Settings). Reconnect and formatting options are now configured per connection.</p>
-        </div>
-    {/if}
+	{#if loading}
+		<div class="text-muted-foreground text-sm">Loading settings…</div>
+	{:else}
+		<div class="rounded-lg border p-5">
+			<h3 class="mb-3 text-base font-semibold">Global Settings</h3>
+			<p class="text-muted-foreground text-sm">
+				Oracle‑specific settings have been moved to the connection dialog (Edit → Oracle Settings).
+				Reconnect and formatting options are now configured per connection.
+			</p>
+		</div>
+	{/if}
 </div>
 
 <style>
-    .text-muted-foreground { color: rgb(100 116 139); }
+	.text-muted-foreground {
+		color: rgb(100 116 139);
+	}
 </style>

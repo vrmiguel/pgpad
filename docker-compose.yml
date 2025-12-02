@@ -6,7 +6,7 @@ services:
       context: .
       target: artifacts
     image: pgpad-artifacts:local
-    profiles: ["build"]
+    profiles: ['build']
     command: sleep infinity
     # No ports; start this service to enable docker cp from the container
 
@@ -14,7 +14,7 @@ services:
     build:
       context: .
       target: runtime
-    profiles: ["run-linux"]
+    profiles: ['run-linux']
     environment:
       - DISPLAY
       - WAYLAND_DISPLAY
@@ -29,4 +29,3 @@ services:
 volumes:
   pgpad_data:
     external: false
-

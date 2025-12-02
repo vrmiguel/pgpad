@@ -7,7 +7,7 @@
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
 	import IconSimpleIconsDuckdb from '~icons/simple-icons/duckdb';
 	import IconSimpleIconsOracle from '~icons/simple-icons/oracle';
-import IconSimpleIconsMssql from '~icons/simple-icons/microsoftsqlserver';
+	import IconSimpleIconsMssql from '~icons/simple-icons/microsoftsqlserver';
 	import Button from './ui/button/button.svelte';
 
 	interface Props {
@@ -175,17 +175,17 @@ import IconSimpleIconsMssql from '~icons/simple-icons/microsoftsqlserver';
 			</div>
 		{:else}
 			{#each connections as connection (connection.id)}
-                <Button
-                    variant="ghost"
-                    class="hover:bg-primary/20 w-full justify-start rounded-sm p-1 transition-all duration-200 {selectedConnection ===
-                    connection.id
-                        ? 'bg-primary/20'
-                        : 'hover:bg-background'}"
-                    onclick={() => selectConnection(connection.id)}
-                    ondblclick={() => connectToDatabase(connection.id)}
-                    oncontextmenu={(event) => showContextMenu(event, connection)}
-                    data-context-menu="true"
-                >
+				<Button
+					variant="ghost"
+					class="hover:bg-primary/20 w-full justify-start rounded-sm p-1 transition-all duration-200 {selectedConnection ===
+					connection.id
+						? 'bg-primary/20'
+						: 'hover:bg-background'}"
+					onclick={() => selectConnection(connection.id)}
+					ondblclick={() => connectToDatabase(connection.id)}
+					oncontextmenu={(event) => showContextMenu(event, connection)}
+					data-context-menu="true"
+				>
 					<div class="flex w-full items-center gap-2.5">
 						<div class="flex flex-shrink-0 items-center gap-2 pl-1">
 							<!-- Connection status dot -->
@@ -197,42 +197,46 @@ import IconSimpleIconsMssql from '~icons/simple-icons/microsoftsqlserver';
 								<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
 							{/if}
 
-                        {#if 'Postgres' in connection.database_type}
-                            <IconCibPostgresql class="h-4 w-4" />
-                        {:else if 'SQLite' in connection.database_type}
-                            <IconSimpleIconsSqlite class="h-4 w-4" />
-                        {:else if 'DuckDB' in connection.database_type}
-                            <IconSimpleIconsDuckdb class="h-4 w-4" />
-                        {:else if 'Oracle' in connection.database_type}
-                            <IconSimpleIconsOracle class="h-4 w-4" />
-                        {:else if 'Mssql' in connection.database_type}
-                            <IconSimpleIconsMssql class="h-4 w-4" />
-                        {/if}
+							{#if 'Postgres' in connection.database_type}
+								<IconCibPostgresql class="h-4 w-4" />
+							{:else if 'SQLite' in connection.database_type}
+								<IconSimpleIconsSqlite class="h-4 w-4" />
+							{:else if 'DuckDB' in connection.database_type}
+								<IconSimpleIconsDuckdb class="h-4 w-4" />
+							{:else if 'Oracle' in connection.database_type}
+								<IconSimpleIconsOracle class="h-4 w-4" />
+							{:else if 'Mssql' in connection.database_type}
+								<IconSimpleIconsMssql class="h-4 w-4" />
+							{/if}
 						</div>
 						<div class="text-foreground truncate text-sm font-medium">
 							<div class="min-w-0 flex-1 text-left">
 								{connection.name}
 							</div>
 							<div class="text-muted-foreground truncate font-mono text-xs">
-                                {#if 'Postgres' in connection.database_type}
-                                    {connection.database_type.Postgres.connection_string
-                                        .replace(/^postgresql?:\/\/[^@]*@/, '')
-                                        .replace(/\/[^?]*/, '')}
-                                {:else if 'SQLite' in connection.database_type}
-                                    {connection.database_type.SQLite.db_path.split('/').pop() ||
-                                        connection.database_type.SQLite.db_path}
-                                {:else if 'DuckDB' in connection.database_type}
-                                    {connection.database_type.DuckDB.db_path.split('/').pop() ||
-                                        connection.database_type.DuckDB.db_path}
-                                {:else if 'Mssql' in connection.database_type}
-                                    {connection.database_type.Mssql.connection_string
-                                        .replace(/^sqlserver:\/\/[^@]*@/, '')}
-                                        .replace(/;.*$/, '')}
-                                {:else if 'Oracle' in connection.database_type}
-                                    {connection.database_type.Oracle.tns_alias ||
-                                        connection.database_type.Oracle.connection_string
-                                            .replace(/^oracle:\/\/[^@]*@/, '')}
-                                {/if}
+								{#if 'Postgres' in connection.database_type}
+									{connection.database_type.Postgres.connection_string
+										.replace(/^postgresql?:\/\/[^@]*@/, '')
+										.replace(/\/[^?]*/, '')}
+								{:else if 'SQLite' in connection.database_type}
+									{connection.database_type.SQLite.db_path.split('/').pop() ||
+										connection.database_type.SQLite.db_path}
+								{:else if 'DuckDB' in connection.database_type}
+									{connection.database_type.DuckDB.db_path.split('/').pop() ||
+										connection.database_type.DuckDB.db_path}
+								{:else if 'Mssql' in connection.database_type}
+									{connection.database_type.Mssql.connection_string.replace(
+										/^sqlserver:\/\/[^@]*@/,
+										''
+									)}
+									.replace(/;.*$/, '')}
+								{:else if 'Oracle' in connection.database_type}
+									{connection.database_type.Oracle.tns_alias ||
+										connection.database_type.Oracle.connection_string.replace(
+											/^oracle:\/\/[^@]*@/,
+											''
+										)}
+								{/if}
 							</div>
 						</div>
 					</div>

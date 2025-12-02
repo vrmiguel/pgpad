@@ -10,7 +10,13 @@
 		onTableClick?: (tableName: string, schema: string) => void;
 	}
 
-	let { databaseSchema, loadingSchema, selectedConnection, databaseType = null, onTableClick }: Props = $props();
+	let {
+		databaseSchema,
+		loadingSchema,
+		selectedConnection,
+		databaseType = null,
+		onTableClick
+	}: Props = $props();
 
 	const isDuckDB = $derived(!!databaseType && 'DuckDB' in (databaseType as DatabaseInfo));
 
@@ -54,7 +60,9 @@
 	{:else}
 		{#if isDuckDB}
 			<div class="px-4">
-				<div class="bg-muted/30 border-border/50 mb-3 flex items-center gap-2 rounded-lg border p-3">
+				<div
+					class="bg-muted/30 border-border/50 mb-3 flex items-center gap-2 rounded-lg border p-3"
+				>
 					<Info class="text-muted-foreground/60 h-4 w-4" />
 					<p class="text-muted-foreground text-xs">DuckDB does not support triggers.</p>
 				</div>
@@ -76,19 +84,19 @@
 								.length} columns
 						</div>
 					</div>
-                    {#if onTableClick}
-                        <button
-                            class="text-muted-foreground/70 flex-shrink-0 cursor-pointer rounded-md p-1.5 opacity-0 transition-all duration-200 group-hover:opacity-100 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
-                            onclick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                onTableClick(table.name, table.schema);
-                            }}
-                            title="Browse table data"
-                        >
-                            <Search class="h-3.5 w-3.5" />
-                        </button>
-                    {/if}
+					{#if onTableClick}
+						<button
+							class="text-muted-foreground/70 flex-shrink-0 cursor-pointer rounded-md p-1.5 opacity-0 transition-all duration-200 group-hover:opacity-100 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+							onclick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								onTableClick(table.name, table.schema);
+							}}
+							title="Browse table data"
+						>
+							<Search class="h-3.5 w-3.5" />
+						</button>
+					{/if}
 					<div class="bg-border/40 absolute right-0 bottom-0 left-0 h-px"></div>
 				</summary>
 				<div class="relative ml-5 space-y-0.5">
