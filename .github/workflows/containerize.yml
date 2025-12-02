@@ -1,0 +1,95 @@
+name: Containerize pgpad
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+
+jobs:
+  build-artifacts:
+    name: Build Tauri bundles (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build artifacts via Dockerfile target
+        run: |
+          docker build --target artifacts --output type=local,dest=./out .
+
+      - name: Upload artifacts (CI artifacts)
+        if: ${{ github.event_name != 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pgpad-bundles
+          path: out/bundle
+
+      - name: Upload release assets
+        if: ${{ github.event_name == 'release' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/bundle/**/*.AppImage
+            out/bundle/**/*.deb
+            out/bundle/**/*.rpm
+
+  push-runtime-image:
+    name: Build & push Linux runtime image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          tags: |
+            ghcr.io/${{ github.repository }}:linux-runtime-${{ github.ref_name }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:build-cache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:build-cache,mode=max
+
+  validate-deps:
+    name: Validate Cargo/npm versions & duplicates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-tree
+        run: cargo install cargo-tree
+
+      - name: Check duplicate crates
+        working-directory: src-tauri
+        run: |
+          cargo tree -d > dup.txt || true
+          if [ -s dup.txt ]; then
+            echo "Duplicate crates detected:" >&2
+            cat dup.txt >&2
+            exit 1
+          fi
+          echo "No duplicate crates found."
+

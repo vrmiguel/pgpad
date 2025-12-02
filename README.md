@@ -67,6 +67,43 @@ npm run tauri build
 npm run tauri dev
 ```
 
+## Docker
+
+- Build installers without local toolchains using the multi-stage `Dockerfile`.
+- Optional Linux runtime image to run the GUI via X11/Wayland.
+
+### Build installers (artifacts)
+
+- Using Docker directly:
+  - `docker build --target artifacts --output type=local,dest=./out .`
+  - Bundles appear under `./out/bundle` (AppImage/deb/rpm on Linux).
+
+- Using Compose profile:
+  - `docker compose --profile build up -d pgpad-build`
+  - `docker cp $(docker compose ps -q pgpad-build):/out/bundle ./bundle`
+  - `docker compose down pgpad-build`
+
+### Run on Linux (X11/Wayland)
+
+- Allow local X11 connections (host): `xhost +local:`
+- Start the container:
+  - `docker compose --profile run-linux up --build pgpad`
+- Environment and mounts:
+  - X11: `-v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=$DISPLAY`
+  - Wayland: `-v $XDG_RUNTIME_DIR:/XDG_RUNTIME_DIR -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY`
+  - App data: `-v $HOME/.local/share/pgpad:/home/pgpad/.local/share/pgpad`
+  - Certificates: `-v ./certs:/opt/pgpad/certs`
+
+### CI/CD
+
+- GitHub Actions workflow builds bundles via Docker and uploads to releases.
+- Tags push a `linux-runtime-<tag>` image to GHCR: `ghcr.io/<owner>/<repo>`.
+
+### Security
+
+- No certs or secrets are baked into images; mount via volumes.
+- Runtime runs as non-root `pgpad` user.
+
 ## A work in progress!
 
 Feel free to open issues for bug reports and feature requests.

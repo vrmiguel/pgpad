@@ -1,0 +1,32 @@
+name: pgpad
+
+services:
+  pgpad-build:
+    build:
+      context: .
+      target: artifacts
+    image: pgpad-artifacts:local
+    profiles: ["build"]
+    command: sleep infinity
+    # No ports; start this service to enable docker cp from the container
+
+  pgpad:
+    build:
+      context: .
+      target: runtime
+    profiles: ["run-linux"]
+    environment:
+      - DISPLAY
+      - WAYLAND_DISPLAY
+      - XDG_RUNTIME_DIR
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${HOME}/.local/share/pgpad:/home/pgpad/.local/share/pgpad
+      - ./certs:/opt/pgpad/certs
+    # runtime needs to access DB hosts on your network
+    network_mode: bridge
+
+volumes:
+  pgpad_data:
+    external: false
+
