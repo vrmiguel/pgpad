@@ -80,8 +80,6 @@ impl ConnectionMonitor {
             .push((connection_id, conn_check));
     }
 
-    
-
     pub async fn spawn_oracle_ping(
         &self,
         connection_id: Uuid,

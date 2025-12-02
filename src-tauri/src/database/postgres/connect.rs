@@ -15,7 +15,9 @@ pub async fn connect(
     use tokio_postgres::config::SslMode;
 
     if config.get_hosts().is_empty() {
-        return Err(anyhow::anyhow!("No host provided in Postgres connection configuration").into());
+        return Err(
+            anyhow::anyhow!("No host provided in Postgres connection configuration").into(),
+        );
     }
 
     let client = match config.get_ssl_mode() {
@@ -138,15 +140,9 @@ async fn apply_optional_session_settings(client: &Client) {
     if let Ok(v) = std::env::var("PGPAD_IDLE_TX_TIMEOUT_MS") {
         if let Ok(ms) = v.parse::<u64>() {
             if ms > 0 {
-                let stmt = format!(
-                    "SET idle_in_transaction_session_timeout = '{}ms'",
-                    ms
-                );
+                let stmt = format!("SET idle_in_transaction_session_timeout = '{}ms'", ms);
                 if let Err(e) = client.batch_execute(&stmt).await {
-                    log::warn!(
-                        "Failed to set idle_in_transaction_session_timeout: {}",
-                        e
-                    );
+                    log::warn!("Failed to set idle_in_transaction_session_timeout: {}", e);
                 }
             }
         }

@@ -414,10 +414,16 @@ pub async fn connect_to_database(
 
 fn is_valid_pg_identifier(name: &str) -> bool {
     let bytes = name.as_bytes();
-    if bytes.is_empty() { return false; }
-    if !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_') { return false; }
+    if bytes.is_empty() {
+        return false;
+    }
+    if !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_') {
+        return false;
+    }
     for &b in &bytes[1..] {
-        if !(b.is_ascii_alphanumeric() || b == b'_') { return false; }
+        if !(b.is_ascii_alphanumeric() || b == b'_') {
+            return false;
+        }
     }
     true
 }
@@ -437,12 +443,20 @@ pub async fn listen_postgres(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let sql = format!("LISTEN {}", channel);
-            client.batch_execute(&sql).await.map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+            client
+                .batch_execute(&sql)
+                .await
+                .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
             Ok(())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -459,7 +473,10 @@ pub async fn unlisten_postgres(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let sql = if let Some(ch) = channel.as_ref() {
                 if !is_valid_pg_identifier(ch) {
                     return Err(Error::Any(anyhow::anyhow!("Invalid channel identifier")));
@@ -468,10 +485,15 @@ pub async fn unlisten_postgres(
             } else {
                 String::from("UNLISTEN *")
             };
-            client.batch_execute(&sql).await.map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+            client
+                .batch_execute(&sql)
+                .await
+                .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
             Ok(())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -751,9 +773,9 @@ pub async fn cancel_postgres(
             backend_pid: Some(pid),
             ..
         } => {
-            let mut cfg: tokio_postgres::Config = connection_string
-                .parse()
-                .with_context(|| format!("Failed to parse connection string: {}", connection_string))?;
+            let mut cfg: tokio_postgres::Config = connection_string.parse().with_context(|| {
+                format!("Failed to parse connection string: {}", connection_string)
+            })?;
             if cfg.get_password().is_none() {
                 if let Some(pw) = crate::credentials::get_password(&connection_id)? {
                     cfg.password(pw);
@@ -776,7 +798,9 @@ pub async fn cancel_postgres(
                 )))),
             }
         }
-        Database::Postgres { backend_pid: None, .. } => Err(Error::Any(anyhow::anyhow!(
+        Database::Postgres {
+            backend_pid: None, ..
+        } => Err(Error::Any(anyhow::anyhow!(
             "Postgres backend PID not recorded"
         ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
@@ -801,9 +825,9 @@ pub async fn terminate_postgres(
             backend_pid: Some(pid),
             ..
         } => {
-            let mut cfg: tokio_postgres::Config = connection_string
-                .parse()
-                .with_context(|| format!("Failed to parse connection string: {}", connection_string))?;
+            let mut cfg: tokio_postgres::Config = connection_string.parse().with_context(|| {
+                format!("Failed to parse connection string: {}", connection_string)
+            })?;
             if cfg.get_password().is_none() {
                 if let Some(pw) = crate::credentials::get_password(&connection_id)? {
                     cfg.password(pw);
@@ -817,7 +841,9 @@ pub async fn terminate_postgres(
             .await
             {
                 Ok((client, _)) => {
-                    let _ = client.execute("SELECT pg_terminate_backend($1)", &[pid]).await;
+                    let _ = client
+                        .execute("SELECT pg_terminate_backend($1)", &[pid])
+                        .await;
                     Ok(())
                 }
                 Err(e) => Err(Error::Any(anyhow::anyhow!(format!(
@@ -826,7 +852,9 @@ pub async fn terminate_postgres(
                 )))),
             }
         }
-        Database::Postgres { backend_pid: None, .. } => Err(Error::Any(anyhow::anyhow!(
+        Database::Postgres {
+            backend_pid: None, ..
+        } => Err(Error::Any(anyhow::anyhow!(
             "Postgres backend PID not recorded"
         ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
@@ -1435,7 +1463,10 @@ pub async fn get_postgres_indexes(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let page = page.unwrap_or(0);
             let page_size = page_size.unwrap_or(50);
             let count_sql = r#"
@@ -1451,7 +1482,11 @@ pub async fn get_postgres_indexes(
                 .await
                 .map(|r| r.get::<usize, i64>(0))
                 .unwrap_or(0);
-            let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+            let total_pages = if page_size == 0 {
+                0
+            } else {
+                (total_rows + page_size as i64 - 1) / page_size as i64
+            };
             let offset = (page as i64) * (page_size as i64);
             let list_sql = r#"
                 SELECT n.nspname AS schema_name,
@@ -1493,7 +1528,9 @@ pub async fn get_postgres_indexes(
             });
             Ok(payload.to_string())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -1511,7 +1548,10 @@ pub async fn get_postgres_index_columns(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let page = page.unwrap_or(0);
             let page_size = page_size.unwrap_or(100);
             let count_sql = r#"
@@ -1528,7 +1568,11 @@ pub async fn get_postgres_index_columns(
                 .await
                 .map(|r| r.get::<usize, i64>(0))
                 .unwrap_or(0);
-            let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+            let total_pages = if page_size == 0 {
+                0
+            } else {
+                (total_rows + page_size as i64 - 1) / page_size as i64
+            };
             let offset = (page as i64) * (page_size as i64);
             let list_sql = r#"
                 SELECT n.nspname AS schema_name,
@@ -1575,7 +1619,9 @@ pub async fn get_postgres_index_columns(
             });
             Ok(payload.to_string())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -1593,7 +1639,10 @@ pub async fn get_postgres_constraints(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let page = page.unwrap_or(0);
             let page_size = page_size.unwrap_or(50);
             let count_sql = r#"
@@ -1608,7 +1657,11 @@ pub async fn get_postgres_constraints(
                 .await
                 .map(|r| r.get::<usize, i64>(0))
                 .unwrap_or(0);
-            let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+            let total_pages = if page_size == 0 {
+                0
+            } else {
+                (total_rows + page_size as i64 - 1) / page_size as i64
+            };
             let offset = (page as i64) * (page_size as i64);
             let list_sql = r#"
                 SELECT n.nspname AS schema_name,
@@ -1646,7 +1699,9 @@ pub async fn get_postgres_constraints(
             });
             Ok(payload.to_string())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -1664,7 +1719,10 @@ pub async fn get_postgres_check_constraints(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let page = page.unwrap_or(0);
             let page_size = page_size.unwrap_or(50);
             let count_sql = r#"
@@ -1679,7 +1737,11 @@ pub async fn get_postgres_check_constraints(
                 .await
                 .map(|r| r.get::<usize, i64>(0))
                 .unwrap_or(0);
-            let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+            let total_pages = if page_size == 0 {
+                0
+            } else {
+                (total_rows + page_size as i64 - 1) / page_size as i64
+            };
             let offset = (page as i64) * (page_size as i64);
             let list_sql = r#"
                 SELECT n.nspname AS schema_name,
@@ -1717,7 +1779,9 @@ pub async fn get_postgres_check_constraints(
             });
             Ok(payload.to_string())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -1735,7 +1799,10 @@ pub async fn get_postgres_triggers(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let page = page.unwrap_or(0);
             let page_size = page_size.unwrap_or(50);
             let count_sql = r#"
@@ -1750,7 +1817,11 @@ pub async fn get_postgres_triggers(
                 .await
                 .map(|r| r.get::<usize, i64>(0))
                 .unwrap_or(0);
-            let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+            let total_pages = if page_size == 0 {
+                0
+            } else {
+                (total_rows + page_size as i64 - 1) / page_size as i64
+            };
             let offset = (page as i64) * (page_size as i64);
             let list_sql = r#"
                 SELECT n.nspname AS schema_name,
@@ -1788,7 +1859,9 @@ pub async fn get_postgres_triggers(
             });
             Ok(payload.to_string())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -1806,7 +1879,10 @@ pub async fn get_postgres_routines(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let page = page.unwrap_or(0);
             let page_size = page_size.unwrap_or(50);
             let count_sql = r#"
@@ -1819,7 +1895,11 @@ pub async fn get_postgres_routines(
                 .await
                 .map(|r| r.get::<usize, i64>(0))
                 .unwrap_or(0);
-            let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+            let total_pages = if page_size == 0 {
+                0
+            } else {
+                (total_rows + page_size as i64 - 1) / page_size as i64
+            };
             let offset = (page as i64) * (page_size as i64);
             let list_sql = r#"
                 SELECT r.specific_schema AS schema_name,
@@ -1858,7 +1938,9 @@ pub async fn get_postgres_routines(
             });
             Ok(payload.to_string())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -1876,7 +1958,10 @@ pub async fn get_postgres_views(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let page = page.unwrap_or(0);
             let page_size = page_size.unwrap_or(50);
             let count_sql = r#"
@@ -1889,7 +1974,11 @@ pub async fn get_postgres_views(
                 .await
                 .map(|r| r.get::<usize, i64>(0))
                 .unwrap_or(0);
-            let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+            let total_pages = if page_size == 0 {
+                0
+            } else {
+                (total_rows + page_size as i64 - 1) / page_size as i64
+            };
             let offset = (page as i64) * (page_size as i64);
             let list_sql = r#"
                 SELECT v.table_schema, v.table_name
@@ -1918,7 +2007,9 @@ pub async fn get_postgres_views(
             });
             Ok(payload.to_string())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -1936,7 +2027,10 @@ pub async fn get_postgres_view_definitions(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let sql = r#"
                 SELECT n.nspname AS schema_name,
                        c.relname AS view_name,
@@ -1952,11 +2046,16 @@ pub async fn get_postgres_view_definitions(
                 let schema_name: &str = row.get(0);
                 let view_name: &str = row.get(1);
                 let definition: &str = row.get(2);
-                map.insert(format!("{}.{}", schema_name, view_name), serde_json::Value::String(definition.to_string()));
+                map.insert(
+                    format!("{}.{}", schema_name, view_name),
+                    serde_json::Value::String(definition.to_string()),
+                );
             }
             Ok(serde_json::Value::Object(map).to_string())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -1974,7 +2073,10 @@ pub async fn get_postgres_foreign_keys(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::Postgres { client: Some(client), .. } => {
+        Database::Postgres {
+            client: Some(client),
+            ..
+        } => {
             let page = page.unwrap_or(0);
             let page_size = page_size.unwrap_or(50);
             let count_sql = r#"
@@ -1989,7 +2091,11 @@ pub async fn get_postgres_foreign_keys(
                 .await
                 .map(|r| r.get::<usize, i64>(0))
                 .unwrap_or(0);
-            let total_pages = if page_size == 0 { 0 } else { (total_rows + page_size as i64 - 1) / page_size as i64 };
+            let total_pages = if page_size == 0 {
+                0
+            } else {
+                (total_rows + page_size as i64 - 1) / page_size as i64
+            };
             let offset = (page as i64) * (page_size as i64);
             let list_sql = r#"
                 SELECT n.nspname AS schema_name,
@@ -2027,7 +2133,9 @@ pub async fn get_postgres_foreign_keys(
             });
             Ok(payload.to_string())
         }
-        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!(
+            "Postgres connection not active"
+        ))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
     }
 }
@@ -2045,7 +2153,10 @@ pub async fn get_sqlite_indexes(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::SQLite { connection: Some(conn), .. } => {
+        Database::SQLite {
+            connection: Some(conn),
+            ..
+        } => {
             let result = tauri::async_runtime::spawn_blocking({
                 let conn = conn.clone();
                 let page = page.unwrap_or(0);
@@ -2099,7 +2210,9 @@ pub async fn get_sqlite_indexes(
             }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
             Ok(result)
         }
-        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        Database::SQLite {
+            connection: None, ..
+        } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
     }
 }
@@ -2117,7 +2230,10 @@ pub async fn get_sqlite_index_columns(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::SQLite { connection: Some(conn), .. } => {
+        Database::SQLite {
+            connection: Some(conn),
+            ..
+        } => {
             let result = tauri::async_runtime::spawn_blocking({
                 let conn = conn.clone();
                 let page = page.unwrap_or(0);
@@ -2178,7 +2294,9 @@ pub async fn get_sqlite_index_columns(
             }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
             Ok(result)
         }
-        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        Database::SQLite {
+            connection: None, ..
+        } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
     }
 }
@@ -2196,7 +2314,10 @@ pub async fn get_sqlite_constraints(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::SQLite { connection: Some(conn), .. } => {
+        Database::SQLite {
+            connection: Some(conn),
+            ..
+        } => {
             let result = tauri::async_runtime::spawn_blocking({
                 let conn = conn.clone();
                 let page = page.unwrap_or(0);
@@ -2339,7 +2460,9 @@ pub async fn get_sqlite_constraints(
             .unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
             Ok(result)
         }
-        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        Database::SQLite {
+            connection: None, ..
+        } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
     }
 }
@@ -2357,7 +2480,10 @@ pub async fn get_sqlite_triggers(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::SQLite { connection: Some(conn), .. } => {
+        Database::SQLite {
+            connection: Some(conn),
+            ..
+        } => {
             let result = tauri::async_runtime::spawn_blocking({
                 let conn = conn.clone();
                 let page = page.unwrap_or(0);
@@ -2399,7 +2525,9 @@ pub async fn get_sqlite_triggers(
             }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
             Ok(result)
         }
-        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        Database::SQLite {
+            connection: None, ..
+        } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
     }
 }
@@ -2429,7 +2557,10 @@ pub async fn get_sqlite_views(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::SQLite { connection: Some(conn), .. } => {
+        Database::SQLite {
+            connection: Some(conn),
+            ..
+        } => {
             let result = tauri::async_runtime::spawn_blocking({
                 let conn = conn.clone();
                 let page = page.unwrap_or(0);
@@ -2460,7 +2591,9 @@ pub async fn get_sqlite_views(
             }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
             Ok(result)
         }
-        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        Database::SQLite {
+            connection: None, ..
+        } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
     }
 }
@@ -2478,7 +2611,10 @@ pub async fn get_sqlite_view_definitions(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::SQLite { connection: Some(conn), .. } => {
+        Database::SQLite {
+            connection: Some(conn),
+            ..
+        } => {
             let result = tauri::async_runtime::spawn_blocking({
                 let conn = conn.clone();
                 move || {
@@ -2499,7 +2635,9 @@ pub async fn get_sqlite_view_definitions(
             }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
             Ok(result)
         }
-        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        Database::SQLite {
+            connection: None, ..
+        } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
     }
 }
@@ -2517,7 +2655,10 @@ pub async fn get_sqlite_foreign_keys(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value();
     match &connection.database {
-        Database::SQLite { connection: Some(conn), .. } => {
+        Database::SQLite {
+            connection: Some(conn),
+            ..
+        } => {
             let result = tauri::async_runtime::spawn_blocking({
                 let conn = conn.clone();
                 let page = page.unwrap_or(0);
@@ -2577,7 +2718,9 @@ pub async fn get_sqlite_foreign_keys(
             }).await.unwrap_or_else(|e| Err(Error::Any(anyhow::anyhow!(format!("Join error: {}", e)))))?;
             Ok(result)
         }
-        Database::SQLite { connection: None, .. } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        Database::SQLite {
+            connection: None, ..
+        } => Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
         _ => Err(Error::Any(anyhow::anyhow!("Connection is not SQLite"))),
     }
 }
@@ -3034,4 +3177,4 @@ pub async fn set_oracle_settings(
     state.storage.set_setting(&key, &s)?;
     Ok(())
 }
-                    // Notifications can be consumed by issuing LISTEN and polling via client in the UI loop if needed.
+// Notifications can be consumed by issuing LISTEN and polling via client in the UI loop if needed.
