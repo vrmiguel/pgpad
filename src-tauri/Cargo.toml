@@ -42,8 +42,10 @@ sqlparser = "0.59.0"
 rfd = "0.15.4"
 keyring = { version = "3.2.0", features = ["apple-native", "windows-native", "sync-secret-service"] }
 url = "2.5.7"
-env_logger = "0.11.8"
 oracle = "0.6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+tracing-log = "0.1"
 
 [profile.release]
 panic = "abort"

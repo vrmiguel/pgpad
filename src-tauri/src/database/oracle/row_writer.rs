@@ -139,32 +139,29 @@ impl RowWriter {
                     Some(mut blob) => {
                         let mode = self.cfg.blob_stream.as_str();
                         let chunk = self.cfg.blob_chunk_size;
-                        let total_len = {
-                            let p = blob.seek(SeekFrom::End(0)).unwrap_or(0);
-                            let _ = blob.seek(SeekFrom::Start(0));
-                            p as usize
+                        let total_len = match blob.seek(SeekFrom::End(0)) {
+                            Ok(p) => { let _ = blob.seek(SeekFrom::Start(0)); Some(p as usize) },
+                            Err(_) => None,
                         };
                         match mode {
                             "off" | "len" | "" => {
-                                // Prefer label with total length if obtainable
-                                if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
-                                else { self.write_json_string("Bytes"); }
+                                if let Some(n) = total_len { self.write_json_string(&format!("Bytes({})", n)); } else { self.write_json_string("Bytes"); }
                             }
                             "preview" => {
                                 let mut buf = vec![0u8; chunk];
-                                if let Ok(n) = blob.read(&mut buf) {
-                                    if n > 0 {
+                                match blob.read(&mut buf) {
+                                    Ok(n) if n > 0 => {
                                         let hex_preview = hex::encode(&buf[..n]);
-                                        if total_len > 0 { self.write_json_string(&format!("Bytes({}) preview(0..{}): 0x{}…", total_len, n, hex_preview)); }
+                                        if let Some(t) = total_len { self.write_json_string(&format!("Bytes({}) preview(0..{}): 0x{}…", t, n, hex_preview)); }
                                         else { self.write_json_string(&format!("Bytes preview(0..{}): 0x{}…", n, hex_preview)); }
-                                    } else if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
-                                    else { self.write_json_string("Bytes"); }
-                                } else if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
-                                else { self.write_json_string("Bytes"); }
+                                    }
+                                    _ => {
+                                        if let Some(t) = total_len { self.write_json_string(&format!("Bytes({})", t)); } else { self.write_json_string("Bytes"); }
+                                    }
+                                }
                             }
                             "stream" => {
-                                if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
-                                else { self.write_json_string("Bytes"); }
+                                if let Some(n) = total_len { self.write_json_string(&format!("Bytes({})", n)); } else { self.write_json_string("Bytes"); }
                                 if let Some(s) = &self.sender {
                                     let mut offset = 0usize;
                                     let mut buf = vec![0u8; chunk];
@@ -175,14 +172,14 @@ impl RowWriter {
                                                 let _ = s.send(crate::database::types::QueryExecEvent::BlobChunk { row_index, column_index: i, offset, hex_chunk });
                                                 offset += n;
                                             }
-                                            _ => break,
+                                            Ok(_) => break,
+                                            Err(_) => break,
                                         }
                                     }
                                 }
                             }
                             _ => {
-                                if total_len > 0 { self.write_json_string(&format!("Bytes({})", total_len)); }
-                                else { self.write_json_string("Bytes"); }
+                                if let Some(n) = total_len { self.write_json_string(&format!("Bytes({})", n)); } else { self.write_json_string("Bytes"); }
                             }
                         }
                     }

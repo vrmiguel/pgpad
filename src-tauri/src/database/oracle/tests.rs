@@ -490,6 +490,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn oracle_blob_streaming_total_length() -> anyhow::Result<()> {
+        if std::env::var("ORACLE_TEST_CONNECT").is_err() { return Ok(()); }
+        std::env::set_var("ORACLE_BLOB_STREAM", "stream");
+        std::env::set_var("ORACLE_BLOB_CHUNK_SIZE", "4");
+        let conn_str = std::env::var("ORACLE_TEST_CONNECT").unwrap();
+        let user = std::env::var("ORACLE_TEST_USER").unwrap_or_else(|_| "scott".into());
+        let pass = std::env::var("ORACLE_TEST_PASS").unwrap_or_else(|_| "tiger".into());
+
+        let conn = match oracle::Connection::connect(&user, &pass, &conn_str) { Ok(c) => c, Err(_) => return Ok(()) };
+        let conn = Arc::new(Mutex::new(conn));
+
+        let (sender, mut recv) = channel();
+        tokio::task::spawn_blocking(move || {
+            let stmt = crate::database::parser::ParsedStatement { statement: "SELECT TO_BLOB(HEXTORAW('DEADBEEFCAFEBABE')) AS B FROM DUAL".into(), returns_values: true, is_read_only: true, explain_plan: false };
+            let conn = conn.lock().unwrap();
+            crate::database::oracle::execute::execute_query(&conn, stmt, &sender, None).unwrap();
+        });
+
+        let mut total_bytes = 0usize;
+        let mut last_offset = 0usize;
+        let mut finished = false;
+        while let Some(ev) = recv.recv().await {
+            match ev {
+                QueryExecEvent::BlobChunk { offset, hex_chunk, .. } => {
+                    total_bytes += hex_chunk.len() / 2;
+                    last_offset = offset + hex_chunk.len() / 2;
+                }
+                QueryExecEvent::Finished { error, .. } => { assert!(error.is_none()); finished = true; break; }
+                _ => {}
+            }
+        }
+        assert!(finished);
+        assert_eq!(total_bytes, 16);
+        assert_eq!(last_offset, 16);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn oracle_explain_plan_smoke() -> anyhow::Result<()> {
         if std::env::var("ORACLE_TEST_CONNECT").is_err() { return Ok(()); }
         let conn_str = std::env::var("ORACLE_TEST_CONNECT").unwrap();

@@ -68,10 +68,19 @@ pub fn run() {
             } else {
                 "info,tokio_postgres=warn,tao=warn,sqlparser=warn,rustls=warn"
             };
-            env_logger::Builder::from_env(
-                env_logger::Env::default().default_filter_or(default),
-            )
-            .init();
+            let _ = tracing_log::LogTracer::init();
+            if cfg!(debug_assertions) {
+                let subscriber = tracing_subscriber::fmt()
+                    .with_env_filter(tracing_subscriber::EnvFilter::new(default))
+                    .finish();
+                let _ = tracing::subscriber::set_global_default(subscriber);
+            } else {
+                let subscriber = tracing_subscriber::fmt()
+                    .json()
+                    .with_env_filter(tracing_subscriber::EnvFilter::new(default))
+                    .finish();
+                let _ = tracing::subscriber::set_global_default(subscriber);
+            }
 
             init::build_window(app)?;
             init::build_menu(app)?;
