@@ -25,6 +25,16 @@ pub async fn execute_query(
     Ok(())
 }
 
+pub async fn execute_query_with_params(
+    client: &Client,
+    stmt: ParsedStatement,
+    sender: &ExecSender,
+    _params: serde_json::Map<String, serde_json::Value>,
+    settings: Option<&crate::database::types::OracleSettings>,
+) -> Result<(), Error> {
+    execute_query(client, stmt, sender, settings).await
+}
+
 async fn execute_query_with_results(
     client: &Client,
     query: &str,
