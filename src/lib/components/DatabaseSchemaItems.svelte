@@ -79,7 +79,7 @@
                     {#if onTableClick}
                         <button
                             class="text-muted-foreground/70 flex-shrink-0 cursor-pointer rounded-md p-1.5 opacity-0 transition-all duration-200 group-hover:opacity-100 hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
-                            on:click={(e) => {
+                            onclick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 onTableClick(table.name, table.schema);

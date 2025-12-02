@@ -83,15 +83,15 @@
 	{:else}
 		{#each scripts as script (script.id)}
 			<div class="group">
-				<Button
-					variant="ghost"
-					class="hover:bg-primary/20 h-auto w-full justify-start rounded-sm p-1 transition-all duration-200 {activeScriptId ===
-					script.id
-						? 'bg-primary/20'
-						: 'hover:bg-background'}"
-					onclick={() => selectScript(script)}
-					oncontextmenu={(e) => showContextMenu(e, script)}
-				>
+                <Button
+                    variant="ghost"
+                    class="hover:bg-primary/20 h-auto w-full justify-start rounded-sm p-1 transition-all duration-200 {activeScriptId ===
+                    script.id
+                        ? 'bg-primary/20'
+                        : 'hover:bg-background'}"
+                    onclick={() => selectScript(script)}
+                    oncontextmenu={(e) => showContextMenu(e, script)}
+                >
 					<div class="flex w-full items-center gap-3">
 						<div class="flex-shrink-0 pl-1">
 							<FileJson class="text-muted-foreground h-3 w-3" />

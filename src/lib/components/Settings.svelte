@@ -93,10 +93,10 @@ $effect(() => {
                     <option value="global">Global</option>
                 </select>
             </label>
-            <Button on:click={save} disabled={saving || loading} variant="outline">
+            <Button onclick={save} disabled={saving || loading} variant="outline">
                 {saving ? 'Saving…' : 'Save'}
             </Button>
-            <Button on:click={reconnect} disabled={!selectedConnection || reconnecting}>
+            <Button onclick={reconnect} disabled={!selectedConnection || reconnecting}>
                 {reconnecting ? 'Reconnecting…' : 'Reconnect'}
             </Button>
         </div>

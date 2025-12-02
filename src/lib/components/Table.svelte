@@ -441,8 +441,8 @@
 	class="relative flex h-full flex-col"
 	tabindex="0"
 	role="application"
-    on:focus={() => (hasFocus = true)}
-    on:blur={() => (hasFocus = false)}
+    onfocus={() => (hasFocus = true)}
+    onblur={() => (hasFocus = false)}
 >
 	<!-- Table content -->
 	<div class="table-container flex-1 overflow-hidden" bind:this={tableContainer}>
@@ -457,12 +457,12 @@
 								style="--column-width: {columnWidth}px"
 							>
 								<div class="flex items-center justify-between">
-									<Button
-										variant="ghost"
-										size="sm"
-										class="hover:bg-accent/30 -ml-1 h-5 flex-1 justify-start p-1 text-xs font-medium"
-                                        on:click={() => customSorting.toggleSort(columnIndex)}
-									>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        class="hover:bg-accent/30 -ml-1 h-5 flex-1 justify-start p-1 text-xs font-medium"
+                                        onclick={() => customSorting.toggleSort(columnIndex)}
+                                    >
 										{columnName}
 										{#if customSorting.getSortDirection(columnIndex) === 'asc'}
 											<ChevronUp class="text-muted-foreground ml-1 h-3 w-3" />
@@ -478,7 +478,7 @@
 											.resizing.isResizing && tableState.resizing.columnIndex === columnIndex
 											? 'bg-blue-500'
 											: ''}"
-                                        on:mousedown={(event) => startColumnResize(columnIndex, event)}
+                                        onmousedown={(event) => startColumnResize(columnIndex, event)}
 										type="button"
 										aria-label="Resize column"
 									></button>
@@ -519,7 +519,7 @@
 											<button
 												class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
 												title={CellFormatter.formatCellTitle(cellValue)}
-                                                on:click={() => handleSimpleCellClick(cellValue, rowId, columnId)}
+                                                onclick={() => handleSimpleCellClick(cellValue, rowId, columnId)}
 											>
 												<div class="cell-content flex items-center pr-6">
 													<span class="min-w-0 flex-1 truncate font-mono text-xs"
@@ -530,7 +530,7 @@
 											<button
 												class="hover:bg-accent/60 focus:ring-primary/30 absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 transition-all duration-150 focus:ring-1 focus:outline-none"
 												title="Inspect JSON"
-                                                on:click={(e) => handleJsonInspectorOpen(cellValue, e)}
+                                                onclick={(e) => handleJsonInspectorOpen(cellValue, e)}
 												type="button"
 											>
 												<MoreHorizontal
@@ -542,7 +542,7 @@
 										<button
 											class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
 											title={CellFormatter.formatCellTitle(cellValue)}
-                                            on:click={() => handleSimpleCellClick(cellValue, rowId, columnId)}
+                                            onclick={() => handleSimpleCellClick(cellValue, rowId, columnId)}
 										>
 											{#if cellType === 'null'}
 												<span class="cell-content text-muted-foreground text-xs italic"
@@ -612,23 +612,23 @@
 			<div class="flex-1"></div>
 
 			<div class="flex items-center gap-1">
-				<Button
-					variant="ghost"
-					size="sm"
-                    on:click={() => customNavigation.previousPage()}
-					disabled={!customNavigation.canPreviousPage()}
-					class="h-6 w-6 p-0"
-				>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onclick={() => customNavigation.previousPage()}
+                    disabled={!customNavigation.canPreviousPage()}
+                    class="h-6 w-6 p-0"
+                >
 					<ChevronLeft class="h-3 w-3" />
 				</Button>
 
 				{#if currentPageIndex > 1}
-					<Button
-						variant="ghost"
-						size="sm"
-                        on:click={() => customNavigation.setPageIndex(0)}
-						class="h-6 px-2 text-xs"
-					>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onclick={() => customNavigation.setPageIndex(0)}
+                        class="h-6 px-2 text-xs"
+                    >
 						1
 					</Button>
 					{#if currentPageIndex > 2}
@@ -637,12 +637,12 @@
 				{/if}
 
 				{#if currentPageIndex > 0}
-					<Button
-						variant="ghost"
-						size="sm"
-                        on:click={() => customNavigation.previousPage()}
-						class="h-6 px-2 text-xs"
-					>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onclick={() => customNavigation.previousPage()}
+                        class="h-6 px-2 text-xs"
+                    >
 						{currentPageIndex}
 					</Button>
 				{/if}
@@ -652,12 +652,12 @@
 				</Button>
 
 				{#if currentPageIndex < pageCount - 1}
-					<Button
-						variant="ghost"
-						size="sm"
-                        on:click={() => customNavigation.nextPage()}
-						class="h-6 px-2 text-xs"
-					>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onclick={() => customNavigation.nextPage()}
+                        class="h-6 px-2 text-xs"
+                    >
 						{currentPageIndex + 2}
 					</Button>
 				{/if}
@@ -666,23 +666,23 @@
 					{#if currentPageIndex < pageCount - 3}
 						<span class="text-muted-foreground text-xs">...</span>
 					{/if}
-					<Button
-						variant="ghost"
-						size="sm"
-                        on:click={() => customNavigation.setPageIndex(pageCount - 1)}
-						class="h-6 px-2 text-xs"
-					>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onclick={() => customNavigation.setPageIndex(pageCount - 1)}
+                        class="h-6 px-2 text-xs"
+                    >
 						{pageCount}
 					</Button>
 				{/if}
 
-				<Button
-					variant="ghost"
-					size="sm"
-                    on:click={() => customNavigation.nextPage()}
-					disabled={!customNavigation.canNextPage()}
-					class="h-6 w-6 p-0"
-				>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onclick={() => customNavigation.nextPage()}
+                    disabled={!customNavigation.canNextPage()}
+                    class="h-6 w-6 p-0"
+                >
 					<ChevronRight class="h-3 w-3" />
 				</Button>
 			</div>

@@ -48,41 +48,50 @@
 </script>
 
 <script lang="ts">
-	let {
-		class: className,
-		variant = 'default',
-		size = 'default',
-		ref = $bindable(null),
-		href = undefined,
-		type = 'button',
-		disabled,
-		children,
-		...restProps
-	}: ButtonProps = $props();
+  let {
+    class: className,
+    variant = 'default',
+    size = 'default',
+    ref = $bindable(null),
+    href = undefined,
+    type = 'button',
+    disabled,
+    children,
+    onclick,
+    ondblclick,
+    oncontextmenu,
+    ...restProps
+  }: ButtonProps = $props();
 </script>
 
 {#if href}
-	<a
-		bind:this={ref}
-		data-slot="button"
-		class={cn(buttonVariants({ variant, size }), className)}
-		href={disabled ? undefined : href}
-		aria-disabled={disabled}
-		role={disabled ? 'link' : undefined}
-		tabindex={disabled ? -1 : undefined}
-		{...restProps}
-	>
-		{@render children?.()}
-	</a>
+  <a
+    bind:this={ref}
+    data-slot="button"
+    class={cn(buttonVariants({ variant, size }), className)}
+    href={disabled ? undefined : href}
+    aria-disabled={disabled}
+    role={disabled ? 'link' : undefined}
+    tabindex={disabled ? -1 : undefined}
+    onclick={onclick}
+    ondblclick={ondblclick}
+    oncontextmenu={oncontextmenu}
+    {...restProps}
+  >
+    {@render children?.()}
+  </a>
 {:else}
-	<button
-		bind:this={ref}
-		data-slot="button"
-		class={cn(buttonVariants({ variant, size }), className)}
-		type={type}
-		disabled={disabled}
-		{...restProps}
-	>
-		{@render children?.()}
-	</button>
+  <button
+    bind:this={ref}
+    data-slot="button"
+    class={cn(buttonVariants({ variant, size }), className)}
+    type={type}
+    disabled={disabled}
+    onclick={onclick}
+    ondblclick={ondblclick}
+    oncontextmenu={oncontextmenu}
+    {...restProps}
+  >
+    {@render children?.()}
+  </button>
 {/if}

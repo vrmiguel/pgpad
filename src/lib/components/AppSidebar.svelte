@@ -118,7 +118,7 @@
 			<div class="flex flex-col items-center gap-3">
                 <button
                     class="hover:bg-sidebar-accent/80 rounded-lg p-2 transition-all duration-200 hover:shadow-md"
-                    on:click={toggleSidebar}
+                    onclick={toggleSidebar}
                     title="Expand sidebar">
 					<ChevronRight class="text-sidebar-foreground/70 h-4 w-4" />
 				</button>
@@ -126,7 +126,7 @@
                     size="icon-sm"
                     variant="outline"
                     class="shadow-md hover:shadow-lg"
-                    on:click={showConnectionForm}
+                    onclick={showConnectionForm}
                     title="Add Connection">
 					<Plus class="h-4 w-4" />
 				</Button>
@@ -137,7 +137,7 @@
 			<!-- Connections icon -->
             <button
                 class={collapsedIconButtonClass}
-                on:click={() => switchTab('connections')}
+                onclick={() => switchTab('connections')}
                 title="Connections"
             >
 				<Cable class={collapsedIconClass} />
@@ -146,7 +146,7 @@
 			<!-- items icon -->
             <button
                 class={collapsedIconButtonClass}
-                on:click={() => switchTab('items')}
+                onclick={() => switchTab('items')}
                 title="Database Items"
             >
 				<TableProperties class={collapsedIconClass} />
@@ -155,7 +155,7 @@
 			<!-- Scripts icon -->
             <button
                 class={collapsedIconButtonClass}
-                on:click={() => switchTab('scripts')}
+                onclick={() => switchTab('scripts')}
                 title="Scripts">
 				<FileJson class={collapsedIconClass} />
 			</button>
@@ -163,7 +163,7 @@
 			<!-- History icon -->
             <button
                 class={collapsedIconButtonClass}
-                on:click={() => switchTab('history')}
+                onclick={() => switchTab('history')}
                 title="Query History">
 				<History class={collapsedIconClass} />
 			</button>
@@ -180,7 +180,7 @@
 			</div>
             <button
                 class="hover:bg-sidebar-accent/80 rounded-lg p-2 transition-all duration-200 hover:shadow-md"
-                on:click={toggleSidebar}
+                onclick={toggleSidebar}
                 title="Collapse sidebar"
             >
 				<ChevronLeft class="text-sidebar-foreground/70 h-4 w-4" />

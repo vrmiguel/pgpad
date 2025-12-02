@@ -100,12 +100,12 @@
   </div>
 
   <div class="flex items-center gap-2 p-2">
-    <button class="border rounded-sm px-3 py-1 text-sm enabled:hover:bg-accent disabled:opacity-50" on:click={prevPage} disabled={loading || page <= 0}>Prev</button>
+    <button class="border rounded-sm px-3 py-1 text-sm enabled:hover:bg-accent disabled:opacity-50" onclick={prevPage} disabled={loading || page <= 0}>Prev</button>
     <span class="text-xs">Page {page + 1}</span>
-    <button class="border rounded-sm px-3 py-1 text-sm enabled:hover:bg-accent disabled:opacity-50" on:click={nextPage} disabled={loading || page + 1 >= totalPages}>Next</button>
+    <button class="border rounded-sm px-3 py-1 text-sm enabled:hover:bg-accent disabled:opacity-50" onclick={nextPage} disabled={loading || page + 1 >= totalPages}>Next</button>
     <div class="ml-auto flex items-center gap-2">
       <label class="text-xs" for="mssql_page_size">Page Size</label>
-      <select id="mssql_page_size" class="border rounded-sm bg-background px-2 py-1 text-sm" bind:value={pageSize} on:change={() => { page = 0; load(); }}>
+      <select id="mssql_page_size" class="border rounded-sm bg-background px-2 py-1 text-sm" bind:value={pageSize} onchange={() => { page = 0; load(); }}>
         <option value={25}>25</option>
         <option value={50}>50</option>
         <option value={100}>100</option>

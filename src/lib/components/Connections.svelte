@@ -175,17 +175,17 @@ import IconSimpleIconsMssql from '~icons/simple-icons/microsoftsqlserver';
 			</div>
 		{:else}
 			{#each connections as connection (connection.id)}
-				<Button
-					variant="ghost"
-					class="hover:bg-primary/20 w-full justify-start rounded-sm p-1 transition-all duration-200 {selectedConnection ===
-					connection.id
-						? 'bg-primary/20'
-						: 'hover:bg-background'}"
-					onclick={() => selectConnection(connection.id)}
-					ondblclick={() => connectToDatabase(connection.id)}
-					oncontextmenu={(event) => showContextMenu(event, connection)}
-					data-context-menu="true"
-				>
+                <Button
+                    variant="ghost"
+                    class="hover:bg-primary/20 w-full justify-start rounded-sm p-1 transition-all duration-200 {selectedConnection ===
+                    connection.id
+                        ? 'bg-primary/20'
+                        : 'hover:bg-background'}"
+                    onclick={() => selectConnection(connection.id)}
+                    ondblclick={() => connectToDatabase(connection.id)}
+                    oncontextmenu={(event) => showContextMenu(event, connection)}
+                    data-context-menu="true"
+                >
 					<div class="flex w-full items-center gap-2.5">
 						<div class="flex flex-shrink-0 items-center gap-2 pl-1">
 							<!-- Connection status dot -->
