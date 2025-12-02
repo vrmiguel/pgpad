@@ -387,6 +387,70 @@ pub async fn connect_to_database(
     }
 }
 
+fn is_valid_pg_identifier(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    if bytes.is_empty() { return false; }
+    if !(bytes[0].is_ascii_alphabetic() || bytes[0] == b'_') { return false; }
+    for &b in &bytes[1..] {
+        if !(b.is_ascii_alphanumeric() || b == b'_') { return false; }
+    }
+    true
+}
+
+#[tauri::command]
+pub async fn listen_postgres(
+    connection_id: Uuid,
+    channel: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    if !is_valid_pg_identifier(&channel) {
+        return Err(Error::Any(anyhow::anyhow!("Invalid channel identifier")));
+    }
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::Postgres { client: Some(client), .. } => {
+            let sql = format!("LISTEN {}", channel);
+            client.batch_execute(&sql).await.map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+            Ok(())
+        }
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
+    }
+}
+
+#[tauri::command]
+pub async fn unlisten_postgres(
+    connection_id: Uuid,
+    channel: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    let connection_entry = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?;
+    let connection = connection_entry.value();
+    match &connection.database {
+        Database::Postgres { client: Some(client), .. } => {
+            let sql = if let Some(ch) = channel.as_ref() {
+                if !is_valid_pg_identifier(ch) {
+                    return Err(Error::Any(anyhow::anyhow!("Invalid channel identifier")));
+                }
+                format!("UNLISTEN {}", ch)
+            } else {
+                String::from("UNLISTEN *")
+            };
+            client.batch_execute(&sql).await.map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+            Ok(())
+        }
+        Database::Postgres { client: None, .. } => Err(Error::Any(anyhow::anyhow!("Postgres connection not active"))),
+        _ => Err(Error::Any(anyhow::anyhow!("Connection is not Postgres"))),
+    }
+}
+
 #[tauri::command]
 #[allow(dead_code)]
 pub async fn oracle_ping_now(
@@ -2365,3 +2429,4 @@ pub async fn set_oracle_settings(
     state.storage.set_setting(&key, &s)?;
     Ok(())
 }
+                    // Notifications can be consumed by issuing LISTEN and polling via client in the UI loop if needed.
