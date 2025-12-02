@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { Commands } from '$lib/commands.svelte';
 
   interface Props {
@@ -38,7 +37,7 @@
       const parsed = JSON.parse(raw || '{}');
       indexes = parsed.indexes || [];
       totalCount = parsed.total_count || 0;
-    } catch (e) {
+    } catch {
       indexes = [];
       totalCount = 0;
     } finally {
@@ -109,7 +108,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each indexes as it}
+          {#each indexes as it (it.index_name + ':' + it.table_name)}
             <tr class="border-t">
               <td class="p-2">{it.index_name}</td>
               <td class="p-2">{it.table_name}</td>

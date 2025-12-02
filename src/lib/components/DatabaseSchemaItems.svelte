@@ -12,7 +12,7 @@
 
 	let { databaseSchema, loadingSchema, selectedConnection, databaseType = null, onTableClick }: Props = $props();
 
-	const isDuckDB = $derived(!!databaseType && 'DuckDB' in (databaseType as any));
+	const isDuckDB = $derived(!!databaseType && 'DuckDB' in (databaseType as DatabaseInfo));
 
 	const sortedTables = $derived(
 		databaseSchema?.tables?.toSorted((a, b) => a.name.localeCompare(b.name)) || []

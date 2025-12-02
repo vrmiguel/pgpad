@@ -7,7 +7,6 @@
 		X,
 		CheckCircle,
 		AlertCircle,
-		Info,
 		FolderOpen,
 		FilePlus,
 		FileCheck
@@ -16,7 +15,6 @@
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
 	import IconSimpleIconsDuckdb from '~icons/simple-icons/duckdb';
-	import IconSimpleIconsOracle from '~icons/simple-icons/oracle';
 	import IconSimpleIconsMssql from '~icons/simple-icons/microsoftsqlserver';
 
 import { Commands, type DatabaseInfo, type ConnectionInfo, type OracleSettings } from '$lib/commands.svelte';
@@ -51,7 +49,7 @@ async function loadOracleSettingsForEditing() {
     loadingOracleSettings = true;
     try {
         oracleSettings = await Commands.getOracleSettings(editingConnection.id);
-    } catch (e) {
+    } catch {
         oracleSettings = null;
     } finally {
         loadingOracleSettings = false;
@@ -445,7 +443,7 @@ function clearOracleWalletDir() {
                             <FormRow label="Oracle XPLAN format" forId="ora_xplan_format" size="sm">
                                 <select id="ora_xplan_format" class="rounded border px-2 py-1 w-full"
                                     value={oracleSettings?.xplan_format ?? ''}
-                                    onchange={(e) => updateOracleSetting('xplan_format', (e.target as HTMLSelectElement).value as any)}
+                                    onchange={(e) => updateOracleSetting('xplan_format', (e.target as HTMLSelectElement).value as OracleSettings['xplan_format'])}
                                 >
                                     <option value="TYPICAL">TYPICAL</option>
                                     <option value="BASIC">BASIC</option>
@@ -456,7 +454,7 @@ function clearOracleWalletDir() {
                             <FormRow label="XPLAN mode" forId="ora_xplan_mode" size="sm">
                                 <select id="ora_xplan_mode" class="rounded border px-2 py-1 w-full"
                                     value={oracleSettings?.xplan_mode ?? ''}
-                                    onchange={(e) => updateOracleSetting('xplan_mode', (e.target as HTMLSelectElement).value as any)}
+                                    onchange={(e) => updateOracleSetting('xplan_mode', (e.target as HTMLSelectElement).value as OracleSettings['xplan_mode'])}
                                 >
                                     <option value="display">display</option>
                                     <option value="display_cursor">display_cursor</option>
@@ -465,7 +463,7 @@ function clearOracleWalletDir() {
                             <FormRow label="RAW format" forId="ora_raw_format" size="sm">
                                 <select id="ora_raw_format" class="rounded border px-2 py-1 w-full"
                                     value={oracleSettings?.raw_format ?? ''}
-                                    onchange={(e) => updateOracleSetting('raw_format', (e.target as HTMLSelectElement).value as any)}
+                                    onchange={(e) => updateOracleSetting('raw_format', (e.target as HTMLSelectElement).value as OracleSettings['raw_format'])}
                                 >
                                     <option value="preview">preview</option>
                                     <option value="hex">hex</option>
@@ -480,7 +478,7 @@ function clearOracleWalletDir() {
                             <FormRow label="BLOB streaming" forId="ora_blob_stream" size="sm">
                                 <select id="ora_blob_stream" class="rounded border px-2 py-1 w-full"
                                     value={oracleSettings?.blob_stream ?? ''}
-                                    onchange={(e) => updateOracleSetting('blob_stream', (e.target as HTMLSelectElement).value as any)}
+                                    onchange={(e) => updateOracleSetting('blob_stream', (e.target as HTMLSelectElement).value as OracleSettings['blob_stream'])}
                                 >
                                     <option value="len">len</option>
                                     <option value="stream">stream</option>

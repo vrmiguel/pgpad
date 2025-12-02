@@ -1,9 +1,7 @@
 <script lang="ts">
 import { Button } from '$lib/components/ui/button';
 import { Commands, type OracleSettings } from '$lib/commands.svelte';
-import FormRow from '$lib/components/ui/FormRow.svelte';
-import OracleIndexesPanel from '$lib/components/oracle/OracleIndexesPanel.svelte';
-import MssqlIndexesPanel from '$lib/components/mssql/MssqlIndexesPanel.svelte';
+ 
 
 interface Props {
     selectedConnection: string | null;
@@ -47,10 +45,7 @@ $effect(() => {
         }
     }
 
-    function update<K extends keyof OracleSettings>(key: K, value: OracleSettings[K]) {
-        if (!settings) settings = {};
-        settings[key] = value;
-    }
+    
 
     async function save() {
         if (!settings) return;

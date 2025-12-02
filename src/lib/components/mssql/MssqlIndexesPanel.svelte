@@ -26,7 +26,7 @@
       const parsed = JSON.parse(raw || '{}');
       data = parsed.data || [];
       totalPages = parsed.total_pages || 0;
-    } catch (e) {
+    } catch {
       data = [];
       totalPages = 0;
     } finally {
@@ -80,7 +80,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each data as it}
+          {#each data as it (it.schema_name + '.' + it.table_name + '.' + it.index_name)}
             <tr class="border-t">
               <td class="p-2">{it.schema_name}</td>
               <td class="p-2">{it.table_name}</td>

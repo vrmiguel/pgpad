@@ -224,12 +224,9 @@ import IconSimpleIconsMssql from '~icons/simple-icons/microsoftsqlserver';
                                 {:else if 'DuckDB' in connection.database_type}
                                     {connection.database_type.DuckDB.db_path.split('/').pop() ||
                                         connection.database_type.DuckDB.db_path}
-                                {:else if 'Oracle' in connection.database_type}
-                                    {connection.database_type.Oracle.connection_string
-                                        .replace(/^oracle:\/\/[^@]*@/, '')}
                                 {:else if 'Mssql' in connection.database_type}
                                     {connection.database_type.Mssql.connection_string
-                                        .replace(/^sqlserver:\/\/[^@]*@/, '')
+                                        .replace(/^sqlserver:\/\/[^@]*@/, '')}
                                         .replace(/;.*$/, '')}
                                 {:else if 'Oracle' in connection.database_type}
                                     {connection.database_type.Oracle.tns_alias ||
