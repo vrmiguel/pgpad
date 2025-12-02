@@ -52,7 +52,7 @@ fn execute_query_with_results(
                 Ok(mut rows) => {
                     sender.send(QueryExecEvent::TypesResolved { columns })?;
 
-                    let mut total_rows = 0;
+                    let mut _total_rows = 0;
             let batch_size = settings.and_then(|s| s.batch_size).or_else(|| env::var("PGPAD_BATCH_SIZE").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n>0)).unwrap_or(50);
             let mut writer = match settings { Some(s) => RowWriter::with_settings(column_types, Some(s)), None => RowWriter::new(column_types) };
 
@@ -60,7 +60,7 @@ fn execute_query_with_results(
                         match rows.next() {
                             Ok(Some(row)) => {
                                 writer.add_row(row)?;
-                                total_rows += 1;
+                                _total_rows += 1;
 
                                 if writer.len() >= batch_size {
                                     sender.send(QueryExecEvent::Page {
@@ -98,8 +98,7 @@ fn execute_query_with_results(
 
                     let duration = started_at.elapsed().as_millis() as u64;
                     log::info!(
-                        "SQLite query completed: {} rows in {}ms",
-                        total_rows,
+                        "SQLite query completed in {}ms",
                         duration
                     );
 
