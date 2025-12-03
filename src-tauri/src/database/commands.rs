@@ -268,10 +268,29 @@ pub async fn connect_to_database(
                 .storage
                 .get_setting("vacuum_on_pagesize")?
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+            let plain_page_size = state
+                .storage
+                .get_setting("plain_page_size")?
+                .and_then(|v| v.parse::<u32>().ok())
+                .or_else(|| {
+                    std::env::var("PGPAD_SQLITE_PLAIN_PAGE_SIZE")
+                        .ok()
+                        .and_then(|v| v.parse::<u32>().ok())
+                });
+            let plain_vacuum = state
+                .storage
+                .get_setting("vacuum_on_plain_pagesize")?
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .or_else(|| {
+                    std::env::var("PGPAD_SQLITE_PLAIN_VACUUM_ON_PAGESIZE")
+                        .ok()
+                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                });
             match tokio::task::spawn_blocking(move || {
                 match rusqlite::Connection::open(&db_path_cl) {
                     Ok(conn) => {
-                        if let Some(pw) = credentials::get_password(&connection_id_cl)? {
+                        let pw_opt = credentials::get_password(&connection_id_cl)?;
+                        if let Some(pw) = pw_opt {
                             let secret = secrecy::SecretString::new(pw);
                             let cfg = crate::utils::sqlite_cipher::CipherSettings {
                                 kdf_iter,
@@ -285,6 +304,11 @@ pub async fn connect_to_database(
                                 &conn, &secret, &cfg,
                             )?;
                             crate::utils::sqlite_cipher::verify_cipher_ok(&conn)?;
+                        } else if let Some(ps) = plain_page_size {
+                            let _ = conn.execute("PRAGMA page_size = ?1", [ps]);
+                            if plain_vacuum.unwrap_or(false) {
+                                let _ = conn.execute_batch("VACUUM");
+                            }
                         }
                         crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
                         Ok(conn)

@@ -673,6 +673,19 @@ impl Storage {
 
     fn open_plain(db_path: &PathBuf) -> anyhow::Result<Connection> {
         let conn = Connection::open(db_path)?;
+        if let Some(ps) = std::env::var("PGPAD_SQLITE_PLAIN_PAGE_SIZE")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+        {
+            let _ = conn.execute("PRAGMA page_size = ?1", [ps]);
+            if std::env::var("PGPAD_SQLITE_PLAIN_VACUUM_ON_PAGESIZE")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+            {
+                let _ = conn.execute_batch("VACUUM");
+            }
+        }
         crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
         Ok(conn)
     }
@@ -716,6 +729,13 @@ impl Storage {
         }
 
         let plain_conn = plain;
+        if let Some(ps) = std::env::var("PGPAD_SQLITE_PLAIN_PAGE_SIZE")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+        {
+            let _ = plain_conn.execute("PRAGMA page_size = ?1", [ps]);
+            let _ = plain_conn.execute_batch("VACUUM");
+        }
         let key = Self::get_or_create_app_key()?;
         let cfg = Self::env_cipher_settings();
         crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted_with(
