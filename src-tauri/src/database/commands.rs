@@ -339,6 +339,12 @@ pub async fn connect_to_database(
                                 &conn, &secret, &cfg,
                             )?;
                             crate::utils::sqlite_cipher::verify_cipher_ok(&conn)?;
+                            if let Some(ps) = plain_page_size {
+                                let _ = conn.execute("PRAGMA page_size = ?1", [ps]);
+                                if plain_vacuum.unwrap_or(false) {
+                                    let _ = conn.execute_batch("VACUUM");
+                                }
+                            }
                         } else if let Some(ps) = plain_page_size {
                             let _ = conn.execute("PRAGMA page_size = ?1", [ps]);
                             if plain_vacuum.unwrap_or(false) {
