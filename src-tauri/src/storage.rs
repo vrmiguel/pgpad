@@ -5,8 +5,9 @@ use anyhow::Context;
 use keyring::Entry;
 use rand::RngCore;
 use rusqlite::{types::Type, Connection};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use uuid::Uuid;
 
 // Gotta match the IDs in the DB
@@ -123,6 +124,7 @@ pub struct SavedQuery {
 #[derive(Debug)]
 pub struct Storage {
     conn: Mutex<Connection>,
+    db_path: PathBuf,
 }
 
 impl Storage {
@@ -138,6 +140,7 @@ impl Storage {
 
         Ok(Self {
             conn: Mutex::new(conn),
+            db_path,
         })
     }
 
@@ -640,36 +643,23 @@ impl Storage {
             }
         }
 
-        match Entry::new("pgpad", "app_storage_key") {
-            Ok(entry) => match entry.get_password() {
-                Ok(pw) => {
-                    let valid = pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit());
-                    if valid {
-                        Ok(SecretString::new(pw))
-                    } else {
-                        let mut buf = [0u8; 32];
-                        rand::thread_rng().fill_bytes(&mut buf);
-                        let key = hex::encode(buf);
-                        entry.set_password(&key)?;
-                        Ok(SecretString::new(key))
-                    }
+        if let Ok(entry) = Entry::new("pgpad", "app_storage_key") {
+            if let Ok(pw) = entry.get_password() {
+                let valid = pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit());
+                if valid {
+                    return Ok(SecretString::new(pw));
                 }
-                Err(keyring::Error::NoEntry) => {
-                    let mut buf = [0u8; 32];
-                    rand::thread_rng().fill_bytes(&mut buf);
-                    let key = hex::encode(buf);
-                    entry.set_password(&key)?;
-                    Ok(SecretString::new(key))
-                }
-                Err(e) => Err(anyhow::anyhow!(e.to_string())),
-            },
-            Err(_e) => {
-                let mut buf = [0u8; 32];
-                rand::thread_rng().fill_bytes(&mut buf);
-                let key = hex::encode(buf);
-                Ok(SecretString::new(key))
             }
+            let mut buf = [0u8; 32];
+            rand::thread_rng().fill_bytes(&mut buf);
+            let key = hex::encode(buf);
+            let _ = entry.set_password(&key);
+            return Ok(SecretString::new(key));
         }
+        let mut buf = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut buf);
+        let key = hex::encode(buf);
+        Ok(SecretString::new(key))
     }
 
     fn open_encrypted(db_path: &PathBuf) -> anyhow::Result<Connection> {
@@ -745,6 +735,113 @@ impl Storage {
         let migrator = Migrator::new();
         migrator.migrate(&mut enc_conn)?;
         Ok(enc_conn)
+    }
+
+    pub fn apply_storage_cipher_settings_current(&self) -> Result<()> {
+        let kdf_iter = self
+            .get_setting("cipher_kdf_iter")?
+            .and_then(|v| v.parse::<u32>().ok());
+        let page_size = self
+            .get_setting("cipher_page_size")?
+            .and_then(|v| v.parse::<u32>().ok());
+        let use_hmac = self
+            .get_setting("cipher_use_hmac")?
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        let cfg = crate::utils::sqlite_cipher::CipherSettings {
+            kdf_iter,
+            page_size,
+            use_hmac,
+        };
+        let key = Self::get_or_create_app_key()?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+        crate::utils::sqlite_cipher::apply_cipher_settings_with(&conn, &key, &cfg)
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+        crate::utils::sqlite_cipher::verify_cipher_ok(&conn)
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+        Ok(())
+    }
+
+    pub fn maintenance(&self) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+        let _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)", []);
+        let _ = conn.execute("PRAGMA optimize", []);
+        Ok(())
+    }
+
+    fn set_app_key(new_key: &secrecy::SecretString) -> anyhow::Result<()> {
+        if let Ok(entry) = Entry::new("pgpad", "app_storage_key") {
+            entry.set_password(new_key.expose_secret())?;
+        }
+        Ok(())
+    }
+
+    pub fn rotate_key(&self, secure_delete_backup: bool) -> Result<()> {
+        let db_path = &self.db_path;
+        let _key = Self::get_or_create_app_key()?;
+        // Generate new key
+        let mut buf = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut buf);
+        let new_hex = hex::encode(buf);
+        let new_key = secrecy::SecretString::new(new_hex);
+        // Export to new encrypted file with new key
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+        let new_path = db_path.with_extension("db.new");
+        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted(
+            &conn, &new_path, &new_key,
+        )
+        .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+        drop(conn);
+        // Backup and replace
+        let backup_path = db_path.with_extension("db.bak");
+        std::fs::rename(db_path, &backup_path)
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+        std::fs::rename(&new_path, db_path)
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+        // Update key store
+        Self::set_app_key(&new_key)?;
+        // Reopen with new key
+        let enc_conn = Self::open_encrypted(db_path)
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+        let ci = enc_conn
+            .pragma_query_value(None, "cipher_integrity_check", |row| {
+                row.get::<_, String>(0)
+            })
+            .unwrap_or_else(|_| String::from("error"));
+        if ci != "ok" {
+            return Err(crate::Error::Any(anyhow::anyhow!(
+                "cipher integrity check failed: {}",
+                ci
+            )));
+        }
+        // Swap connection
+        {
+            let mut guard = self
+                .conn
+                .lock()
+                .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+            let _ = std::mem::replace(&mut *guard, enc_conn);
+        }
+        // Optionally secure delete backup (best-effort simple overwrite)
+        if secure_delete_backup {
+            if let Ok(meta) = std::fs::metadata(&backup_path) {
+                let len = meta.len() as usize;
+                if let Ok(mut f) = std::fs::OpenOptions::new().write(true).open(&backup_path) {
+                    let zeros = vec![0u8; len.min(1024 * 1024)];
+                    let _ = f.write_all(&zeros);
+                }
+            }
+            let _ = std::fs::remove_file(&backup_path);
+        }
+        Ok(())
     }
 }
 

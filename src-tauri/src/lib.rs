@@ -88,6 +88,10 @@ pub fn run() {
             let handle = app.handle();
             let monitor = ConnectionMonitor::new(handle.clone());
             handle.manage(monitor);
+            // Apply storage cipher settings from app settings at startup
+            if let Some(state) = app.try_state::<AppState>() {
+                let _ = state.storage.apply_storage_cipher_settings_current();
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -162,6 +166,9 @@ pub fn run() {
             database::commands::delete_script,
             database::commands::save_session_state,
             database::commands::get_session_state,
+            database::commands::apply_storage_cipher_settings,
+            database::commands::storage_maintenance,
+            database::commands::rotate_storage_key,
             database::commands::get_encryption_settings,
             database::commands::set_encryption_settings,
             window::commands::minimize_window,

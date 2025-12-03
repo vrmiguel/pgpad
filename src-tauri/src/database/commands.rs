@@ -1356,6 +1356,37 @@ pub async fn set_encryption_settings(
 }
 
 #[tauri::command]
+pub async fn apply_storage_cipher_settings(state: tauri::State<'_, AppState>) -> Result<(), Error> {
+    let storage = state.storage.clone();
+    tokio::task::spawn_blocking(move || storage.apply_storage_cipher_settings_current())
+        .await
+        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))??;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn storage_maintenance(state: tauri::State<'_, AppState>) -> Result<(), Error> {
+    let storage = state.storage.clone();
+    tokio::task::spawn_blocking(move || storage.maintenance())
+        .await
+        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))??;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rotate_storage_key(
+    secure_delete_backup: Option<bool>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    let storage = state.storage.clone();
+    let sdb = secure_delete_backup.unwrap_or(false);
+    tokio::task::spawn_blocking(move || storage.rotate_key(sdb))
+        .await
+        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))??;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_oracle_indexes(
     connection_id: Uuid,
     table_name: Option<String>,

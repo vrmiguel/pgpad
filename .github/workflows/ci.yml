@@ -63,4 +63,6 @@ jobs:
       - uses: ikalnytskyi/action-setup-postgres@v8
         id: postgres
       - name: Run unit tests
+        env:
+          PGPAD_APP_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
         run: cargo test --locked
