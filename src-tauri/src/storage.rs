@@ -673,6 +673,19 @@ impl Storage {
         Ok(conn)
     }
 
+    fn open_encrypted_with_key(
+        db_path: &PathBuf,
+        key: &secrecy::SecretString,
+    ) -> anyhow::Result<Connection> {
+        let conn = Connection::open(db_path)?;
+        let cfg = Self::env_cipher_settings();
+        let _ = crate::utils::sqlite_cipher::apply_cipher_defaults(&conn, &cfg);
+        crate::utils::sqlite_cipher::apply_cipher_settings_with(&conn, key, &cfg)?;
+        let common = Self::settings_common_pragmas();
+        crate::utils::sqlite_cipher::apply_common_settings_with(&conn, &common)?;
+        Ok(conn)
+    }
+
     fn open_plain(db_path: &PathBuf) -> anyhow::Result<Connection> {
         let conn = Connection::open(db_path)?;
         if let Some(ps) = std::env::var("PGPAD_SQLITE_PLAIN_PAGE_SIZE")
@@ -856,9 +869,13 @@ impl Storage {
                         .unwrap_or_else(|_| String::from("error"));
                     if ck == "ok" {
                         drop(conn);
-                        Self::set_app_key(&new_key)?;
-                        let enc_conn = Self::open_encrypted(db_path)
-                            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let set_ok = Self::set_app_key(&new_key).is_ok();
+                        let enc_conn = if set_ok {
+                            Self::open_encrypted(db_path)
+                        } else {
+                            Self::open_encrypted_with_key(db_path, &new_key)
+                        }
+                        .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
                         let mut guard = self
                             .conn
                             .lock()

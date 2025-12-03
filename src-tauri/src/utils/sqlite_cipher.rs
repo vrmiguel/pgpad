@@ -222,17 +222,50 @@ pub fn attach_and_export_plain_to_encrypted_with(
     cfg: &CipherSettings,
 ) -> anyhow::Result<()> {
     let path_str = new_path.display().to_string().replace("'", "''");
-    let key_str = key.expose_secret().replace("'", "''");
+    let mut pass = normalize_passphrase(key.expose_secret());
+    let is_raw_hex = pass.starts_with("hex:")
+        && pass[4..].len().is_multiple_of(2)
+        && pass[4..].chars().all(|c| c.is_ascii_hexdigit());
+    let attach_sql = if is_raw_hex {
+        format!(
+            "ATTACH DATABASE '{}' AS cipher_db KEY \"x'{}'\";",
+            path_str,
+            &pass[4..]
+        )
+    } else {
+        let escaped = pass.replace("'", "''");
+        format!(
+            "ATTACH DATABASE '{}' AS cipher_db KEY '{}';",
+            path_str, escaped
+        )
+    };
     let _ = crate::utils::sqlite_cipher::apply_cipher_defaults(conn, cfg);
-    let attach_sql = format!(
-        "ATTACH DATABASE '{}' AS cipher_db KEY '{}';",
-        path_str, key_str
-    );
     if conn.execute_batch(&attach_sql).is_ok() {
         // Force key derivation on the attached alias
         let _ = conn.query_row("SELECT COUNT(*) FROM cipher_db.sqlite_master", [], |r| {
             r.get::<_, i64>(0)
         });
+        // Apply cipher settings to attached database alias
+        let compat = cfg.compatibility.unwrap_or(4);
+        let page = cfg.page_size.unwrap_or(4096);
+        let kdf = cfg.kdf_iter.unwrap_or(256000);
+        let _ = conn.execute_batch(&format!(
+            "PRAGMA cipher_db.cipher_compatibility = {};
+PRAGMA cipher_db.cipher_page_size = {};
+PRAGMA cipher_db.kdf_iter = {};",
+            compat, page, kdf
+        ));
+        if cfg.use_hmac.unwrap_or(true) {
+            let _ = conn.execute("PRAGMA cipher_db.cipher_use_hmac = ON", []);
+        } else {
+            let _ = conn.execute("PRAGMA cipher_db.cipher_use_hmac = OFF", []);
+        }
+        if let Some(p) = cfg.plaintext_header_size {
+            let _ = conn.execute(
+                &format!("PRAGMA cipher_db.cipher_plaintext_header_size = {}", p),
+                [],
+            );
+        }
         // Minimal export path after derivation
         conn.execute_batch("SELECT sqlcipher_export('cipher_db');")
             .context("Failed to export to encrypted database")?;
@@ -240,6 +273,7 @@ pub fn attach_and_export_plain_to_encrypted_with(
             let _ = conn.execute_batch("VACUUM");
         }
         let _ = conn.execute_batch("DETACH DATABASE cipher_db;");
+        pass.zeroize();
         return Ok(());
     }
     // Fallback (non-Windows): use sqlite backup API to copy plain -> encrypted
