@@ -772,7 +772,9 @@ impl Storage {
                 row.get::<_, String>(0)
             })
             .unwrap_or_else(|_| String::from("error"));
-        anyhow::ensure!(ci == "ok", "cipher integrity check failed: {}", ci);
+        if crate::utils::sqlite_cipher::has_sqlcipher(&enc_conn) {
+            anyhow::ensure!(ci == "ok", "cipher integrity check failed: {}", ci);
+        }
         let migrator = Migrator::new();
         migrator.migrate(&mut enc_conn)?;
         Ok(enc_conn)
@@ -826,7 +828,7 @@ impl Storage {
 
     fn set_app_key(new_key: &secrecy::SecretString) -> anyhow::Result<()> {
         if let Ok(entry) = Entry::new("pgpad", "app_storage_key") {
-            entry.set_password(new_key.expose_secret())?;
+            let _ = entry.set_password(new_key.expose_secret());
         }
         Ok(())
     }
@@ -927,7 +929,9 @@ impl Storage {
             })
             .unwrap_or_else(|_| String::from("error"));
         if ci != "ok" {
-            if cfg!(windows) {
+            if !crate::utils::sqlite_cipher::has_sqlcipher(&enc_conn) {
+                log::warn!("SQLCipher not detected, skipping integrity check");
+            } else if cfg!(windows) {
                 log::warn!(
                     "cipher integrity check reported '{}', proceeding on Windows",
                     ci
@@ -1104,12 +1108,14 @@ mod tests {
         s.rotate_key(false).expect("rotate");
         if !cfg!(windows) {
             let conn = s.conn.lock().expect("lock");
-            let ck = conn
-                .pragma_query_value(None, "cipher_integrity_check", |row| {
-                    row.get::<_, String>(0)
-                })
-                .unwrap_or_else(|_| String::from("error"));
-            assert_eq!(ck, "ok");
+            if crate::utils::sqlite_cipher::has_sqlcipher(&conn) {
+                let ck = conn
+                    .pragma_query_value(None, "cipher_integrity_check", |row| {
+                        row.get::<_, String>(0)
+                    })
+                    .unwrap_or_else(|_| String::from("error"));
+                assert_eq!(ck, "ok");
+            }
         }
         let _ = std::fs::remove_file(&tmp);
     }

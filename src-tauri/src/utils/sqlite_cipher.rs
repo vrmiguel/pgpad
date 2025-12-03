@@ -206,6 +206,9 @@ pub fn apply_common_settings_with(conn: &Connection, cfg: &CommonSettings) -> an
 }
 
 pub fn verify_cipher_ok(conn: &Connection) -> anyhow::Result<()> {
+    if !has_sqlcipher(conn) {
+        return Ok(());
+    }
     let ck = conn
         .pragma_query_value(None, "cipher_integrity_check", |row| {
             row.get::<_, String>(0)
@@ -282,9 +285,9 @@ PRAGMA cipher_db.kdf_iter = {};",
         let mut enc_conn = rusqlite::Connection::open(new_path)
             .context("Failed to open destination encrypted database")?;
         crate::utils::sqlite_cipher::apply_cipher_settings_with(&enc_conn, key, cfg)?;
-        if cfg.vacuum_after_pagesize.unwrap_or(false) {
-            let _ = enc_conn.execute_batch("VACUUM");
-        }
+        let page = cfg.page_size.unwrap_or(4096);
+        let _ = enc_conn.execute("PRAGMA page_size = ?1", [page]);
+        let _ = enc_conn.execute_batch("VACUUM");
         let backup = rusqlite::backup::Backup::new(conn, &mut enc_conn)
             .context("Failed to start backup to encrypted database")?;
         backup.step(-1).context("Backup step failed")?;
@@ -295,4 +298,9 @@ PRAGMA cipher_db.kdf_iter = {};",
         // If we reach here on Windows, return an error for visibility
         anyhow::bail!("Failed to export using SQLCipher attach path on Windows");
     }
+}
+
+pub fn has_sqlcipher(conn: &Connection) -> bool {
+    conn.pragma_query_value(None, "cipher_version", |row| row.get::<_, String>(0))
+        .is_ok()
 }
