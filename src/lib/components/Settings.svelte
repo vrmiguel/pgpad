@@ -1,6 +1,6 @@
 <script lang="ts">
-import { Button } from '$lib/components/ui/button';
-import { Commands, type OracleSettings } from '$lib/commands.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Commands, type OracleSettings } from '$lib/commands.svelte';
 
 	interface Props {
 		selectedConnection: string | null;
@@ -12,11 +12,11 @@ import { Commands, type OracleSettings } from '$lib/commands.svelte';
 	let scope = $state<'connection' | 'global'>(selectedConnection ? 'connection' : 'global');
 	let settings = $state<OracleSettings | null>(null);
 	let loading = $state(false);
-let saving = $state(false);
-let reconnecting = $state(false);
-let lastSettingsKey = $state<string | null>(null);
-let encryptionEnabled = $state(true);
-let encryptionKeyStorage = $state<'keychain' | 'prompt'>('keychain');
+	let saving = $state(false);
+	let reconnecting = $state(false);
+	let lastSettingsKey = $state<string | null>(null);
+	let encryptionEnabled = $state(true);
+	let encryptionKeyStorage = $state<'keychain' | 'prompt'>('keychain');
 
 	$effect(() => {
 		if (!selectedConnection) {
@@ -34,23 +34,25 @@ let encryptionKeyStorage = $state<'keychain' | 'prompt'>('keychain');
 		loadSettings(connId ?? undefined);
 	});
 
-async function loadSettings(connId?: string) {
-    loading = true;
-    try {
-        settings = await Commands.getOracleSettings(connId);
-        const enc = await Commands.getEncryptionSettings();
-        try {
-            const obj = JSON.parse(enc) as { enabled: boolean; key_storage: string };
-            encryptionEnabled = !!obj.enabled;
-            encryptionKeyStorage = (obj.key_storage === 'prompt' ? 'prompt' : 'keychain');
-        } catch {}
-    } catch (e) {
-        console.error('Failed to load settings', e);
-        settings = null;
-    } finally {
-        loading = false;
-    }
-}
+	async function loadSettings(connId?: string) {
+		loading = true;
+		try {
+			settings = await Commands.getOracleSettings(connId);
+			const enc = await Commands.getEncryptionSettings();
+			try {
+				const obj = JSON.parse(enc) as { enabled: boolean; key_storage: string };
+				encryptionEnabled = !!obj.enabled;
+				encryptionKeyStorage = obj.key_storage === 'prompt' ? 'prompt' : 'keychain';
+			} catch (e) {
+				console.warn('Invalid encryption settings JSON', e);
+			}
+		} catch (e) {
+			console.error('Failed to load settings', e);
+			settings = null;
+		} finally {
+			loading = false;
+		}
+	}
 
 	async function save() {
 		if (!settings) return;
@@ -106,34 +108,38 @@ async function loadSettings(connId?: string) {
 	{#if loading}
 		<div class="text-muted-foreground text-sm">Loading settings…</div>
 	{:else}
-<div class="rounded-lg border p-5">
-    <h3 class="mb-3 text-base font-semibold">Global Settings</h3>
-    <p class="text-muted-foreground text-sm">
-        Oracle‑specific settings have been moved to the connection dialog (Edit → Oracle Settings).
-        Reconnect and formatting options are now configured per connection.
-    </p>
-    <div class="mt-4 grid grid-cols-2 gap-4">
-        <div>
-            <label class="mb-2 block text-sm font-medium">Database Encryption</label>
-            <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" bind:checked={encryptionEnabled} />
-                <span>Enable app storage encryption</span>
-            </label>
-        </div>
-        <div>
-            <label class="mb-2 block text-sm font-medium">Key Storage Mode</label>
-            <select class="w-40 rounded border px-2 py-1" bind:value={encryptionKeyStorage}>
-                <option value="keychain">Keychain</option>
-                <option value="prompt">Prompt at startup</option>
-            </select>
-        </div>
-        <div class="col-span-2">
-            <Button onclick={() => Commands.setEncryptionSettings(encryptionEnabled, encryptionKeyStorage)} disabled={saving || loading} variant="outline">
-                Save Encryption Settings
-            </Button>
-        </div>
-    </div>
-</div>
+		<div class="rounded-lg border p-5">
+			<h3 class="mb-3 text-base font-semibold">Global Settings</h3>
+			<p class="text-muted-foreground text-sm">
+				Oracle‑specific settings have been moved to the connection dialog (Edit → Oracle Settings).
+				Reconnect and formatting options are now configured per connection.
+			</p>
+			<div class="mt-4 grid grid-cols-2 gap-4">
+				<div>
+					<label class="mb-2 block text-sm font-medium">Database Encryption</label>
+					<label class="flex items-center gap-2 text-sm">
+						<input type="checkbox" bind:checked={encryptionEnabled} />
+						<span>Enable app storage encryption</span>
+					</label>
+				</div>
+				<div>
+					<label class="mb-2 block text-sm font-medium">Key Storage Mode</label>
+					<select class="w-40 rounded border px-2 py-1" bind:value={encryptionKeyStorage}>
+						<option value="keychain">Keychain</option>
+						<option value="prompt">Prompt at startup</option>
+					</select>
+				</div>
+				<div class="col-span-2">
+					<Button
+						onclick={() => Commands.setEncryptionSettings(encryptionEnabled, encryptionKeyStorage)}
+						disabled={saving || loading}
+						variant="outline"
+					>
+						Save Encryption Settings
+					</Button>
+				</div>
+			</div>
+		</div>
 	{/if}
 </div>
 

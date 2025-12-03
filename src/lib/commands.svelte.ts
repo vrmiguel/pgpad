@@ -23,7 +23,7 @@ export type DatabaseInfo =
 	| {
 			Oracle: { connection_string: string; wallet_path?: string | null; tns_alias?: string | null };
 	  }
-    | { SQLite: { db_path: string; passphrase?: string | null } }
+	| { SQLite: { db_path: string; passphrase?: string | null } }
 	| { DuckDB: { db_path: string } };
 
 export interface ConnectionInfo {
@@ -227,25 +227,25 @@ export class Commands {
 		return await invoke('save_session_state', { sessionData });
 	}
 
-  static async getSessionState(): Promise<string | null> {
-    return await invoke('get_session_state');
-  }
+	static async getSessionState(): Promise<string | null> {
+		return await invoke('get_session_state');
+	}
 
-  static async getEncryptionSettings(): Promise<string> {
-    return await invoke('get_encryption_settings');
-  }
+	static async getEncryptionSettings(): Promise<string> {
+		return await invoke('get_encryption_settings');
+	}
 
-  static async setEncryptionSettings(enabled: boolean, keyStorage: string): Promise<void> {
-    await invoke('set_encryption_settings', { enabled, keyStorage });
-  }
+	static async setEncryptionSettings(enabled: boolean, keyStorage: string): Promise<void> {
+		await invoke('set_encryption_settings', { enabled, keyStorage });
+	}
 
-  static async pickSqliteDbDialog(): Promise<string | null> {
-    return await invoke('open_sqlite_db');
-  }
+	static async pickSqliteDbDialog(): Promise<string | null> {
+		return await invoke('open_sqlite_db');
+	}
 
-  static async pickSqlcipherDbDialog(): Promise<string | null> {
-    return await invoke('open_sqlcipher_db');
-  }
+	static async pickSqlcipherDbDialog(): Promise<string | null> {
+		return await invoke('open_sqlcipher_db');
+	}
 
 	static async saveSqliteDbDialog(): Promise<string | null> {
 		return await invoke('save_sqlite_db');

@@ -812,9 +812,7 @@ pub async fn cancel_postgres(
             .await
             {
                 Ok((client, _)) => {
-                    let _ = client
-                        .execute("SELECT pg_cancel_backend($1)", &[pid])
-                        .await;
+                    let _ = client.execute("SELECT pg_cancel_backend($1)", &[pid]).await;
                     Ok(())
                 }
                 Err(e) => Err(Error::Any(anyhow::anyhow!(format!(
