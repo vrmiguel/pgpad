@@ -2,6 +2,13 @@ use anyhow::Context;
 use rusqlite::Connection;
 use secrecy::{ExposeSecret, SecretString};
 
+#[derive(Default)]
+pub struct CipherSettings {
+    pub kdf_iter: Option<u32>,
+    pub page_size: Option<u32>,
+    pub use_hmac: Option<bool>,
+}
+
 pub fn apply_cipher_settings(conn: &Connection, key: &SecretString) -> anyhow::Result<()> {
     conn.pragma_update(None, "key", key.expose_secret())
         .context("Failed to apply SQLCipher key")?;
@@ -12,6 +19,30 @@ pub fn apply_cipher_settings(conn: &Connection, key: &SecretString) -> anyhow::R
     conn.pragma_update(None, "kdf_iter", 256000)
         .context("Failed to set kdf_iter")?;
     let _ = conn.execute("PRAGMA cipher_use_hmac = ON", []);
+    let _ = conn.execute("PRAGMA cipher_memory_security = ON", []);
+    Ok(())
+}
+
+pub fn apply_cipher_settings_with(
+    conn: &Connection,
+    key: &SecretString,
+    cfg: &CipherSettings,
+) -> anyhow::Result<()> {
+    conn.pragma_update(None, "key", key.expose_secret())
+        .context("Failed to apply SQLCipher key")?;
+    conn.pragma_update(None, "cipher_compatibility", 4)
+        .context("Failed to set cipher_compatibility")?;
+    let page = cfg.page_size.unwrap_or(4096);
+    conn.pragma_update(None, "cipher_page_size", page)
+        .context("Failed to set cipher_page_size")?;
+    let kdf = cfg.kdf_iter.unwrap_or(256000);
+    conn.pragma_update(None, "kdf_iter", kdf)
+        .context("Failed to set kdf_iter")?;
+    if cfg.use_hmac.unwrap_or(true) {
+        let _ = conn.execute("PRAGMA cipher_use_hmac = ON", []);
+    } else {
+        let _ = conn.execute("PRAGMA cipher_use_hmac = OFF", []);
+    }
     let _ = conn.execute("PRAGMA cipher_memory_security = ON", []);
     Ok(())
 }

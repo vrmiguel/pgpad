@@ -633,28 +633,42 @@ impl Storage {
     }
 
     fn get_or_create_app_key() -> anyhow::Result<SecretString> {
-        let entry = Entry::new("pgpad", "app_storage_key")?;
-        match entry.get_password() {
-            Ok(pw) => {
-                let valid = pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit());
-                if valid {
-                    Ok(SecretString::new(pw))
-                } else {
+        if let Ok(env_key) = std::env::var("PGPAD_APP_KEY") {
+            let valid = env_key.len() == 64 && env_key.chars().all(|c| c.is_ascii_hexdigit());
+            if valid {
+                return Ok(SecretString::new(env_key));
+            }
+        }
+
+        match Entry::new("pgpad", "app_storage_key") {
+            Ok(entry) => match entry.get_password() {
+                Ok(pw) => {
+                    let valid = pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit());
+                    if valid {
+                        Ok(SecretString::new(pw))
+                    } else {
+                        let mut buf = [0u8; 32];
+                        rand::thread_rng().fill_bytes(&mut buf);
+                        let key = hex::encode(buf);
+                        entry.set_password(&key)?;
+                        Ok(SecretString::new(key))
+                    }
+                }
+                Err(keyring::Error::NoEntry) => {
                     let mut buf = [0u8; 32];
                     rand::thread_rng().fill_bytes(&mut buf);
                     let key = hex::encode(buf);
                     entry.set_password(&key)?;
                     Ok(SecretString::new(key))
                 }
-            }
-            Err(keyring::Error::NoEntry) => {
+                Err(e) => Err(anyhow::anyhow!(e.to_string())),
+            },
+            Err(_e) => {
                 let mut buf = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut buf);
                 let key = hex::encode(buf);
-                entry.set_password(&key)?;
                 Ok(SecretString::new(key))
             }
-            Err(e) => Err(anyhow::anyhow!(e.to_string())),
         }
     }
 

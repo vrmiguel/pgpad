@@ -27,7 +27,7 @@ pub struct AppState {
     pub connections: DashMap<Uuid, DatabaseConnection>,
     pub schemas: DashMap<Uuid, Arc<DatabaseSchema>>,
     /// SQLite database for application data
-    pub storage: Storage,
+    pub storage: Arc<Storage>,
     pub stmt_manager: StatementManager,
 }
 
@@ -36,7 +36,7 @@ impl AppState {
         let data_dir = dirs::data_dir().expect("Failed to get data directory");
         let db_path = data_dir.join("pgpad").join("pgpad.db");
 
-        let storage = Storage::new(db_path)?;
+        let storage = Arc::new(Storage::new(db_path)?);
 
         Ok(Self {
             connections: DashMap::new(),
@@ -168,6 +168,7 @@ pub fn run() {
             window::commands::maximize_window,
             window::commands::close_window,
             window::commands::open_sqlite_db,
+            window::commands::is_sqlcipher_encrypted,
             window::commands::open_sqlcipher_db,
             window::commands::save_sqlite_db,
             window::commands::open_duckdb_db,

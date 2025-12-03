@@ -244,12 +244,31 @@ pub async fn connect_to_database(
         } => {
             let db_path_cl = db_path.clone();
             let connection_id_cl = connection_id;
+            let kdf_iter = state
+                .storage
+                .get_setting("cipher_kdf_iter")?
+                .and_then(|v| v.parse::<u32>().ok());
+            let page_size = state
+                .storage
+                .get_setting("cipher_page_size")?
+                .and_then(|v| v.parse::<u32>().ok());
+            let use_hmac = state
+                .storage
+                .get_setting("cipher_use_hmac")?
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
             match tokio::task::spawn_blocking(move || {
                 match rusqlite::Connection::open(&db_path_cl) {
                     Ok(conn) => {
                         if let Some(pw) = credentials::get_password(&connection_id_cl)? {
                             let secret = secrecy::SecretString::new(pw);
-                            crate::utils::sqlite_cipher::apply_cipher_settings(&conn, &secret)?;
+                            let cfg = crate::utils::sqlite_cipher::CipherSettings {
+                                kdf_iter,
+                                page_size,
+                                use_hmac,
+                            };
+                            crate::utils::sqlite_cipher::apply_cipher_settings_with(
+                                &conn, &secret, &cfg,
+                            )?;
                             crate::utils::sqlite_cipher::verify_cipher_ok(&conn)?;
                         }
                         crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
@@ -1043,7 +1062,10 @@ pub async fn save_query_to_history(
         error_message,
     };
 
-    state.storage.save_query_history(&entry)?;
+    let storage = state.storage.clone();
+    tokio::task::spawn_blocking(move || storage.save_query_history(&entry))
+        .await
+        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))??;
     Ok(())
 }
 
@@ -1053,14 +1075,20 @@ pub async fn get_query_history(
     limit: Option<u32>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<QueryHistoryEntry>, Error> {
-    state
-        .storage
-        .get_query_history(&connection_id, limit.map(|l| l as i64))
+    let storage = state.storage.clone();
+    tokio::task::spawn_blocking(move || {
+        storage.get_query_history(&connection_id, limit.map(|l| l as i64))
+    })
+    .await
+    .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?
 }
 
 #[tauri::command]
 pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result<(), Error> {
-    let stored_connections = state.storage.get_connections()?;
+    let storage = state.storage.clone();
+    let stored_connections = tokio::task::spawn_blocking(move || storage.get_connections())
+        .await
+        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))??;
 
     for stored_connection in stored_connections {
         let connection = DatabaseConnection::new(
@@ -1201,7 +1229,12 @@ pub async fn update_script(
         favorite: false,
     };
 
-    state.storage.save_query(&script)?;
+    {
+        let storage = state.storage.clone();
+        tokio::task::spawn_blocking(move || storage.save_query(&script))
+            .await
+            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))??;
+    }
     Ok(())
 }
 
@@ -1210,13 +1243,22 @@ pub async fn get_scripts(
     connection_id: Option<Uuid>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<SavedQuery>, Error> {
-    let scripts = state.storage.get_saved_queries(connection_id.as_ref())?;
+    let storage = state.storage.clone();
+    let scripts =
+        tokio::task::spawn_blocking(move || storage.get_saved_queries(connection_id.as_ref()))
+            .await
+            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))??;
     Ok(scripts)
 }
 
 #[tauri::command]
 pub async fn delete_script(id: i64, state: tauri::State<'_, AppState>) -> Result<(), Error> {
-    state.storage.delete_saved_query(id)?;
+    {
+        let storage = state.storage.clone();
+        tokio::task::spawn_blocking(move || storage.delete_saved_query(id))
+            .await
+            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))??;
+    }
     Ok(())
 }
 
@@ -1225,13 +1267,22 @@ pub async fn save_session_state(
     session_data: &str,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
-    state.storage.set_setting("session_state", session_data)?;
+    {
+        let storage = state.storage.clone();
+        let data = session_data.to_string();
+        tokio::task::spawn_blocking(move || storage.set_setting("session_state", &data))
+            .await
+            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))??;
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_session_state(state: tauri::State<'_, AppState>) -> Result<Option<String>, Error> {
-    let session_data = state.storage.get_setting("session_state")?;
+    let storage = state.storage.clone();
+    let session_data = tokio::task::spawn_blocking(move || storage.get_setting("session_state"))
+        .await
+        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))??;
     Ok(session_data)
 }
 
@@ -1246,9 +1297,27 @@ pub async fn get_encryption_settings(state: tauri::State<'_, AppState>) -> Resul
         .storage
         .get_setting("encryption_key_storage")?
         .unwrap_or_else(|| String::from("keychain"));
+    let kdf_iter = state
+        .storage
+        .get_setting("cipher_kdf_iter")?
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(256000);
+    let page_size = state
+        .storage
+        .get_setting("cipher_page_size")?
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(4096);
+    let use_hmac = state
+        .storage
+        .get_setting("cipher_use_hmac")?
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(true);
     let payload = serde_json::json!({
         "enabled": enabled,
-        "key_storage": key_storage
+        "key_storage": key_storage,
+        "kdf_iter": kdf_iter,
+        "page_size": page_size,
+        "use_hmac": use_hmac
     });
     Ok(payload.to_string())
 }
@@ -1257,6 +1326,9 @@ pub async fn get_encryption_settings(state: tauri::State<'_, AppState>) -> Resul
 pub async fn set_encryption_settings(
     enabled: bool,
     key_storage: String,
+    kdf_iter: Option<u32>,
+    page_size: Option<u32>,
+    use_hmac: Option<bool>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
     state
@@ -1265,6 +1337,21 @@ pub async fn set_encryption_settings(
     state
         .storage
         .set_setting("encryption_key_storage", &key_storage)?;
+    if let Some(kdf) = kdf_iter {
+        state
+            .storage
+            .set_setting("cipher_kdf_iter", &kdf.to_string())?;
+    }
+    if let Some(ps) = page_size {
+        state
+            .storage
+            .set_setting("cipher_page_size", &ps.to_string())?;
+    }
+    if let Some(hmac) = use_hmac {
+        state
+            .storage
+            .set_setting("cipher_use_hmac", if hmac { "1" } else { "0" })?;
+    }
     Ok(())
 }
 

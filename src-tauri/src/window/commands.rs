@@ -150,3 +150,23 @@ where
     rx.await
         .map_err(|_| Error::Any(anyhow::anyhow!("Failed to receive dialog result")))
 }
+
+#[tauri::command]
+pub async fn is_sqlcipher_encrypted(file_path: String) -> Result<bool, Error> {
+    let mut header = [0u8; 16];
+    let fp = file_path;
+    let res = tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+        let path = std::path::Path::new(&fp);
+        let mut f = std::fs::File::open(path)?;
+        let _ = f.read(&mut header)?;
+        let magic = b"SQLite format 3\x00";
+        Ok::<bool, std::io::Error>(&header != magic)
+    })
+    .await
+    .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+    match res {
+        Ok(b) => Ok(b),
+        Err(e) => Err(Error::Any(anyhow::anyhow!(e.to_string()))),
+    }
+}
