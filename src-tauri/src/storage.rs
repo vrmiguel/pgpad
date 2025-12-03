@@ -666,6 +666,7 @@ impl Storage {
         let conn = Connection::open(db_path)?;
         let key = Self::get_or_create_app_key()?;
         let cfg = Self::env_cipher_settings();
+        let _ = crate::utils::sqlite_cipher::apply_cipher_defaults(&conn, &cfg);
         crate::utils::sqlite_cipher::apply_cipher_settings_with(&conn, &key, &cfg)?;
         crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
         Ok(conn)
@@ -837,6 +838,7 @@ impl Storage {
             .lock()
             .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
         if rekey_enabled {
+            let _ = crate::utils::sqlite_cipher::apply_cipher_defaults(&conn, &cfg);
             let rekey_sql = format!("PRAGMA rekey = '{}';", new_key.expose_secret());
             if conn.execute_batch(&rekey_sql).is_ok() {
                 let _ =

@@ -100,6 +100,30 @@ pub fn apply_common_settings(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn apply_cipher_defaults(conn: &Connection, cfg: &CipherSettings) -> anyhow::Result<()> {
+    if let Some(v) = cfg.kdf_iter {
+        let _ = conn.execute("PRAGMA cipher_default_kdf_iter = ?1", [v]);
+    }
+    if let Some(v) = cfg.page_size {
+        let _ = conn.execute("PRAGMA cipher_default_page_size = ?1", [v]);
+    }
+    match cfg.use_hmac.unwrap_or(true) {
+        true => {
+            let _ = conn.execute("PRAGMA cipher_default_use_hmac = ON", []);
+        }
+        false => {
+            let _ = conn.execute("PRAGMA cipher_default_use_hmac = OFF", []);
+        }
+    }
+    if let Some(v) = cfg.plaintext_header_size {
+        let _ = conn.execute(
+            &format!("PRAGMA cipher_default_plaintext_header_size = {}", v),
+            [],
+        );
+    }
+    Ok(())
+}
+
 pub fn verify_cipher_ok(conn: &Connection) -> anyhow::Result<()> {
     let ck = conn
         .pragma_query_value(None, "cipher_integrity_check", |row| {
