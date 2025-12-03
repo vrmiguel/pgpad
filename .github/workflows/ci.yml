@@ -22,7 +22,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run format:check
-      - run: eslint .
+      - run: npx eslint .
 
   rust:
     name: Rust - fmt, clippy & unit testing
