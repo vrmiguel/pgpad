@@ -6,6 +6,7 @@ use serde_json::value::RawValue;
 use crate::Error;
 
 mod condvar;
+pub mod sqlite_cipher;
 
 pub use condvar::Condvar;
 

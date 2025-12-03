@@ -5,6 +5,7 @@ use anyhow::Context;
 use keyring::Entry;
 use rand::RngCore;
 use rusqlite::{types::Type, Connection};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -632,101 +633,45 @@ impl Storage {
     }
 
     fn get_or_create_app_key() -> anyhow::Result<String> {
-        if let Ok(env_key) = std::env::var("PGPAD_APP_KEY") {
-            let valid = env_key.len() == 64 && env_key.chars().all(|c| c.is_ascii_hexdigit());
-            if valid {
-                return Ok(env_key);
-            }
-        }
-
         let entry = Entry::new("pgpad", "app_storage_key")?;
-        if let Ok(pw) = entry.get_password() {
-            let valid = pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit());
-            if valid {
-                return Ok(pw);
+        match entry.get_password() {
+            Ok(pw) => {
+                let valid = pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit());
+                if valid {
+                    Ok(pw)
+                } else {
+                    let mut buf = [0u8; 32];
+                    rand::thread_rng().fill_bytes(&mut buf);
+                    let key = hex::encode(buf);
+                    entry.set_password(&key)?;
+                    Ok(key)
+                }
             }
-        }
-
-        let mut buf = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut buf);
-        let key = hex::encode(buf);
-
-        if entry.set_password(&key).is_ok() {
-            return Ok(key);
-        }
-
-        let mut path = dirs::config_dir().unwrap_or_else(std::env::temp_dir);
-        path.push("pgpad");
-        let _ = std::fs::create_dir_all(&path);
-        path.push("app_key");
-
-        if let Ok(contents) = std::fs::read_to_string(&path) {
-            let s = contents.trim().to_string();
-            let valid = s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit());
-            if valid {
-                return Ok(s);
+            Err(keyring::Error::NoEntry) => {
+                let mut buf = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut buf);
+                let key = hex::encode(buf);
+                entry.set_password(&key)?;
+                Ok(key)
             }
+            Err(e) => Err(anyhow::anyhow!(e.to_string())),
         }
-
-        {
-            use std::fs::OpenOptions;
-            let _ = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(&path)
-                .and_then(|mut f| {
-                    use std::io::Write;
-                    f.write_all(key.as_bytes())
-                });
-        }
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(meta) = std::fs::metadata(&path) {
-                let mut perm = meta.permissions();
-                perm.set_mode(0o600);
-                let _ = std::fs::set_permissions(&path, perm);
-            }
-        }
-
-        Ok(key)
     }
 
-    fn apply_cipher_pragmas(conn: &mut Connection) -> anyhow::Result<()> {
-        conn.pragma_update(None, "cipher_compatibility", 4)?;
-        conn.pragma_update(None, "cipher_page_size", 4096)?;
-        let _ = conn.execute("PRAGMA cipher_memory_security = ON", []);
-        Ok(())
-    }
-
-    fn apply_common_pragmas(conn: &mut Connection) -> anyhow::Result<()> {
-        conn.execute_batch(
-            "
-            PRAGMA foreign_keys = ON;
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = FULL;
-            PRAGMA busy_timeout = 30000;
-            PRAGMA case_sensitive_like = ON;
-            PRAGMA extended_result_codes = ON;
-            ",
-        )?;
-        Ok(())
-    }
+    
 
     fn open_encrypted(db_path: &PathBuf) -> anyhow::Result<Connection> {
-        let mut conn = Connection::open(db_path)?;
+        let conn = Connection::open(db_path)?;
         let key = Self::get_or_create_app_key()?;
-        conn.pragma_update(None, "key", &key)?;
-        Self::apply_cipher_pragmas(&mut conn)?;
-        Self::apply_common_pragmas(&mut conn)?;
+        let secret = SecretString::new(key);
+        crate::utils::sqlite_cipher::apply_cipher_settings(&conn, &secret)?;
+        crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
         Ok(conn)
     }
 
     fn open_plain(db_path: &PathBuf) -> anyhow::Result<Connection> {
-        let mut conn = Connection::open(db_path)?;
-        Self::apply_common_pragmas(&mut conn)?;
+        let conn = Connection::open(db_path)?;
+        crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
         Ok(conn)
     }
 
@@ -770,14 +715,8 @@ impl Storage {
 
         let plain_conn = plain;
         let key = Self::get_or_create_app_key()?;
-        let attach_sql = format!(
-            "ATTACH DATABASE '{}' AS cipher_db KEY '{}';",
-            new_path.display(),
-            key
-        );
-        plain_conn.execute_batch(&attach_sql)?;
-        plain_conn.execute_batch("SELECT sqlcipher_export('cipher_db');")?;
-        plain_conn.execute_batch("DETACH DATABASE cipher_db;")?;
+        let secret = SecretString::new(key);
+        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted(&plain_conn, &new_path, &secret)?;
 
         std::fs::rename(db_path, &backup_path)?;
         std::fs::rename(&new_path, db_path)?;

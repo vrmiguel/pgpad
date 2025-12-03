@@ -51,6 +51,8 @@ tiberius = { version = "0.12", default-features = false, features = ["rustls", "
 tokio-util = { version = "0.7", features = ["compat"] }
 tokio-rustls = "0.26.0"
 rustls-pki-types = "1.7.0"
+zeroize = "1.6"
+secrecy = "0.8"
 
 [profile.release]
 panic = "abort"
