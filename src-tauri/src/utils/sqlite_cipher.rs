@@ -179,38 +179,44 @@ pub fn attach_and_export_plain_to_encrypted_with(
 ) -> anyhow::Result<()> {
     let path_str = new_path.display().to_string().replace("'", "''");
     let key_str = key.expose_secret().replace("'", "''");
+    let _ = crate::utils::sqlite_cipher::apply_cipher_defaults(conn, cfg);
     let attach_sql = format!(
         "ATTACH DATABASE '{}' AS cipher_db KEY '{}';",
         path_str, key_str
     );
-    conn.execute_batch(&attach_sql)
-        .context("Failed to attach encrypted database")?;
-    if let Some(page) = cfg.page_size {
-        let _ = conn.execute("PRAGMA cipher_db.cipher_page_size = ?1", [page]);
-    }
-    if let Some(kdf) = cfg.kdf_iter {
-        let _ = conn.execute("PRAGMA cipher_db.kdf_iter = ?1", [kdf]);
-    }
-    match cfg.use_hmac.unwrap_or(true) {
-        true => {
-            let _ = conn.execute("PRAGMA cipher_db.cipher_use_hmac = ON", []);
-        }
-        false => {
-            let _ = conn.execute("PRAGMA cipher_db.cipher_use_hmac = OFF", []);
-        }
-    }
-    if let Some(p) = cfg.plaintext_header_size {
-        let _ = conn.execute(
-            &format!("PRAGMA cipher_db.cipher_plaintext_header_size = {}", p),
+    if conn.execute_batch(&attach_sql).is_ok() {
+        // Force key derivation on the attached alias
+        let _ = conn.query_row(
+            "SELECT COUNT(*) FROM cipher_db.sqlite_master",
             [],
+            |r| r.get::<_, i64>(0),
         );
+        // Minimal export path after derivation
+        conn.execute_batch("SELECT sqlcipher_export('cipher_db');")
+            .context("Failed to export to encrypted database")?;
+        if cfg.vacuum_after_pagesize.unwrap_or(false) {
+            let _ = conn.execute_batch("VACUUM");
+        }
+        let _ = conn.execute_batch("DETACH DATABASE cipher_db;");
+        return Ok(());
     }
-    conn.execute_batch("SELECT sqlcipher_export('cipher_db');")
-        .context("Failed to export to encrypted database")?;
-    if cfg.vacuum_after_pagesize.unwrap_or(false) {
-        let _ = conn.execute_batch("VACUUM");
+    // Fallback (non-Windows): use sqlite backup API to copy plain -> encrypted
+    #[cfg(not(windows))]
+    {
+        let mut enc_conn = rusqlite::Connection::open(new_path)
+            .context("Failed to open destination encrypted database")?;
+        crate::utils::sqlite_cipher::apply_cipher_settings_with(&enc_conn, key, cfg)?;
+        if cfg.vacuum_after_pagesize.unwrap_or(false) {
+            let _ = enc_conn.execute_batch("VACUUM");
+        }
+        let backup = rusqlite::backup::Backup::new(conn, &mut enc_conn)
+            .context("Failed to start backup to encrypted database")?;
+        backup.step(-1).context("Backup step failed")?;
+        return Ok(());
     }
-    conn.execute_batch("DETACH DATABASE cipher_db;")
-        .context("Failed to detach encrypted database")?;
-    Ok(())
+    #[cfg(windows)]
+    {
+        // If we reach here on Windows, return an error for visibility
+        anyhow::bail!("Failed to export using SQLCipher attach path on Windows");
+    }
 }

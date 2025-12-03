@@ -31,7 +31,7 @@ rustls-native-certs = "0.8.1"
 webpki-roots = "1.0.2"
 tokio-postgres-rustls = "0.13.0"
 dirs = "6.0.0"
-rusqlite = { version = "0.37.0", features = ["bundled-sqlcipher-vendored-openssl", "column_decltype"] }
+rusqlite = { version = "0.37.0", features = ["bundled-sqlcipher-vendored-openssl", "column_decltype", "backup"] }
 duckdb = { version = "1.4.2", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3.31"
