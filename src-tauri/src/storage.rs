@@ -668,7 +668,8 @@ impl Storage {
         let cfg = Self::env_cipher_settings();
         let _ = crate::utils::sqlite_cipher::apply_cipher_defaults(&conn, &cfg);
         crate::utils::sqlite_cipher::apply_cipher_settings_with(&conn, &key, &cfg)?;
-        crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
+        let common = Self::settings_common_pragmas();
+        crate::utils::sqlite_cipher::apply_common_settings_with(&conn, &common)?;
         Ok(conn)
     }
 
@@ -689,7 +690,8 @@ impl Storage {
                 log::info!("Ran VACUUM to enforce page_size");
             }
         }
-        crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
+        let common = Self::settings_common_pragmas();
+        crate::utils::sqlite_cipher::apply_common_settings_with(&conn, &common)?;
         Ok(conn)
     }
 
@@ -951,6 +953,47 @@ impl Storage {
             compatibility,
             vacuum_after_pagesize,
         }
+    }
+
+    fn settings_common_pragmas() -> crate::utils::sqlite_cipher::CommonSettings {
+        let journal_mode = std::env::var("PGPAD_SQLITE_JOURNAL_MODE").ok();
+        let synchronous = std::env::var("PGPAD_SQLITE_SYNCHRONOUS").ok();
+        let temp_store = Self::get_setting_static("sqlite_temp_store");
+        let locking_mode = Self::get_setting_static("sqlite_locking_mode");
+        let wal_autocheckpoint = Self::get_setting_static("sqlite_wal_autocheckpoint")
+            .and_then(|v| v.parse::<i64>().ok());
+        let journal_size_limit = Self::get_setting_static("sqlite_journal_size_limit")
+            .and_then(|v| v.parse::<i64>().ok());
+        let mmap_size =
+            Self::get_setting_static("sqlite_mmap_size").and_then(|v| v.parse::<i64>().ok());
+        let cache_size =
+            Self::get_setting_static("sqlite_cache_size").and_then(|v| v.parse::<i64>().ok());
+        let secure_delete = Self::get_setting_static("sqlite_secure_delete");
+        let busy_timeout_ms =
+            Self::get_setting_static("sqlite_busy_timeout_ms").and_then(|v| v.parse::<u64>().ok());
+        let case_sensitive_like = Self::get_setting_static("sqlite_case_sensitive_like")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        let extended_result_codes = Self::get_setting_static("sqlite_extended_result_codes")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        crate::utils::sqlite_cipher::CommonSettings {
+            journal_mode,
+            synchronous,
+            temp_store,
+            locking_mode,
+            wal_autocheckpoint,
+            journal_size_limit,
+            mmap_size,
+            cache_size,
+            secure_delete,
+            busy_timeout_ms,
+            case_sensitive_like,
+            extended_result_codes,
+        }
+    }
+
+    fn get_setting_static(key: &str) -> Option<String> {
+        // Best-effort access to the app settings via environment for static contexts
+        std::env::var(format!("PGPAD_SETTING_{}", key.to_uppercase())).ok()
     }
 }
 

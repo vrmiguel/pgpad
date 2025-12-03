@@ -286,6 +286,41 @@ pub async fn connect_to_database(
                         .ok()
                         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 });
+            let common = crate::utils::sqlite_cipher::CommonSettings {
+                journal_mode: state.storage.get_setting("sqlite_journal_mode")?,
+                synchronous: state.storage.get_setting("sqlite_synchronous")?,
+                temp_store: state.storage.get_setting("sqlite_temp_store")?,
+                locking_mode: state.storage.get_setting("sqlite_locking_mode")?,
+                wal_autocheckpoint: state
+                    .storage
+                    .get_setting("sqlite_wal_autocheckpoint")?
+                    .and_then(|v| v.parse::<i64>().ok()),
+                journal_size_limit: state
+                    .storage
+                    .get_setting("sqlite_journal_size_limit")?
+                    .and_then(|v| v.parse::<i64>().ok()),
+                mmap_size: state
+                    .storage
+                    .get_setting("sqlite_mmap_size")?
+                    .and_then(|v| v.parse::<i64>().ok()),
+                cache_size: state
+                    .storage
+                    .get_setting("sqlite_cache_size")?
+                    .and_then(|v| v.parse::<i64>().ok()),
+                secure_delete: state.storage.get_setting("sqlite_secure_delete")?,
+                busy_timeout_ms: state
+                    .storage
+                    .get_setting("sqlite_busy_timeout_ms")?
+                    .and_then(|v| v.parse::<u64>().ok()),
+                case_sensitive_like: state
+                    .storage
+                    .get_setting("sqlite_case_sensitive_like")?
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true")),
+                extended_result_codes: state
+                    .storage
+                    .get_setting("sqlite_extended_result_codes")?
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true")),
+            };
             match tokio::task::spawn_blocking(move || {
                 match rusqlite::Connection::open(&db_path_cl) {
                     Ok(conn) => {
@@ -310,7 +345,7 @@ pub async fn connect_to_database(
                                 let _ = conn.execute_batch("VACUUM");
                             }
                         }
-                        crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
+                        crate::utils::sqlite_cipher::apply_common_settings_with(&conn, &common)?;
                         Ok(conn)
                     }
                     Err(e) => Err(Error::Any(anyhow::anyhow!(e.to_string()))),

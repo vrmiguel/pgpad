@@ -40,66 +40,6 @@ pub fn apply_cipher_settings_with(
     Ok(())
 }
 
-pub fn apply_common_settings(conn: &Connection) -> anyhow::Result<()> {
-    let busy = std::env::var("PGPAD_SQLITE_BUSY_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(30000);
-    conn.execute_batch(&format!(
-        "PRAGMA foreign_keys = ON;\nPRAGMA journal_mode = WAL;\nPRAGMA synchronous = FULL;\nPRAGMA busy_timeout = {};\nPRAGMA case_sensitive_like = ON;\nPRAGMA extended_result_codes = ON;",
-        busy
-    ))
-    .context("Failed to apply common SQLite settings")?;
-    if let Ok(mode) = std::env::var("PGPAD_SQLITE_JOURNAL_MODE") {
-        if !mode.trim().is_empty() {
-            let sql = format!("PRAGMA journal_mode = {}", mode);
-            let _ = conn.execute_batch(&sql);
-        }
-    }
-    if let Ok(sync) = std::env::var("PGPAD_SQLITE_SYNCHRONOUS") {
-        if !sync.trim().is_empty() {
-            let sql = format!("PRAGMA synchronous = {}", sync);
-            let _ = conn.execute_batch(&sql);
-        }
-    }
-    if let Ok(temp_store) = std::env::var("PGPAD_SQLITE_TEMP_STORE") {
-        if !temp_store.trim().is_empty() {
-            let _ = conn.execute_batch(&format!("PRAGMA temp_store = {}", temp_store));
-        }
-    }
-    if let Ok(locking_mode) = std::env::var("PGPAD_SQLITE_LOCKING_MODE") {
-        if !locking_mode.trim().is_empty() {
-            let _ = conn.execute_batch(&format!("PRAGMA locking_mode = {}", locking_mode));
-        }
-    }
-    if let Ok(autockpt) = std::env::var("PGPAD_SQLITE_WAL_AUTOCHECKPOINT") {
-        if let Ok(v) = autockpt.parse::<i64>() {
-            let _ = conn.execute_batch(&format!("PRAGMA wal_autocheckpoint = {}", v));
-        }
-    }
-    if let Ok(limit) = std::env::var("PGPAD_SQLITE_JOURNAL_SIZE_LIMIT") {
-        if let Ok(v) = limit.parse::<i64>() {
-            let _ = conn.execute_batch(&format!("PRAGMA journal_size_limit = {}", v));
-        }
-    }
-    if let Ok(mmap) = std::env::var("PGPAD_SQLITE_MMAP_SIZE") {
-        if let Ok(v) = mmap.parse::<i64>() {
-            let _ = conn.execute_batch(&format!("PRAGMA mmap_size = {}", v));
-        }
-    }
-    if let Ok(cache) = std::env::var("PGPAD_SQLITE_CACHE_SIZE") {
-        if let Ok(v) = cache.parse::<i64>() {
-            let _ = conn.execute_batch(&format!("PRAGMA cache_size = {}", v));
-        }
-    }
-    if let Ok(secdel) = std::env::var("PGPAD_SQLITE_SECURE_DELETE") {
-        if !secdel.trim().is_empty() {
-            let _ = conn.execute_batch(&format!("PRAGMA secure_delete = {}", secdel));
-        }
-    }
-    Ok(())
-}
-
 pub fn apply_cipher_defaults(conn: &Connection, cfg: &CipherSettings) -> anyhow::Result<()> {
     if let Some(v) = cfg.kdf_iter {
         let _ = conn.execute("PRAGMA cipher_default_kdf_iter = ?1", [v]);
@@ -121,6 +61,103 @@ pub fn apply_cipher_defaults(conn: &Connection, cfg: &CipherSettings) -> anyhow:
             [],
         );
     }
+    Ok(())
+}
+
+#[derive(Default)]
+pub struct CommonSettings {
+    pub journal_mode: Option<String>,
+    pub synchronous: Option<String>,
+    pub temp_store: Option<String>,
+    pub locking_mode: Option<String>,
+    pub wal_autocheckpoint: Option<i64>,
+    pub journal_size_limit: Option<i64>,
+    pub mmap_size: Option<i64>,
+    pub cache_size: Option<i64>,
+    pub secure_delete: Option<String>,
+    pub busy_timeout_ms: Option<u64>,
+    pub case_sensitive_like: Option<bool>,
+    pub extended_result_codes: Option<bool>,
+}
+
+pub fn apply_common_settings_with(conn: &Connection, cfg: &CommonSettings) -> anyhow::Result<()> {
+    let busy = cfg.busy_timeout_ms.unwrap_or_else(|| {
+        std::env::var("PGPAD_SQLITE_BUSY_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(30000)
+    });
+    conn.execute_batch(&format!(
+        "PRAGMA foreign_keys = ON;\nPRAGMA journal_mode = WAL;\nPRAGMA synchronous = FULL;\nPRAGMA busy_timeout = {};\nPRAGMA case_sensitive_like = ON;\nPRAGMA extended_result_codes = ON;",
+        busy
+    ))
+    .context("Failed to apply base SQLite settings")?;
+
+    if let Some(v) = &cfg.journal_mode {
+        if !v.trim().is_empty() {
+            let _ = conn.execute_batch(&format!("PRAGMA journal_mode = {}", v));
+        }
+    }
+    if let Some(v) = &cfg.synchronous {
+        if !v.trim().is_empty() {
+            let _ = conn.execute_batch(&format!("PRAGMA synchronous = {}", v));
+        }
+    }
+    if let Some(v) = &cfg.temp_store {
+        if !v.trim().is_empty() {
+            let _ = conn.execute_batch(&format!("PRAGMA temp_store = {}", v));
+        }
+    }
+    if let Some(v) = &cfg.locking_mode {
+        if !v.trim().is_empty() {
+            let _ = conn.execute_batch(&format!("PRAGMA locking_mode = {}", v));
+        }
+    }
+    if let Some(v) = cfg.wal_autocheckpoint {
+        let _ = conn.execute_batch(&format!("PRAGMA wal_autocheckpoint = {}", v));
+    }
+    if let Some(v) = cfg.journal_size_limit {
+        let _ = conn.execute_batch(&format!("PRAGMA journal_size_limit = {}", v));
+    }
+    if let Some(v) = cfg.mmap_size {
+        let _ = conn.execute_batch(&format!("PRAGMA mmap_size = {}", v));
+    }
+    if let Some(v) = cfg.cache_size {
+        let _ = conn.execute_batch(&format!("PRAGMA cache_size = {}", v));
+    }
+    if let Some(v) = &cfg.secure_delete {
+        if !v.trim().is_empty() {
+            let _ = conn.execute_batch(&format!("PRAGMA secure_delete = {}", v));
+        }
+    }
+    if let Some(v) = cfg.case_sensitive_like {
+        let _ = conn.execute_batch(if v {
+            "PRAGMA case_sensitive_like = ON"
+        } else {
+            "PRAGMA case_sensitive_like = OFF"
+        });
+    }
+    if let Some(v) = cfg.extended_result_codes {
+        let _ = conn.execute_batch(if v {
+            "PRAGMA extended_result_codes = ON"
+        } else {
+            "PRAGMA extended_result_codes = OFF"
+        });
+    }
+
+    if let Ok(mode) = std::env::var("PGPAD_SQLITE_JOURNAL_MODE") {
+        if !mode.trim().is_empty() {
+            let sql = format!("PRAGMA journal_mode = {}", mode);
+            let _ = conn.execute_batch(&sql);
+        }
+    }
+    if let Ok(sync) = std::env::var("PGPAD_SQLITE_SYNCHRONOUS") {
+        if !sync.trim().is_empty() {
+            let sql = format!("PRAGMA synchronous = {}", sync);
+            let _ = conn.execute_batch(&sql);
+        }
+    }
+
     Ok(())
 }
 
