@@ -658,8 +658,6 @@ impl Storage {
         }
     }
 
-    
-
     fn open_encrypted(db_path: &PathBuf) -> anyhow::Result<Connection> {
         let conn = Connection::open(db_path)?;
         let key = Self::get_or_create_app_key()?;
@@ -714,7 +712,11 @@ impl Storage {
 
         let plain_conn = plain;
         let key = Self::get_or_create_app_key()?;
-        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted(&plain_conn, &new_path, &key)?;
+        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted(
+            &plain_conn,
+            &new_path,
+            &key,
+        )?;
 
         std::fs::rename(db_path, &backup_path)?;
         std::fs::rename(&new_path, db_path)?;

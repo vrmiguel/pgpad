@@ -43,7 +43,9 @@ pub fn apply_common_settings(conn: &Connection) -> anyhow::Result<()> {
 
 pub fn verify_cipher_ok(conn: &Connection) -> anyhow::Result<()> {
     let ck = conn
-        .pragma_query_value(None, "cipher_integrity_check", |row| row.get::<_, String>(0))
+        .pragma_query_value(None, "cipher_integrity_check", |row| {
+            row.get::<_, String>(0)
+        })
         .unwrap_or_else(|_| String::from("error"));
     anyhow::ensure!(ck == "ok", "wrong key or not SQLCipher");
     Ok(())

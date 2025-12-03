@@ -283,7 +283,7 @@ pub async fn connect_to_database(
                     Ok(false)
                 }
             }
-        },
+        }
         Database::DuckDB {
             db_path,
             connection: duck_conn,
