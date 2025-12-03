@@ -655,7 +655,7 @@ impl Storage {
             return Ok(key);
         }
 
-        let mut path = dirs::config_dir().unwrap_or_else(|| std::env::temp_dir());
+        let mut path = dirs::config_dir().unwrap_or_else(std::env::temp_dir);
         path.push("pgpad");
         let _ = std::fs::create_dir_all(&path);
         path.push("app_key");
@@ -670,10 +670,15 @@ impl Storage {
 
         {
             use std::fs::OpenOptions;
-            let _ = OpenOptions::new().create(true).write(true).truncate(true).open(&path).and_then(|mut f| {
-                use std::io::Write;
-                f.write_all(key.as_bytes())
-            });
+            let _ = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&path)
+                .and_then(|mut f| {
+                    use std::io::Write;
+                    f.write_all(key.as_bytes())
+                });
         }
 
         #[cfg(unix)]
