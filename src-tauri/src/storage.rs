@@ -634,7 +634,18 @@ impl Storage {
     fn get_or_create_app_key() -> anyhow::Result<String> {
         let entry = Entry::new("pgpad", "app_storage_key")?;
         match entry.get_password() {
-            Ok(pw) => Ok(pw),
+            Ok(pw) => {
+                let valid = pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit());
+                if valid {
+                    Ok(pw)
+                } else {
+                    let mut buf = [0u8; 32];
+                    rand::thread_rng().fill_bytes(&mut buf);
+                    let key = hex::encode(buf);
+                    entry.set_password(&key)?;
+                    Ok(key)
+                }
+            }
             Err(keyring::Error::NoEntry) => {
                 let mut buf = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut buf);

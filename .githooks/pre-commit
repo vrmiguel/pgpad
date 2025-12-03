@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "pre-commit: running format checks"
+echo "pre-commit: running format and checks"
 if [ -f package.json ]; then
+  npm run format
   npm run format:check
   npm run lint
 fi

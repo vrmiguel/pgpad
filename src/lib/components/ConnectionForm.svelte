@@ -450,15 +450,15 @@
 							>
 								<div class="space-y-2">
 									<div class="flex gap-2">
-                                        <Input
-                                            id="caCertPath"
-                                            type="text"
-                                            bind:value={caCertPath}
-                                            placeholder="No certificate selected..."
-                                            readonly
-                                            aria-describedby={describedby}
-                                            class="flex-1 shadow-sm transition-shadow"
-                                        />
+										<Input
+											id="caCertPath"
+											type="text"
+											bind:value={caCertPath}
+											placeholder="No certificate selected..."
+											readonly
+											aria-describedby={describedby}
+											class="flex-1 shadow-sm transition-shadow"
+										/>
 										<Button
 											type="button"
 											variant="outline"
@@ -519,22 +519,24 @@
 									size="sm"
 								>
 									<div class="flex gap-2" let:describedby>
-                                        <Input
-                                            id="oracleWalletPath"
-                                            type="text"
-                                            bind:value={oracleWalletPath}
-                                            placeholder="Optional"
-                                            readonly
-                                            aria-describedby={describedby}
-                                            class="flex-1 shadow-sm transition-shadow"
-                                        />
+										<Input
+											id="oracleWalletPath"
+											type="text"
+											bind:value={oracleWalletPath}
+											placeholder="Optional"
+											readonly
+											aria-describedby={describedby}
+											class="flex-1 shadow-sm transition-shadow"
+										/>
 										<Button
 											type="button"
 											variant="outline"
 											size="sm"
 											onclick={selectOracleWalletDir}
-											class="gap-2 shadow-sm hover:shadow-md">Select</Button
+											class="gap-2 shadow-sm hover:shadow-md"
 										>
+											Select
+										</Button>
 										{#if oracleWalletPath}
 											<Button
 												type="button"
@@ -827,15 +829,15 @@
 							size="sm"
 						>
 							<div class="space-y-3" let:describedby>
-                                    <Input
-                                        id="duckdbFilePath"
-                                        type="text"
-                                        bind:value={duckdbFilePath}
-                                        placeholder="No database selected..."
-                                        readonly
-                                        aria-describedby={describedby}
-                                        class={`shadow-sm transition-shadow ${errors.duckdbFilePath ? 'border-error' : ''}`}
-                                    />
+								<Input
+									id="duckdbFilePath"
+									type="text"
+									bind:value={duckdbFilePath}
+									placeholder="No database selected..."
+									readonly
+									aria-describedby={describedby}
+									class={`shadow-sm transition-shadow ${errors.duckdbFilePath ? 'border-error' : ''}`}
+								/>
 								<div class="flex gap-2">
 									<Button
 										type="button"
@@ -891,15 +893,15 @@
 							>
 								<div class="space-y-2">
 									<div class="flex gap-2">
-                                        <Input
-                                            id="mssqlCaCertPath"
-                                            type="text"
-                                            bind:value={caCertPath}
-                                            placeholder="No certificate selected..."
-                                            readonly
-                                            aria-describedby={describedby}
-                                            class="flex-1 shadow-sm transition-shadow"
-                                        />
+										<Input
+											id="mssqlCaCertPath"
+											type="text"
+											bind:value={caCertPath}
+											placeholder="No certificate selected..."
+											readonly
+											aria-describedby={describedby}
+											class="flex-1 shadow-sm transition-shadow"
+										/>
 										<Button
 											type="button"
 											variant="outline"
