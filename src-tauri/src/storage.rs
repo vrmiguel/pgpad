@@ -632,29 +632,61 @@ impl Storage {
     }
 
     fn get_or_create_app_key() -> anyhow::Result<String> {
-        let entry = Entry::new("pgpad", "app_storage_key")?;
-        match entry.get_password() {
-            Ok(pw) => {
-                let valid = pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit());
-                if valid {
-                    Ok(pw)
-                } else {
-                    let mut buf = [0u8; 32];
-                    rand::thread_rng().fill_bytes(&mut buf);
-                    let key = hex::encode(buf);
-                    entry.set_password(&key)?;
-                    Ok(key)
-                }
+        if let Ok(env_key) = std::env::var("PGPAD_APP_KEY") {
+            let valid = env_key.len() == 64 && env_key.chars().all(|c| c.is_ascii_hexdigit());
+            if valid {
+                return Ok(env_key);
             }
-            Err(keyring::Error::NoEntry) => {
-                let mut buf = [0u8; 32];
-                rand::thread_rng().fill_bytes(&mut buf);
-                let key = hex::encode(buf);
-                entry.set_password(&key)?;
-                Ok(key)
-            }
-            Err(e) => Err(anyhow::anyhow!(e.to_string())),
         }
+
+        let entry = Entry::new("pgpad", "app_storage_key")?;
+        if let Ok(pw) = entry.get_password() {
+            let valid = pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit());
+            if valid {
+                return Ok(pw);
+            }
+        }
+
+        let mut buf = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut buf);
+        let key = hex::encode(buf);
+
+        if entry.set_password(&key).is_ok() {
+            return Ok(key);
+        }
+
+        let mut path = dirs::config_dir().unwrap_or_else(|| std::env::temp_dir());
+        path.push("pgpad");
+        let _ = std::fs::create_dir_all(&path);
+        path.push("app_key");
+
+        if let Ok(contents) = std::fs::read_to_string(&path) {
+            let s = contents.trim().to_string();
+            let valid = s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit());
+            if valid {
+                return Ok(s);
+            }
+        }
+
+        {
+            use std::fs::OpenOptions;
+            let _ = OpenOptions::new().create(true).write(true).truncate(true).open(&path).and_then(|mut f| {
+                use std::io::Write;
+                f.write_all(key.as_bytes())
+            });
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&path) {
+                let mut perm = meta.permissions();
+                perm.set_mode(0o600);
+                let _ = std::fs::set_permissions(&path, perm);
+            }
+        }
+
+        Ok(key)
     }
 
     fn apply_cipher_pragmas(conn: &mut Connection) -> anyhow::Result<()> {
