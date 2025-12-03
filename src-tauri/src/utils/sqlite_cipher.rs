@@ -1,6 +1,8 @@
 use anyhow::Context;
 use rusqlite::Connection;
 use secrecy::{ExposeSecret, SecretString};
+use unicode_normalization::UnicodeNormalization;
+use zeroize::Zeroize;
 
 #[derive(Default)]
 pub struct CipherSettings {
@@ -17,18 +19,38 @@ pub fn apply_cipher_settings_with(
     key: &SecretString,
     cfg: &CipherSettings,
 ) -> anyhow::Result<()> {
-    conn.pragma_update(None, "key", key.expose_secret())
-        .context("Failed to apply SQLCipher key")?;
+    apply_key(conn, key)?;
+    let strict = std::env::var("PGPAD_CIPHER_POLICY_STRICT")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let min_kdf = std::env::var("PGPAD_CIPHER_MIN_KDF")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(256000);
+    let kdf = cfg.kdf_iter.unwrap_or(256000);
+    let use_hmac = cfg.use_hmac.unwrap_or(true);
+    if strict {
+        if kdf < min_kdf {
+            anyhow::bail!(
+                "kdf_iter {} below minimum {} under strict policy",
+                kdf,
+                min_kdf
+            );
+        }
+        if !use_hmac {
+            anyhow::bail!("cipher_use_hmac must be ON under strict policy");
+        }
+    }
     let compat = cfg.compatibility.unwrap_or(4);
     conn.pragma_update(None, "cipher_compatibility", compat)
         .context("Failed to set cipher_compatibility")?;
     let page = cfg.page_size.unwrap_or(4096);
     conn.pragma_update(None, "cipher_page_size", page)
         .context("Failed to set cipher_page_size")?;
-    let kdf = cfg.kdf_iter.unwrap_or(256000);
     conn.pragma_update(None, "kdf_iter", kdf)
         .context("Failed to set kdf_iter")?;
-    if cfg.use_hmac.unwrap_or(true) {
+    if use_hmac {
         let _ = conn.execute("PRAGMA cipher_use_hmac = ON", []);
     } else {
         let _ = conn.execute("PRAGMA cipher_use_hmac = OFF", []);
@@ -62,6 +84,28 @@ pub fn apply_cipher_defaults(conn: &Connection, cfg: &CipherSettings) -> anyhow:
         );
     }
     Ok(())
+}
+
+fn apply_key(conn: &Connection, secret: &SecretString) -> anyhow::Result<()> {
+    let raw = secret.expose_secret();
+    let mut s = normalize_passphrase(raw);
+    let is_raw_hex = s.starts_with("hex:")
+        && s[4..].len().is_multiple_of(2)
+        && s[4..].chars().all(|c| c.is_ascii_hexdigit());
+    if is_raw_hex {
+        let sql = format!("PRAGMA key = \"x'{}'\";", &s[4..]);
+        conn.execute_batch(&sql)
+            .context("Failed to apply hex SQLCipher key")?;
+    } else {
+        conn.pragma_update(None, "key", &s)
+            .context("Failed to apply SQLCipher key")?;
+    }
+    s.zeroize();
+    Ok(())
+}
+
+fn normalize_passphrase(p: &str) -> String {
+    p.nfc().collect::<String>()
 }
 
 #[derive(Default)]
@@ -186,11 +230,9 @@ pub fn attach_and_export_plain_to_encrypted_with(
     );
     if conn.execute_batch(&attach_sql).is_ok() {
         // Force key derivation on the attached alias
-        let _ = conn.query_row(
-            "SELECT COUNT(*) FROM cipher_db.sqlite_master",
-            [],
-            |r| r.get::<_, i64>(0),
-        );
+        let _ = conn.query_row("SELECT COUNT(*) FROM cipher_db.sqlite_master", [], |r| {
+            r.get::<_, i64>(0)
+        });
         // Minimal export path after derivation
         conn.execute_batch("SELECT sqlcipher_export('cipher_db');")
             .context("Failed to export to encrypted database")?;

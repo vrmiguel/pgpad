@@ -911,7 +911,10 @@ impl Storage {
             .unwrap_or_else(|_| String::from("error"));
         if ci != "ok" {
             if cfg!(windows) {
-                log::warn!("cipher integrity check reported '{}', proceeding on Windows", ci);
+                log::warn!(
+                    "cipher integrity check reported '{}', proceeding on Windows",
+                    ci
+                );
             } else {
                 return Err(crate::Error::Any(anyhow::anyhow!(
                     "cipher integrity check failed: {}",
@@ -983,7 +986,9 @@ impl Storage {
             Self::get_setting_static("sqlite_mmap_size").and_then(|v| v.parse::<i64>().ok());
         let cache_size =
             Self::get_setting_static("sqlite_cache_size").and_then(|v| v.parse::<i64>().ok());
-        let secure_delete = Self::get_setting_static("sqlite_secure_delete");
+        let secure_delete = Some(
+            Self::get_setting_static("sqlite_secure_delete").unwrap_or_else(|| "ON".to_string()),
+        );
         let busy_timeout_ms =
             Self::get_setting_static("sqlite_busy_timeout_ms").and_then(|v| v.parse::<u64>().ok());
         let case_sensitive_like = Self::get_setting_static("sqlite_case_sensitive_like")
@@ -1031,7 +1036,8 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("pgpad_test_plain_{}.db", Uuid::new_v4()));
         let enc = tmp.with_extension("enc.db");
         let conn = rusqlite::Connection::open(&tmp).expect("open plain");
-        conn.execute_batch("PRAGMA page_size = 1024; VACUUM;").expect("vacuum");
+        conn.execute_batch("PRAGMA page_size = 1024; VACUUM;")
+            .expect("vacuum");
         conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT); INSERT INTO t (v) VALUES ('a'), ('b');").expect("seed");
         let mut buf = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut buf);
@@ -1044,10 +1050,15 @@ mod tests {
             compatibility: Some(4),
             vacuum_after_pagesize: Some(true),
         };
-        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted_with(&conn, &enc, &key, &cfg).expect("export");
+        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted_with(
+            &conn, &enc, &key, &cfg,
+        )
+        .expect("export");
         drop(conn);
         if cfg!(windows) {
-            assert!(std::fs::metadata(&enc).map(|m| m.len() > 0).unwrap_or(false));
+            assert!(std::fs::metadata(&enc)
+                .map(|m| m.len() > 0)
+                .unwrap_or(false));
         } else {
             let enc_conn = rusqlite::Connection::open(&enc).expect("open enc");
             crate::utils::sqlite_cipher::apply_cipher_settings_with(&enc_conn, &key, &cfg)
