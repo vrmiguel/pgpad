@@ -679,12 +679,14 @@ impl Storage {
             .and_then(|v| v.parse::<u32>().ok())
         {
             let _ = conn.execute("PRAGMA page_size = ?1", [ps]);
+            log::info!("Applied plain SQLite page_size: {}", ps);
             if std::env::var("PGPAD_SQLITE_PLAIN_VACUUM_ON_PAGESIZE")
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false)
             {
                 let _ = conn.execute_batch("VACUUM");
+                log::info!("Ran VACUUM to enforce page_size");
             }
         }
         crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
@@ -840,27 +842,36 @@ impl Storage {
         if rekey_enabled {
             let _ = crate::utils::sqlite_cipher::apply_cipher_defaults(&conn, &cfg);
             let rekey_sql = format!("PRAGMA rekey = '{}';", new_key.expose_secret());
-            if conn.execute_batch(&rekey_sql).is_ok() {
-                let _ =
-                    crate::utils::sqlite_cipher::apply_cipher_settings_with(&conn, &new_key, &cfg);
-                let ck = conn
-                    .pragma_query_value(None, "cipher_integrity_check", |row| {
-                        row.get::<_, String>(0)
-                    })
-                    .unwrap_or_else(|_| String::from("error"));
-                if ck == "ok" {
-                    drop(conn);
-                    Self::set_app_key(&new_key)?;
-                    let enc_conn = Self::open_encrypted(db_path)
-                        .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
-                    let mut guard = self
-                        .conn
-                        .lock()
-                        .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
-                    let _ = std::mem::replace(&mut *guard, enc_conn);
-                    return Ok(());
+            match conn.execute_batch(&rekey_sql) {
+                Ok(_) => {
+                    let _ = crate::utils::sqlite_cipher::apply_cipher_settings_with(
+                        &conn, &new_key, &cfg,
+                    );
+                    let ck = conn
+                        .pragma_query_value(None, "cipher_integrity_check", |row| {
+                            row.get::<_, String>(0)
+                        })
+                        .unwrap_or_else(|_| String::from("error"));
+                    if ck == "ok" {
+                        drop(conn);
+                        Self::set_app_key(&new_key)?;
+                        let enc_conn = Self::open_encrypted(db_path)
+                            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let mut guard = self
+                            .conn
+                            .lock()
+                            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+                        let _ = std::mem::replace(&mut *guard, enc_conn);
+                        return Ok(());
+                    } else {
+                        log::error!("SQLCipher rekey integrity check failed: {}", ck);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("SQLCipher rekey failed: {}", e);
                 }
             }
+            log::info!("Falling back to export/swap rotation");
         }
         // Export to new encrypted file with new key
         let new_path = db_path.with_extension("db.new");
