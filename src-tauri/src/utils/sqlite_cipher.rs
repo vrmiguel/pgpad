@@ -254,7 +254,7 @@ pub fn attach_and_export_plain_to_encrypted_with(
         let backup = rusqlite::backup::Backup::new(conn, &mut enc_conn)
             .context("Failed to start backup to encrypted database")?;
         backup.step(-1).context("Backup step failed")?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(windows)]
     {
