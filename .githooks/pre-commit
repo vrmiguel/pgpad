@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "pre-commit: running format checks"
+if [ -f package.json ]; then
+  npm run format:check
+  npm run lint
+fi
+if command -v cargo >/dev/null 2>&1; then
+  if [ -d src-tauri ]; then
+    (cd src-tauri && cargo fmt --all -- --check)
+  fi
+fi

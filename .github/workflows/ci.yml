@@ -21,15 +21,8 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
-      - run: npm run format
-      - run: npm run lint
-      - name: Fail if formatting changed files
-        run: |
-          if ! git diff --quiet; then
-            echo "Formatter changed files. Please commit the updates."
-            git status --porcelain
-            exit 1
-          fi
+      - run: npm run format:check
+      - run: eslint .
 
   rust:
     name: Rust - fmt, clippy & unit testing

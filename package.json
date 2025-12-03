@@ -16,6 +16,7 @@
 		"test": "vitest",
 		"test:run": "vitest run",
 		"format": "prettier --write .",
+		"format:check": "prettier --check .",
 		"lint": "prettier --check . && eslint .",
 		"tauri": "tauri"
 	},

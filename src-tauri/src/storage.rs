@@ -2,9 +2,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use anyhow::Context;
-use rusqlite::{types::Type, Connection};
 use keyring::Entry;
 use rand::RngCore;
+use rusqlite::{types::Type, Connection};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -134,8 +134,6 @@ impl Storage {
 
         let conn = Self::open_or_migrate_encrypted(&db_path)
             .with_context(|| format!("Failed to open SQLite database at {}", db_path.display()))?;
-
-        
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -685,7 +683,9 @@ impl Storage {
     }
 
     fn is_encrypted(conn: &mut Connection) -> bool {
-        match conn.pragma_query_value(None, "cipher_integrity_check", |row| row.get::<_, String>(0)) {
+        match conn.pragma_query_value(None, "cipher_integrity_check", |row| {
+            row.get::<_, String>(0)
+        }) {
             Ok(v) => v == "ok",
             Err(_) => false,
         }
@@ -716,11 +716,17 @@ impl Storage {
 
         let backup_path = db_path.with_extension("db.bak");
         let new_path = db_path.with_extension("db.enc");
-        if std::fs::metadata(&new_path).is_ok() { let _ = std::fs::remove_file(&new_path); }
+        if std::fs::metadata(&new_path).is_ok() {
+            let _ = std::fs::remove_file(&new_path);
+        }
 
         let plain_conn = plain;
         let key = Self::get_or_create_app_key()?;
-        let attach_sql = format!("ATTACH DATABASE '{}' AS cipher_db KEY '{}';", new_path.display(), key);
+        let attach_sql = format!(
+            "ATTACH DATABASE '{}' AS cipher_db KEY '{}';",
+            new_path.display(),
+            key
+        );
         plain_conn.execute_batch(&attach_sql)?;
         plain_conn.execute_batch("SELECT sqlcipher_export('cipher_db');")?;
         plain_conn.execute_batch("DETACH DATABASE cipher_db;")?;
@@ -730,7 +736,9 @@ impl Storage {
 
         let mut enc_conn = Self::open_encrypted(db_path)?;
         let ci = enc_conn
-            .pragma_query_value(None, "cipher_integrity_check", |row| row.get::<_, String>(0))
+            .pragma_query_value(None, "cipher_integrity_check", |row| {
+                row.get::<_, String>(0)
+            })
             .unwrap_or_else(|_| String::from("error"));
         anyhow::ensure!(ci == "ok", "cipher integrity check failed: {}", ci);
         let migrator = Migrator::new();
