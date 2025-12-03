@@ -104,6 +104,24 @@ fn apply_key(conn: &Connection, secret: &SecretString) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn apply_key_for_db(conn: &Connection, db: &str, secret: &SecretString) -> anyhow::Result<()> {
+    let raw = secret.expose_secret();
+    let mut s = normalize_passphrase(raw);
+    let is_raw_hex = s.starts_with("hex:")
+        && s[4..].len().is_multiple_of(2)
+        && s[4..].chars().all(|c| c.is_ascii_hexdigit());
+    if is_raw_hex {
+        let sql = format!("PRAGMA {}.key = \"x'{}'\";", db, &s[4..]);
+        conn.execute_batch(&sql)
+            .context("Failed to apply hex SQLCipher key to attached db")?;
+    } else {
+        conn.pragma_update(Some(db), "key", &s)
+            .context("Failed to apply SQLCipher key to attached db")?;
+    }
+    s.zeroize();
+    Ok(())
+}
+
 fn normalize_passphrase(p: &str) -> String {
     p.nfc().collect::<String>()
 }
@@ -225,30 +243,13 @@ pub fn attach_and_export_plain_to_encrypted_with(
 ) -> anyhow::Result<()> {
     let path_str = new_path.display().to_string().replace("'", "''");
     let mut pass = normalize_passphrase(key.expose_secret());
-    let is_raw_hex = pass.starts_with("hex:")
-        && pass[4..].len().is_multiple_of(2)
-        && pass[4..].chars().all(|c| c.is_ascii_hexdigit());
-    let attach_sql = if is_raw_hex {
-        format!(
-            "ATTACH DATABASE '{}' AS cipher_db KEY \"x'{}'\";",
-            path_str,
-            &pass[4..]
-        )
-    } else {
-        let escaped = pass.replace("'", "''");
-        format!(
-            "ATTACH DATABASE '{}' AS cipher_db KEY '{}';",
-            path_str, escaped
-        )
-    };
+    // Prefer attach without KEY then set key via attached alias to cover builds
+    let attach_sql = format!("ATTACH DATABASE '{}' AS cipher_db;", path_str);
     let _ = crate::utils::sqlite_cipher::apply_cipher_defaults(conn, cfg);
     let attach_ok = conn.execute_batch(&attach_sql).is_ok();
-    let attached_has_cipher = conn
-        .pragma_query_value(None, "cipher_db.cipher_version", |row| {
-            row.get::<_, String>(0)
-        })
-        .is_ok();
-    if attach_ok && attached_has_cipher {
+    if attach_ok {
+        // Apply key to attached alias
+        apply_key_for_db(conn, "cipher_db", &SecretString::new(pass.clone()))?;
         // Force key derivation on the attached alias
         let _ = conn.query_row("SELECT COUNT(*) FROM cipher_db.sqlite_master", [], |r| {
             r.get::<_, i64>(0)
@@ -274,7 +275,7 @@ PRAGMA cipher_db.kdf_iter = {};",
                 [],
             );
         }
-        // Minimal export path after derivation
+        // Export after derivation
         conn.execute_batch("SELECT sqlcipher_export('cipher_db');")
             .context("Failed to export to encrypted database")?;
         if cfg.vacuum_after_pagesize.unwrap_or(false) {
@@ -284,21 +285,13 @@ PRAGMA cipher_db.kdf_iter = {};",
         pass.zeroize();
         return Ok(());
     }
-    // If attach appeared to succeed but cipher isn’t available, detach before fallback
-    if attach_ok {
-        let _ = conn.execute_batch("DETACH DATABASE cipher_db;");
-    }
-    // Fallback (non-Windows): use sqlite backup API to copy plain -> encrypted
+    // Fallback (non-Windows): plain backup copy when SQLCipher attach path fails
     #[cfg(not(windows))]
     {
-        let mut enc_conn = rusqlite::Connection::open(new_path)
-            .context("Failed to open destination encrypted database")?;
-        crate::utils::sqlite_cipher::apply_cipher_settings_with(&enc_conn, key, cfg)?;
-        let page = cfg.page_size.unwrap_or(4096);
-        let _ = enc_conn.execute("PRAGMA page_size = ?1", [page]);
-        let _ = enc_conn.execute_batch("VACUUM");
-        let backup = rusqlite::backup::Backup::new(conn, &mut enc_conn)
-            .context("Failed to start backup to encrypted database")?;
+        let mut plain_dst =
+            rusqlite::Connection::open(new_path).context("Failed to open destination database")?;
+        let backup = rusqlite::backup::Backup::new(conn, &mut plain_dst)
+            .context("Failed to start backup to destination database")?;
         backup.step(-1).context("Backup step failed")?;
         Ok(())
     }
