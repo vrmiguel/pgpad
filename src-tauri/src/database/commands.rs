@@ -245,20 +245,20 @@ pub async fn connect_to_database(
             Ok(conn) => {
                 // Apply optional session settings
                 let setup_res = (|| -> Result<(), Error> {
-                    if let Some(pw) = credentials::get_password(&connection_id)? {
-                        let _ = conn.pragma_update(None, "key", &pw);
-                        let _ = conn.pragma_update(None, "cipher_compatibility", 4);
-                        let _ = conn.pragma_update(None, "cipher_page_size", 4096);
-                        let _ = conn.execute("PRAGMA cipher_memory_security = ON", []);
-                        let ck = conn
-                            .pragma_query_value(None, "cipher_integrity_check", |row| row.get::<_, String>(0))
-                            .unwrap_or_else(|_| String::from("error"));
-                        if ck != "ok" {
-                            return Err(Error::Any(anyhow::anyhow!(
-                                "wrong key or not SQLCipher"
-                            )));
-                        }
+                if let Some(pw) = credentials::get_password(&connection_id)? {
+                    let _ = conn.pragma_update(None, "key", &pw);
+                    let _ = conn.pragma_update(None, "cipher_compatibility", 4);
+                    let _ = conn.pragma_update(None, "cipher_page_size", 4096);
+                    let _ = conn.execute("PRAGMA cipher_memory_security = ON", []);
+                    let ck = conn
+                        .pragma_query_value(None, "cipher_integrity_check", |row| {
+                            row.get::<_, String>(0)
+                        })
+                        .unwrap_or_else(|_| String::from("error"));
+                    if ck != "ok" {
+                        return Err(Error::Any(anyhow::anyhow!("wrong key or not SQLCipher")));
                     }
+                }
                     let busy = std::env::var("PGPAD_SQLITE_BUSY_TIMEOUT_MS")
                         .ok()
                         .and_then(|v| v.parse::<u64>().ok())
@@ -812,7 +812,9 @@ pub async fn cancel_postgres(
             .await
             {
                 Ok((client, _)) => {
-                    let _ = client.execute("SELECT pg_cancel_backend($1)", &[pid]).await;
+                    let _ = client
+                        .execute("SELECT pg_cancel_backend($1)", &[pid])
+                        .await;
                     Ok(())
                 }
                 Err(e) => Err(Error::Any(anyhow::anyhow!(format!(
@@ -943,7 +945,10 @@ pub async fn test_connection(
                 }
             }
         }
-        DatabaseInfo::SQLite { db_path, passphrase } => match rusqlite::Connection::open(db_path) {
+        DatabaseInfo::SQLite {
+            db_path,
+            passphrase,
+        } => match rusqlite::Connection::open(db_path) {
             Ok(conn) => {
                 if let Some(pw) = passphrase.as_ref() {
                     let _ = conn.pragma_update(None, "key", pw);
@@ -951,14 +956,16 @@ pub async fn test_connection(
                     let _ = conn.pragma_update(None, "cipher_page_size", 4096);
                     let _ = conn.execute("PRAGMA cipher_memory_security = ON", []);
                     let ck = conn
-                        .pragma_query_value(None, "cipher_integrity_check", |row| row.get::<_, String>(0))
+                        .pragma_query_value(None, "cipher_integrity_check", |row| {
+                            row.get::<_, String>(0)
+                        })
                         .unwrap_or_else(|_| String::from("error"));
                     if ck != "ok" {
                         return Ok(false);
                     }
                 }
                 Ok(true)
-            },
+            }
             Err(e) => {
                 log::error!("SQLite connection test failed: {}", e);
                 Ok(false)

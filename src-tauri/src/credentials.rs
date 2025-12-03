@@ -277,13 +277,19 @@ mod tests {
     fn sqlite_passphrase_extract() {
         let path = "/tmp/test.sqlite3".to_string();
         let pass = Some("secret".to_string());
-        let dbi = DatabaseInfo::SQLite { db_path: path.clone(), passphrase: pass.clone() };
+        let dbi = DatabaseInfo::SQLite {
+            db_path: path.clone(),
+            passphrase: pass.clone(),
+        };
 
         let (sanitized, pw) = extract_sensitive_data(dbi).expect("ok");
 
         assert_eq!(pw.as_deref(), Some("secret"));
         match sanitized {
-            DatabaseInfo::SQLite { db_path, passphrase } => {
+            DatabaseInfo::SQLite {
+                db_path,
+                passphrase,
+            } => {
                 assert_eq!(db_path, path);
                 assert!(passphrase.is_none());
             }

@@ -132,7 +132,7 @@ impl Storage {
             })?;
         }
 
-        let mut conn = Self::open_or_migrate_encrypted(&db_path)
+        let conn = Self::open_or_migrate_encrypted(&db_path)
             .with_context(|| format!("Failed to open SQLite database at {}", db_path.display()))?;
 
         
@@ -718,7 +718,7 @@ impl Storage {
         let new_path = db_path.with_extension("db.enc");
         if std::fs::metadata(&new_path).is_ok() { let _ = std::fs::remove_file(&new_path); }
 
-        let mut plain_conn = plain;
+        let plain_conn = plain;
         let key = Self::get_or_create_app_key()?;
         let attach_sql = format!("ATTACH DATABASE '{}' AS cipher_db KEY '{}';", new_path.display(), key);
         plain_conn.execute_batch(&attach_sql)?;

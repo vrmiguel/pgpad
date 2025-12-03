@@ -243,6 +243,10 @@ export class Commands {
     return await invoke('open_sqlite_db');
   }
 
+  static async pickSqlcipherDbDialog(): Promise<string | null> {
+    return await invoke('open_sqlcipher_db');
+  }
+
 	static async saveSqliteDbDialog(): Promise<string | null> {
 		return await invoke('save_sqlite_db');
 	}
@@ -426,6 +430,3 @@ export class Commands {
 		return await invoke('get_mssql_variant_base_type', { connectionId, value });
 	}
 }
-  static async pickSqlcipherDbDialog(): Promise<string | null> {
-    return await invoke('open_sqlcipher_db');
-  }
