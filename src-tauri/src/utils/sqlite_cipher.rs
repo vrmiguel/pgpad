@@ -9,6 +9,9 @@ pub fn apply_cipher_settings(conn: &Connection, key: &SecretString) -> anyhow::R
         .context("Failed to set cipher_compatibility")?;
     conn.pragma_update(None, "cipher_page_size", 4096)
         .context("Failed to set cipher_page_size")?;
+    conn.pragma_update(None, "kdf_iter", 256000)
+        .context("Failed to set kdf_iter")?;
+    let _ = conn.execute("PRAGMA cipher_use_hmac = ON", []);
     let _ = conn.execute("PRAGMA cipher_memory_security = ON", []);
     Ok(())
 }

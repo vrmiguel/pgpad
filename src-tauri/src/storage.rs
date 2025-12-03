@@ -632,19 +632,19 @@ impl Storage {
         Ok(())
     }
 
-    fn get_or_create_app_key() -> anyhow::Result<String> {
+    fn get_or_create_app_key() -> anyhow::Result<SecretString> {
         let entry = Entry::new("pgpad", "app_storage_key")?;
         match entry.get_password() {
             Ok(pw) => {
                 let valid = pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit());
                 if valid {
-                    Ok(pw)
+                    Ok(SecretString::new(pw))
                 } else {
                     let mut buf = [0u8; 32];
                     rand::thread_rng().fill_bytes(&mut buf);
                     let key = hex::encode(buf);
                     entry.set_password(&key)?;
-                    Ok(key)
+                    Ok(SecretString::new(key))
                 }
             }
             Err(keyring::Error::NoEntry) => {
@@ -652,7 +652,7 @@ impl Storage {
                 rand::thread_rng().fill_bytes(&mut buf);
                 let key = hex::encode(buf);
                 entry.set_password(&key)?;
-                Ok(key)
+                Ok(SecretString::new(key))
             }
             Err(e) => Err(anyhow::anyhow!(e.to_string())),
         }
@@ -663,8 +663,7 @@ impl Storage {
     fn open_encrypted(db_path: &PathBuf) -> anyhow::Result<Connection> {
         let conn = Connection::open(db_path)?;
         let key = Self::get_or_create_app_key()?;
-        let secret = SecretString::new(key);
-        crate::utils::sqlite_cipher::apply_cipher_settings(&conn, &secret)?;
+        crate::utils::sqlite_cipher::apply_cipher_settings(&conn, &key)?;
         crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
         Ok(conn)
     }
@@ -715,8 +714,7 @@ impl Storage {
 
         let plain_conn = plain;
         let key = Self::get_or_create_app_key()?;
-        let secret = SecretString::new(key);
-        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted(&plain_conn, &new_path, &secret)?;
+        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted(&plain_conn, &new_path, &key)?;
 
         std::fs::rename(db_path, &backup_path)?;
         std::fs::rename(&new_path, db_path)?;
@@ -737,11 +735,13 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::ExposeSecret;
 
     #[test]
     fn app_key_is_hex32bytes() {
         let key = Storage::get_or_create_app_key().expect("key");
-        assert_eq!(key.len(), 64);
-        assert!(key.chars().all(|c| c.is_ascii_hexdigit()));
+        let s = key.expose_secret();
+        assert_eq!(s.len(), 64);
+        assert!(s.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

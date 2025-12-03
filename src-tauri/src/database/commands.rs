@@ -241,43 +241,47 @@ pub async fn connect_to_database(
         Database::SQLite {
             db_path,
             connection: sqlite_conn,
-        } => match rusqlite::Connection::open(&db_path) {
-            Ok(conn) => {
-                // Apply optional session settings
-                let setup_res = (|| -> Result<(), Error> {
-                    if let Some(pw) = credentials::get_password(&connection_id)? {
-                        let secret = secrecy::SecretString::new(pw);
-                        crate::utils::sqlite_cipher::apply_cipher_settings(&conn, &secret)
-                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
-                        crate::utils::sqlite_cipher::verify_cipher_ok(&conn)
-                            .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
+        } => {
+            let db_path_cl = db_path.clone();
+            let connection_id_cl = connection_id;
+            match tokio::task::spawn_blocking(move || {
+                match rusqlite::Connection::open(&db_path_cl) {
+                    Ok(conn) => {
+                        if let Some(pw) = credentials::get_password(&connection_id_cl)? {
+                            let secret = secrecy::SecretString::new(pw);
+                            crate::utils::sqlite_cipher::apply_cipher_settings(&conn, &secret)?;
+                            crate::utils::sqlite_cipher::verify_cipher_ok(&conn)?;
+                        }
+                        crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
+                        Ok(conn)
                     }
-                    crate::utils::sqlite_cipher::apply_common_settings(&conn)
-                        .map_err(|e| Error::Any(anyhow::anyhow!(e.to_string())))?;
-                    Ok(())
-                })();
-                if let Err(e) = setup_res {
+                    Err(e) => Err(Error::Any(anyhow::anyhow!(e.to_string()))),
+                }
+            })
+            .await
+            {
+                Ok(Ok(conn)) => {
+                    *sqlite_conn = Some(Arc::new(Mutex::new(conn)));
+                    connection.connected = true;
+                    if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                        log::warn!("Failed to update last connected timestamp: {}", e);
+                    }
+                    log::info!("Successfully connected to SQLite database: {}", db_path);
+                    monitor
+                        .spawn_sqlite_ping(connection_id, sqlite_conn.as_ref().unwrap().clone())
+                        .await;
+                    Ok(true)
+                }
+                Ok(Err(e)) => {
                     log::error!("SQLite setup failed: {}", e);
                     connection.connected = false;
-                    return Ok(false);
+                    Ok(false)
                 }
-                *sqlite_conn = Some(Arc::new(Mutex::new(conn)));
-                connection.connected = true;
-
-                if let Err(e) = state.storage.update_last_connected(&connection_id) {
-                    log::warn!("Failed to update last connected timestamp: {}", e);
+                Err(e) => {
+                    log::error!("SQLite spawn_blocking failed: {}", e);
+                    connection.connected = false;
+                    Ok(false)
                 }
-
-                log::info!("Successfully connected to SQLite database: {}", db_path);
-                monitor
-                    .spawn_sqlite_ping(connection_id, sqlite_conn.as_ref().unwrap().clone())
-                    .await;
-                Ok(true)
-            }
-            Err(e) => {
-                log::error!("Failed to connect to SQLite database {}: {}", db_path, e);
-                connection.connected = false;
-                Ok(false)
             }
         },
         Database::DuckDB {
