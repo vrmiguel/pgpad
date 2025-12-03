@@ -256,6 +256,18 @@ pub async fn connect_to_database(
                 .storage
                 .get_setting("cipher_use_hmac")?
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+            let plaintext_header_size = state
+                .storage
+                .get_setting("cipher_plaintext_header_size")?
+                .and_then(|v| v.parse::<u32>().ok());
+            let compatibility = state
+                .storage
+                .get_setting("cipher_compatibility")?
+                .and_then(|v| v.parse::<u32>().ok());
+            let vacuum_after_pagesize = state
+                .storage
+                .get_setting("vacuum_on_pagesize")?
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
             match tokio::task::spawn_blocking(move || {
                 match rusqlite::Connection::open(&db_path_cl) {
                     Ok(conn) => {
@@ -265,6 +277,9 @@ pub async fn connect_to_database(
                                 kdf_iter,
                                 page_size,
                                 use_hmac,
+                                plaintext_header_size,
+                                compatibility,
+                                vacuum_after_pagesize,
                             };
                             crate::utils::sqlite_cipher::apply_cipher_settings_with(
                                 &conn, &secret, &cfg,

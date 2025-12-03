@@ -665,7 +665,8 @@ impl Storage {
     fn open_encrypted(db_path: &PathBuf) -> anyhow::Result<Connection> {
         let conn = Connection::open(db_path)?;
         let key = Self::get_or_create_app_key()?;
-        crate::utils::sqlite_cipher::apply_cipher_settings(&conn, &key)?;
+        let cfg = Self::env_cipher_settings();
+        crate::utils::sqlite_cipher::apply_cipher_settings_with(&conn, &key, &cfg)?;
         crate::utils::sqlite_cipher::apply_common_settings(&conn)?;
         Ok(conn)
     }
@@ -716,10 +717,12 @@ impl Storage {
 
         let plain_conn = plain;
         let key = Self::get_or_create_app_key()?;
-        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted(
+        let cfg = Self::env_cipher_settings();
+        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted_with(
             &plain_conn,
             &new_path,
             &key,
+            &cfg,
         )?;
 
         std::fs::rename(db_path, &backup_path)?;
@@ -751,6 +754,15 @@ impl Storage {
             kdf_iter,
             page_size,
             use_hmac,
+            plaintext_header_size: self
+                .get_setting("cipher_plaintext_header_size")?
+                .and_then(|v| v.parse::<u32>().ok()),
+            compatibility: self
+                .get_setting("cipher_compatibility")?
+                .and_then(|v| v.parse::<u32>().ok()),
+            vacuum_after_pagesize: self
+                .get_setting("vacuum_on_pagesize")?
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true")),
         };
         let key = Self::get_or_create_app_key()?;
         let conn = self
@@ -789,14 +801,49 @@ impl Storage {
         rand::thread_rng().fill_bytes(&mut buf);
         let new_hex = hex::encode(buf);
         let new_key = secrecy::SecretString::new(new_hex);
-        // Export to new encrypted file with new key
+        // Optional in-place rekey
+        let rekey_enabled = self
+            .get_setting("cipher_rekey_enabled")?
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or_else(|| {
+                std::env::var("PGPAD_SQLCIPHER_REKEY")
+                    .ok()
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false)
+            });
+        let cfg = Self::env_cipher_settings();
         let conn = self
             .conn
             .lock()
             .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+        if rekey_enabled {
+            let rekey_sql = format!("PRAGMA rekey = '{}';", new_key.expose_secret());
+            if conn.execute_batch(&rekey_sql).is_ok() {
+                let _ =
+                    crate::utils::sqlite_cipher::apply_cipher_settings_with(&conn, &new_key, &cfg);
+                let ck = conn
+                    .pragma_query_value(None, "cipher_integrity_check", |row| {
+                        row.get::<_, String>(0)
+                    })
+                    .unwrap_or_else(|_| String::from("error"));
+                if ck == "ok" {
+                    drop(conn);
+                    Self::set_app_key(&new_key)?;
+                    let enc_conn = Self::open_encrypted(db_path)
+                        .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let mut guard = self
+                        .conn
+                        .lock()
+                        .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+                    let _ = std::mem::replace(&mut *guard, enc_conn);
+                    return Ok(());
+                }
+            }
+        }
+        // Export to new encrypted file with new key
         let new_path = db_path.with_extension("db.new");
-        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted(
-            &conn, &new_path, &new_key,
+        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted_with(
+            &conn, &new_path, &new_key, &cfg,
         )
         .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
         drop(conn);
@@ -842,6 +889,35 @@ impl Storage {
             let _ = std::fs::remove_file(&backup_path);
         }
         Ok(())
+    }
+
+    fn env_cipher_settings() -> crate::utils::sqlite_cipher::CipherSettings {
+        let kdf_iter = std::env::var("PGPAD_CIPHER_KDF_ITER")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok());
+        let page_size = std::env::var("PGPAD_CIPHER_PAGE_SIZE")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok());
+        let use_hmac = std::env::var("PGPAD_CIPHER_USE_HMAC")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        let plaintext_header_size = std::env::var("PGPAD_CIPHER_PLAINTEXT_HEADER_SIZE")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok());
+        let compatibility = std::env::var("PGPAD_CIPHER_COMPATIBILITY")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok());
+        let vacuum_after_pagesize = std::env::var("PGPAD_SQLITE_VACUUM_ON_PAGESIZE")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        crate::utils::sqlite_cipher::CipherSettings {
+            kdf_iter,
+            page_size,
+            use_hmac,
+            plaintext_header_size,
+            compatibility,
+            vacuum_after_pagesize,
+        }
     }
 }
 
