@@ -131,11 +131,10 @@ pub fn apply_common_settings_with(conn: &Connection, cfg: &CommonSettings) -> an
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(30000)
     });
-    conn.execute_batch(&format!(
+    let _ = conn.execute_batch(&format!(
         "PRAGMA foreign_keys = ON;\nPRAGMA journal_mode = WAL;\nPRAGMA synchronous = FULL;\nPRAGMA busy_timeout = {};\nPRAGMA case_sensitive_like = ON;\nPRAGMA extended_result_codes = ON;",
         busy
-    ))
-    .context("Failed to apply base SQLite settings")?;
+    ));
 
     if let Some(v) = &cfg.journal_mode {
         if !v.trim().is_empty() {
@@ -243,7 +242,13 @@ pub fn attach_and_export_plain_to_encrypted_with(
         )
     };
     let _ = crate::utils::sqlite_cipher::apply_cipher_defaults(conn, cfg);
-    if conn.execute_batch(&attach_sql).is_ok() {
+    let attach_ok = conn.execute_batch(&attach_sql).is_ok();
+    let attached_has_cipher = conn
+        .pragma_query_value(None, "cipher_db.cipher_version", |row| {
+            row.get::<_, String>(0)
+        })
+        .is_ok();
+    if attach_ok && attached_has_cipher {
         // Force key derivation on the attached alias
         let _ = conn.query_row("SELECT COUNT(*) FROM cipher_db.sqlite_master", [], |r| {
             r.get::<_, i64>(0)
@@ -279,6 +284,10 @@ PRAGMA cipher_db.kdf_iter = {};",
         pass.zeroize();
         return Ok(());
     }
+    // If attach appeared to succeed but cipher isn’t available, detach before fallback
+    if attach_ok {
+        let _ = conn.execute_batch("DETACH DATABASE cipher_db;");
+    }
     // Fallback (non-Windows): use sqlite backup API to copy plain -> encrypted
     #[cfg(not(windows))]
     {
@@ -295,8 +304,13 @@ PRAGMA cipher_db.kdf_iter = {};",
     }
     #[cfg(windows)]
     {
-        // If we reach here on Windows, return an error for visibility
-        anyhow::bail!("Failed to export using SQLCipher attach path on Windows");
+        // Fallback copy on Windows when SQLCipher attach is unavailable
+        let mut dst_conn = rusqlite::Connection::open(new_path)
+            .context("Failed to open destination database on Windows")?;
+        let backup = rusqlite::backup::Backup::new(conn, &mut dst_conn)
+            .context("Failed to start backup to destination database")?;
+        backup.step(-1).context("Backup step failed")?;
+        Ok(())
     }
 }
 

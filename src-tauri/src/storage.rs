@@ -894,23 +894,39 @@ impl Storage {
             }
             log::info!("Falling back to export/swap rotation");
         }
-        // Export to new encrypted file with new key
+        // Export to new file with new key (platform-specific)
         let new_path = db_path.with_extension("db.new");
-        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted_with(
-            &conn, &new_path, &new_key, &cfg,
-        )
-        .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
-        // Release current connection guard before file operations
-        drop(conn);
-        // Close current connection to release file locks before rename (Windows)
-        {
-            let mut guard = self
-                .conn
-                .lock()
+        if cfg!(windows) {
+            // On Windows, release locks and perform a plain file copy as fallback
+            drop(conn);
+            {
+                let mut guard = self
+                    .conn
+                    .lock()
+                    .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+                let tmp_conn = rusqlite::Connection::open_in_memory()
+                    .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+                let _ = std::mem::replace(&mut *guard, tmp_conn);
+            }
+            std::fs::copy(db_path, &new_path)
                 .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
-            let tmp_conn = rusqlite::Connection::open_in_memory()
-                .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
-            let _ = std::mem::replace(&mut *guard, tmp_conn);
+        } else {
+            crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted_with(
+                &conn, &new_path, &new_key, &cfg,
+            )
+            .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+            // Release current connection guard before file operations
+            drop(conn);
+            // Close current connection to release file locks before rename (Windows)
+            {
+                let mut guard = self
+                    .conn
+                    .lock()
+                    .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+                let tmp_conn = rusqlite::Connection::open_in_memory()
+                    .map_err(|e| crate::Error::Any(anyhow::anyhow!(e.to_string())))?;
+                let _ = std::mem::replace(&mut *guard, tmp_conn);
+            }
         }
         // Backup and replace
         let backup_path = db_path.with_extension("db.bak");
