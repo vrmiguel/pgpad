@@ -1,0 +1,65 @@
+FROM rust:1-bookworm
+
+# Install Node.js 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
+
+# Install Tauri dependencies and Postgres
+# We also install sudo to switch to postgres user for DB setup
+RUN apt-get update && apt-get install -y \
+    libgtk-3-dev \
+    libayatana-appindicator3-dev \
+    librsvg2-dev \
+    libglib2.0-dev \
+    libwebkit2gtk-4.1-dev \
+    libssl-dev \
+    build-essential \
+    pkg-config \
+    postgresql \
+    sudo \
+    perl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Postgres binaries to PATH (for pgtemp tests)
+ENV PATH="/usr/lib/postgresql/15/bin:${PATH}"
+
+# Symlink initdb and postgres to /usr/bin so sudo can find them (pgtemp uses sudo)
+RUN ln -s /usr/lib/postgresql/15/bin/initdb /usr/bin/initdb && \
+    ln -s /usr/lib/postgresql/15/bin/postgres /usr/bin/postgres
+
+# Configure Postgres to trust local connections (simplifies setup)
+RUN for f in /etc/postgresql/*/main/pg_hba.conf; do \
+      echo "host all all 127.0.0.1/32 trust" > "$f" && \
+      echo "local all all trust" >> "$f"; \
+    done
+
+# Install rustfmt and clippy
+RUN rustup component add rustfmt clippy
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY src-tauri/Cargo.toml src-tauri/Cargo.lock ./src-tauri/
+
+# Create dummy source files to satisfy cargo
+RUN mkdir -p src-tauri/src && \
+    touch src-tauri/src/lib.rs && \
+    touch src-tauri/src/main.rs
+
+# Install npm dependencies
+RUN npm ci
+
+# Fetch cargo dependencies
+WORKDIR /app/src-tauri
+RUN cargo fetch
+WORKDIR /app
+
+# Copy the rest of the code
+COPY . .
+
+# Make script executable and fix line endings (if created on Windows)
+RUN sed -i 's/\r$//' scripts/run-ci.sh
+RUN chmod +x scripts/run-ci.sh
+
+CMD ["scripts/run-ci.sh"]

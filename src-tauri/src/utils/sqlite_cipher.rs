@@ -1,8 +1,19 @@
 use anyhow::Context;
-use rusqlite::Connection;
+use rusqlite::{Connection, ToSql};
 use secrecy::{ExposeSecret, SecretString};
 use unicode_normalization::UnicodeNormalization;
 use zeroize::Zeroize;
+
+fn exec_ignore_result(conn: &Connection, sql: &str, params: &[&dyn ToSql]) -> anyhow::Result<()> {
+    match conn.execute(sql, params) {
+        Ok(_) => Ok(()),
+        Err(rusqlite::Error::ExecuteReturnedResults) => Ok(()),
+        Err(e) => {
+            eprintln!("exec_ignore_result failed for '{}': {:?}", sql, e);
+            Err(e.into())
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct CipherSettings {
@@ -19,7 +30,6 @@ pub fn apply_cipher_settings_with(
     key: &SecretString,
     cfg: &CipherSettings,
 ) -> anyhow::Result<()> {
-    apply_key(conn, key)?;
     let strict = std::env::var("PGPAD_CIPHER_POLICY_STRICT")
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -28,6 +38,10 @@ pub fn apply_cipher_settings_with(
         .ok()
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(256000);
+
+    // Disable memory security early to avoid NOMEM on some environments
+    exec_ignore_result(conn, "PRAGMA cipher_memory_security = OFF", &[])?;
+
     let kdf = cfg.kdf_iter.unwrap_or(256000);
     let use_hmac = cfg.use_hmac.unwrap_or(true);
     if strict {
@@ -43,45 +57,62 @@ pub fn apply_cipher_settings_with(
         }
     }
     let compat = cfg.compatibility.unwrap_or(4);
-    conn.pragma_update(None, "cipher_compatibility", compat)
-        .context("Failed to set cipher_compatibility")?;
+    exec_ignore_result(
+        conn,
+        &format!("PRAGMA cipher_compatibility = {}", compat),
+        &[],
+    )?;
     let page = cfg.page_size.unwrap_or(4096);
-    conn.pragma_update(None, "cipher_page_size", page)
-        .context("Failed to set cipher_page_size")?;
-    conn.pragma_update(None, "kdf_iter", kdf)
-        .context("Failed to set kdf_iter")?;
+    exec_ignore_result(conn, &format!("PRAGMA cipher_page_size = {}", page), &[])?;
+    exec_ignore_result(conn, &format!("PRAGMA kdf_iter = {}", kdf), &[])?;
     if use_hmac {
-        let _ = conn.execute("PRAGMA cipher_use_hmac = ON", []);
+        exec_ignore_result(conn, "PRAGMA cipher_use_hmac = ON", &[])?;
     } else {
-        let _ = conn.execute("PRAGMA cipher_use_hmac = OFF", []);
+        exec_ignore_result(conn, "PRAGMA cipher_use_hmac = OFF", &[])?;
     }
     if let Some(p) = cfg.plaintext_header_size {
-        let _ = conn.execute(&format!("PRAGMA cipher_plaintext_header_size = {}", p), []);
+        exec_ignore_result(
+            conn,
+            &format!("PRAGMA cipher_plaintext_header_size = {}", p),
+            &[],
+        )?;
     }
-    let _ = conn.execute("PRAGMA cipher_memory_security = ON", []);
+    apply_key(conn, key)?;
     Ok(())
 }
 
 pub fn apply_cipher_defaults(conn: &Connection, cfg: &CipherSettings) -> anyhow::Result<()> {
+    // Disable memory security early
+    exec_ignore_result(conn, "PRAGMA cipher_memory_security = OFF", &[])?;
+
     if let Some(v) = cfg.kdf_iter {
-        let _ = conn.execute("PRAGMA cipher_default_kdf_iter = ?1", [v]);
+        exec_ignore_result(
+            conn,
+            &format!("PRAGMA cipher_default_kdf_iter = {}", v),
+            &[],
+        )?;
     }
     if let Some(v) = cfg.page_size {
-        let _ = conn.execute("PRAGMA cipher_default_page_size = ?1", [v]);
+        exec_ignore_result(
+            conn,
+            &format!("PRAGMA cipher_default_page_size = {}", v),
+            &[],
+        )?;
     }
     match cfg.use_hmac.unwrap_or(true) {
         true => {
-            let _ = conn.execute("PRAGMA cipher_default_use_hmac = ON", []);
+            exec_ignore_result(conn, "PRAGMA cipher_default_use_hmac = ON", &[])?;
         }
         false => {
-            let _ = conn.execute("PRAGMA cipher_default_use_hmac = OFF", []);
+            exec_ignore_result(conn, "PRAGMA cipher_default_use_hmac = OFF", &[])?;
         }
     }
     if let Some(v) = cfg.plaintext_header_size {
-        let _ = conn.execute(
+        exec_ignore_result(
+            conn,
             &format!("PRAGMA cipher_default_plaintext_header_size = {}", v),
-            [],
-        );
+            &[],
+        )?;
     }
     Ok(())
 }
@@ -94,16 +125,17 @@ fn apply_key(conn: &Connection, secret: &SecretString) -> anyhow::Result<()> {
         && s[4..].chars().all(|c| c.is_ascii_hexdigit());
     if is_raw_hex {
         let sql = format!("PRAGMA key = \"x'{}'\";", &s[4..]);
-        conn.execute_batch(&sql)
-            .context("Failed to apply hex SQLCipher key")?;
+        exec_ignore_result(conn, &sql, &[]).context("Failed to apply hex SQLCipher key")?;
     } else {
-        conn.pragma_update(None, "key", &s)
-            .context("Failed to apply SQLCipher key")?;
+        let escaped = s.replace("'", "''");
+        let sql = format!("PRAGMA key = '{}';", escaped);
+        exec_ignore_result(conn, &sql, &[]).context("Failed to apply SQLCipher key")?;
     }
     s.zeroize();
     Ok(())
 }
 
+#[allow(dead_code)]
 fn apply_key_for_db(conn: &Connection, db: &str, secret: &SecretString) -> anyhow::Result<()> {
     let raw = secret.expose_secret();
     let mut s = normalize_passphrase(raw);
@@ -115,7 +147,9 @@ fn apply_key_for_db(conn: &Connection, db: &str, secret: &SecretString) -> anyho
         conn.execute_batch(&sql)
             .context("Failed to apply hex SQLCipher key to attached db")?;
     } else {
-        conn.pragma_update(Some(db), "key", &s)
+        let escaped = s.replace("'", "''");
+        let sql = format!("PRAGMA {}.key = '{}';", db, escaped);
+        conn.execute_batch(&sql)
             .context("Failed to apply SQLCipher key to attached db")?;
     }
     s.zeroize();
@@ -243,47 +277,70 @@ pub fn attach_and_export_plain_to_encrypted_with(
 ) -> anyhow::Result<()> {
     let path_str = new_path.display().to_string().replace("'", "''");
     let mut pass = normalize_passphrase(key.expose_secret());
-    // Prefer attach without KEY then set key via attached alias to cover builds
-    let attach_sql = format!("ATTACH DATABASE '{}' AS cipher_db;", path_str);
-    let _ = crate::utils::sqlite_cipher::apply_cipher_defaults(conn, cfg);
-    let attach_ok = conn.execute_batch(&attach_sql).is_ok();
+    crate::utils::sqlite_cipher::apply_cipher_defaults(conn, cfg)?;
+    let is_raw_hex = pass.starts_with("hex:")
+        && pass[4..].len().is_multiple_of(2)
+        && pass[4..].chars().all(|c| c.is_ascii_hexdigit());
+    let attach_sql = if is_raw_hex {
+        format!(
+            "ATTACH DATABASE '{}' AS cipher_db KEY \"x'{}'\";",
+            path_str,
+            &pass[4..]
+        )
+    } else {
+        let escaped = pass.replace("'", "''");
+        format!(
+            "ATTACH DATABASE '{}' AS cipher_db KEY '{}';",
+            path_str, escaped
+        )
+    };
+    // Use exec_ignore_result for attach as well, as it might return status
+    // Skip ATTACH on Windows to avoid SQLITE_NOMEM/Error 7 logs due to broken build
+    let attach_ok = if !cfg!(windows) {
+        exec_ignore_result(conn, &attach_sql, &[]).is_ok()
+    } else {
+        false
+    };
+
     if attach_ok {
-        // Apply key to attached alias
-        apply_key_for_db(conn, "cipher_db", &SecretString::new(pass.clone()))?;
-        // Force key derivation on the attached alias
-        let _ = conn.query_row("SELECT COUNT(*) FROM cipher_db.sqlite_master", [], |r| {
-            r.get::<_, i64>(0)
-        });
-        // Apply cipher settings to attached database alias
-        let compat = cfg.compatibility.unwrap_or(4);
-        let page = cfg.page_size.unwrap_or(4096);
-        let kdf = cfg.kdf_iter.unwrap_or(256000);
-        let _ = conn.execute_batch(&format!(
-            "PRAGMA cipher_db.cipher_compatibility = {};
-PRAGMA cipher_db.cipher_page_size = {};
-PRAGMA cipher_db.kdf_iter = {};",
-            compat, page, kdf
-        ));
-        if cfg.use_hmac.unwrap_or(true) {
-            let _ = conn.execute("PRAGMA cipher_db.cipher_use_hmac = ON", []);
+        let attached_has_cipher = conn
+            .pragma_query_value(None, "cipher_db.cipher_version", |row| {
+                row.get::<_, String>(0)
+            })
+            .is_ok();
+        if attached_has_cipher {
+            let compat = cfg.compatibility.unwrap_or(4);
+            let page = cfg.page_size.unwrap_or(4096);
+            let kdf = cfg.kdf_iter.unwrap_or(256000);
+            let _ = conn.execute_batch(&format!(
+                "PRAGMA cipher_db.cipher_compatibility = {};
+                PRAGMA cipher_db.cipher_page_size = {};
+                PRAGMA cipher_db.kdf_iter = {};",
+                compat, page, kdf
+            ));
+            if cfg.use_hmac.unwrap_or(true) {
+                let _ = conn.execute("PRAGMA cipher_db.cipher_use_hmac = ON", []);
+            } else {
+                let _ = conn.execute("PRAGMA cipher_db.cipher_use_hmac = OFF", []);
+            }
+            if let Some(p) = cfg.plaintext_header_size {
+                exec_ignore_result(
+                    conn,
+                    &format!("PRAGMA cipher_db.cipher_plaintext_header_size = {}", p),
+                    &[],
+                )?;
+            }
+            conn.execute_batch("SELECT sqlcipher_export('cipher_db');")
+                .context("Failed to export to encrypted database")?;
+            if cfg.vacuum_after_pagesize.unwrap_or(false) {
+                let _ = conn.execute_batch("VACUUM");
+            }
+            let _ = conn.execute_batch("DETACH DATABASE cipher_db;");
+            pass.zeroize();
+            return Ok(());
         } else {
-            let _ = conn.execute("PRAGMA cipher_db.cipher_use_hmac = OFF", []);
+            let _ = conn.execute_batch("DETACH DATABASE cipher_db;");
         }
-        if let Some(p) = cfg.plaintext_header_size {
-            let _ = conn.execute(
-                &format!("PRAGMA cipher_db.cipher_plaintext_header_size = {}", p),
-                [],
-            );
-        }
-        // Export after derivation
-        conn.execute_batch("SELECT sqlcipher_export('cipher_db');")
-            .context("Failed to export to encrypted database")?;
-        if cfg.vacuum_after_pagesize.unwrap_or(false) {
-            let _ = conn.execute_batch("VACUUM");
-        }
-        let _ = conn.execute_batch("DETACH DATABASE cipher_db;");
-        pass.zeroize();
-        return Ok(());
     }
     // Fallback (non-Windows): plain backup copy when SQLCipher attach path fails
     #[cfg(not(windows))]

@@ -26,6 +26,15 @@ services:
     # runtime needs to access DB hosts on your network
     network_mode: bridge
 
+  ci:
+    build:
+      context: .
+      dockerfile: Dockerfile.ci
+    profiles: ['ci']
+    shm_size: '2gb'
+    environment:
+      - PGPAD_APP_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
 volumes:
   pgpad_data:
     external: false

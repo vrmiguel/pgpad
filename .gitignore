@@ -20,3 +20,4 @@ dist-ssr
 !.env.example
 /src-tauri/target/
 /src-tauri/gen/schemas
+.dev-docker/
