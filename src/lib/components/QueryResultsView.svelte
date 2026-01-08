@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import Table from './Table.svelte';
 	import JsonInspector from './JsonInspector.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
+	import KeyboardShortcuts from './KeyboardShortcuts.svelte';
 	import { QueryExecutor } from '$lib/queryExecutor.svelte';
 	import type { Json } from '$lib/commands.svelte';
 
@@ -15,7 +17,7 @@
 		connectionId: string;
 		/** Callback when query completes successfully */
 		onQueryComplete?: (totalRows: number) => void;
-		/** Whether to show result tabs (for multi-statement queries) */
+		/** Whether to show tabs. Useful for table-view so that it doesn't show the tabs component and takes up the whole space */
 		showResultTabs?: boolean;
 	}
 
@@ -24,16 +26,21 @@
 	let selectedCellData = $state<Json | null>(null);
 	let jsonInspectorData = $state<{ data: Json; position: { x: number; y: number } } | null>(null);
 
-	// Create the query executor (reusable across queries)
 	const executor = $state(new QueryExecutor());
 
-	// Execute query when props change
-	$effect(() => {
-		// Execute query (it clears old results internally)
-		executor.executeQuery(query, connectionId, onQueryComplete);
+	// This is not meant to truly and accurately measure any query's execution time, it's just for the
+	// UI to not "flicker" if executing a very fast query.
+	// Without something like this, a query that finishes in a few milliseconds would very briefly flash
+	// "Loading results..." or etc, only to then be overwritten with the Table with the results.
+	let lastQueryStartedAt = $state(performance.now());
 
-		// // Cleanup: dispose intervals on unmount or before re-run
-		// return () => executor.dispose();
+	$effect(() => {
+		lastQueryStartedAt = performance.now();
+		executor.executeQuery(query, connectionId, onQueryComplete);
+	});
+
+	onDestroy(() => {
+		executor.dispose();
 	});
 </script>
 
@@ -194,7 +201,7 @@
 						{:else if activeTab.queryReturnsResults === false}
 							<div class="flex h-full flex-1 items-center justify-center">
 								<div class="text-center">
-									{#if activeTab.status === 'Running'}
+									{#if activeTab.status === 'Running' && performance.now() - lastQueryStartedAt > 150}
 										<div class="text-muted-foreground text-sm">Executing query...</div>
 									{:else if activeTab.status === 'Completed'}
 										<div class="text-sm font-medium text-green-600">
@@ -203,7 +210,7 @@
 									{/if}
 								</div>
 							</div>
-						{:else if activeTab.status === 'Running'}
+						{:else if activeTab.status === 'Running' && performance.now() - lastQueryStartedAt > 150}
 							<div class="flex h-full flex-1 items-center justify-center">
 								<div class="text-center">
 									<div class="text-muted-foreground text-sm">Loading results...</div>
@@ -220,10 +227,9 @@
 				{/if}
 			{/if}
 		{:else}
+			<!-- We get here if results were shown but then the user closed all tabs -->
 			<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-6 pt-0">
-				<div class="text-muted-foreground flex flex-1 items-center justify-center">
-					<div class="text-sm">Executing query...</div>
-				</div>
+				<KeyboardShortcuts />
 			</CardContent>
 		{/if}
 	</Card>

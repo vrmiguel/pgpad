@@ -30,12 +30,9 @@ export class QueryExecutor {
 	private pageCountPolls = new Map<QueryId, ReturnType<typeof setInterval>>();
 	private onComplete?: (totalRows: number) => void;
 
-	constructor() {
-		// Empty constructor - execution happens via executeQuery()
-	}
+	constructor() {}
 
 	dispose() {
-		// Clean up any running polls (idempotent - safe to call multiple times)
 		for (const interval of this.pageCountPolls.values()) {
 			clearInterval(interval);
 		}
