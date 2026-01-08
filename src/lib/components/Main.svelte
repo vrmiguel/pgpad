@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import SqlEditor from './SqlEditor.svelte';
+	import TableBrowseView from './TableBrowseView.svelte';
 	import ConnectionForm from './ConnectionForm.svelte';
 	import ScriptTabs from './ScriptTabs.svelte';
 	import AppSidebar from './AppSidebar.svelte';
@@ -387,7 +388,9 @@
 	}
 
 	function handleTableClick(tableName: string, schema: string) {
-		sqlEditorRef?.handleTableBrowse(tableName, schema);
+		if (!selectedConnection) return;
+		tabs.openTableExplorationTab(tableName, schema, selectedConnection);
+		markSessionDirty();
 	}
 
 	async function loadQueryHistory() {
@@ -632,23 +635,32 @@
 		<!-- Main Editor Pane -->
 		<ResizablePane defaultSize={isSidebarCollapsed ? 96 : 75}>
 			<div class="flex h-full flex-col bg-white dark:bg-gray-900">
-				<!-- Editor and Results - same component instance always -->
+				<!-- Editor and Results -->
 				<div class="flex flex-1 flex-col bg-gray-50/50 dark:bg-gray-800/50">
 					<!-- Script Tabs -->
 					<ScriptTabs />
 
-					<SqlEditor
-						selectedConnection={selectedConnection ?? null}
-						{connections}
-						currentScript={activeScriptId !== null
-							? scripts.find((s) => s.id === activeScriptId) || null
-							: null}
-						hasUnsavedChanges={tabs.active?.isDirty ?? false}
-						bind:this={sqlEditorRef}
-						onContentChange={handleEditorContentChange}
-						onLoadFromHistory={createScriptFromHistory}
-						onHistoryUpdate={loadQueryHistory}
-					/>
+					{#if tabs.active?.type === 'script'}
+						<SqlEditor
+							selectedConnection={selectedConnection ?? null}
+							{connections}
+							currentScript={activeScriptId !== null
+								? scripts.find((s) => s.id === activeScriptId) || null
+								: null}
+							hasUnsavedChanges={tabs.active?.isDirty ?? false}
+							bind:this={sqlEditorRef}
+							onContentChange={handleEditorContentChange}
+							onLoadFromHistory={createScriptFromHistory}
+							onHistoryUpdate={loadQueryHistory}
+						/>
+					{:else if tabs.active?.type === 'table-view'}
+						{@const tableTab = tabs.active}
+						<TableBrowseView
+							tableName={tableTab.tableName}
+							schema={tableTab.schema}
+							connectionId={tableTab.connectionId}
+						/>
+					{/if}
 				</div>
 			</div>
 		</ResizablePane>
