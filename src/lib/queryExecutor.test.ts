@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryExecutor } from './queryExecutor.svelte';
 import type { QueryId, QueryStatus, StatementInfo, Page } from './commands.svelte';
@@ -24,9 +26,7 @@ const mockCommands = Commands as unknown as {
 	getPageCount: ReturnType<typeof vi.fn>;
 };
 
-function createMockStatementInfo(
-	overrides: Partial<StatementInfo> = {}
-): StatementInfo {
+function createMockStatementInfo(overrides: Partial<StatementInfo> = {}): StatementInfo {
 	return {
 		returns_values: true,
 		status: 'Completed',
@@ -68,7 +68,10 @@ describe('QueryExecutor', () => {
 			mockCommands.waitUntilRenderable.mockResolvedValue(
 				createMockStatementInfo({
 					status: 'Completed',
-					first_page: [[1, 'Alice'], [2, 'Bob']]
+					first_page: [
+						[1, 'Alice'],
+						[2, 'Bob']
+					]
 				})
 			);
 			mockCommands.getColumns.mockResolvedValue(['id', 'name']);
@@ -578,7 +581,7 @@ describe('QueryExecutor', () => {
 			try {
 				const queryId: QueryId = 1;
 				let getStatusCallCount = 0;
-				
+
 				mockCommands.submitQuery.mockResolvedValue([queryId]);
 				mockCommands.waitUntilRenderable.mockResolvedValue(
 					createMockStatementInfo({
@@ -588,7 +591,7 @@ describe('QueryExecutor', () => {
 					})
 				);
 				mockCommands.getColumns.mockResolvedValue(['id']);
-				
+
 				// Make status transition happen after a couple polls
 				mockCommands.getQueryStatus.mockImplementation(() => {
 					getStatusCallCount++;
@@ -597,7 +600,7 @@ describe('QueryExecutor', () => {
 					}
 					return Promise.resolve('Completed' as QueryStatus);
 				});
-				
+
 				mockCommands.getPageCount.mockImplementation(() => {
 					if (getStatusCallCount <= 2) {
 						return Promise.resolve(null as any);
@@ -756,8 +759,8 @@ describe('QueryExecutor', () => {
 			const shortQuery = 'SELECT 1';
 			mockCommands.submitQuery.mockResolvedValue([1]);
 			mockCommands.waitUntilRenderable.mockResolvedValue(
-				createMockStatementInfo({ 
-					status: 'Completed', 
+				createMockStatementInfo({
+					status: 'Completed',
 					returns_values: false,
 					affected_rows: 1
 				})
@@ -773,8 +776,8 @@ describe('QueryExecutor', () => {
 			const longQuery = 'SELECT * FROM users WHERE name LIKE "%test%" AND age > 18';
 			mockCommands.submitQuery.mockResolvedValue([1]);
 			mockCommands.waitUntilRenderable.mockResolvedValue(
-				createMockStatementInfo({ 
-					status: 'Completed', 
+				createMockStatementInfo({
+					status: 'Completed',
 					returns_values: false,
 					affected_rows: 0
 				})
@@ -791,10 +794,10 @@ describe('QueryExecutor', () => {
 			const manyColumns = Array.from({ length: 100 }, (_, i) => `col${i}`);
 			mockCommands.submitQuery.mockResolvedValue([1]);
 			mockCommands.waitUntilRenderable.mockResolvedValue(
-				createMockStatementInfo({ 
-					status: 'Completed', 
+				createMockStatementInfo({
+					status: 'Completed',
 					returns_values: true,
-					first_page: [[]] 
+					first_page: [[]]
 				})
 			);
 			mockCommands.getColumns.mockResolvedValue(manyColumns);
@@ -822,7 +825,7 @@ describe('QueryExecutor', () => {
 				mockCommands.getColumns.mockResolvedValue(null);
 
 				const executePromise = executor.executeQuery('SELECT * FROM users', 'conn-1');
-				
+
 				// Run through all the polling attempts (50 retries * 100ms = 5000ms)
 				await vi.advanceTimersByTimeAsync(5100);
 				await executePromise;
@@ -840,22 +843,22 @@ describe('QueryExecutor', () => {
 			mockCommands.submitQuery.mockResolvedValue([1, 2, 3]);
 			mockCommands.waitUntilRenderable
 				.mockResolvedValueOnce(
-					createMockStatementInfo({ 
-						status: 'Completed', 
+					createMockStatementInfo({
+						status: 'Completed',
 						returns_values: false,
 						affected_rows: 1
 					})
 				)
 				.mockResolvedValueOnce(
-					createMockStatementInfo({ 
-						status: 'Running', 
-						returns_values: false 
+					createMockStatementInfo({
+						status: 'Running',
+						returns_values: false
 					})
 				)
 				.mockResolvedValueOnce(
-					createMockStatementInfo({ 
-						status: 'Error', 
-						error: 'Test error' 
+					createMockStatementInfo({
+						status: 'Error',
+						error: 'Test error'
 					})
 				);
 
@@ -868,4 +871,3 @@ describe('QueryExecutor', () => {
 		});
 	});
 });
-

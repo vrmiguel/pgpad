@@ -16,6 +16,6 @@
 	});
 </script>
 
-<div class="flex h-full flex-col">
+<div class="h-full flex-1" style="height: 0;">
 	<QueryResultsView {query} {connectionId} showResultTabs={false} />
 </div>
