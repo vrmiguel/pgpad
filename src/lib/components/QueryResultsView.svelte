@@ -65,11 +65,7 @@
 		</div>
 	{/if}
 
-	<Card
-		class="flex flex-1 flex-col gap-0 overflow-hidden rounded-none border-none {showResultTabs
-			? 'pt-0'
-			: ''} pb-0"
-	>
+	<Card class="flex flex-1 flex-col gap-0 overflow-hidden rounded-none border-none pt-0 pb-0">
 		{#if executor.resultTabs.length > 0 && executor.activeResultTabId}
 			{@const activeTab = executor.resultTabs.find((t) => t.id === executor.activeResultTabId)}
 			{#if activeTab}
