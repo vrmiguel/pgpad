@@ -32,7 +32,6 @@
 
 	let sqlQuery = $state('');
 	let queryToExecute = $state<string>('');
-	let queryKey = $state(0); // Used to trigger re-execution
 
 	const isConnected = $derived.by(() => {
 		if (!selectedConnection) return false;
@@ -88,9 +87,8 @@
 			return;
 		}
 
-		// Update query and increment key to trigger re-execution
+		// Update query to trigger reactive re-execution
 		queryToExecute = query.trim();
-		queryKey++;
 	}
 
 	export function loadQueryFromHistory(historyQuery: string) {
@@ -179,14 +177,12 @@
 		<ResizablePane defaultSize={40} minSize={20}>
 			<div class="h-full">
 				{#if selectedConnection && queryToExecute}
-					{#key queryKey}
-						<QueryResultsView
-							query={queryToExecute}
-							connectionId={selectedConnection}
-							onQueryComplete={handleQueryComplete}
-							showResultTabs={true}
-						/>
-					{/key}
+					<QueryResultsView
+						query={queryToExecute}
+						connectionId={selectedConnection}
+						onQueryComplete={handleQueryComplete}
+						showResultTabs={true}
+					/>
 				{:else}
 					<Card
 						class="flex h-full flex-col gap-0 overflow-hidden rounded-none border-none pt-0 pb-0"
