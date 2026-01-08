@@ -21,8 +21,9 @@ export interface ScriptTab extends BaseTab {
 	isNewScript: boolean;
 }
 
-interface TableViewTab extends BaseTab {
+export interface TableViewTab extends BaseTab {
 	type: 'table-view';
+	tableTabId: number; // Numeric ID for the tab bar
 	tableName: string;
 	schema: string;
 	connectionId: string;
@@ -51,6 +52,7 @@ interface TabStore {
 	scripts: Script[];
 	newScripts: SvelteSet<number>;
 	nextTempId: number;
+	nextTableTabId: number; // Counter for table tab IDs
 	currentEditorContent: string;
 	sqlEditorRef: {
 		saveState(): EditorState | undefined;
@@ -66,6 +68,7 @@ const tabStore = $state<TabStore>({
 	scripts: [],
 	newScripts: new SvelteSet<number>(),
 	nextTempId: -1,
+	nextTableTabId: 1, // Start table tab IDs at 1
 	currentEditorContent: '',
 	sqlEditorRef: null
 });
@@ -142,13 +145,14 @@ export const tabs = {
 		const tab = tabStore.tabs.find((t) => t.id === tabId);
 		if (!tab) return;
 
-		const currentTab = this.active as ScriptTab;
+		const currentTab = this.active;
 		if (currentTab?.type === 'script' && tabStore.sqlEditorRef && !skipSaveCurrentContent) {
-			currentTab.content = tabStore.currentEditorContent;
+			const scriptTab = currentTab as ScriptTab;
+			scriptTab.content = tabStore.currentEditorContent;
 
 			const state = tabStore.sqlEditorRef.saveState();
 			if (state) {
-				currentTab.editorState = state;
+				scriptTab.editorState = state;
 			}
 		}
 
@@ -166,6 +170,9 @@ export const tabs = {
 				}
 				tabStore.sqlEditorRef.syncFontSize();
 			}
+		} else if (tab.type === 'table-view') {
+			// Clear editor content when switching to table view
+			tabStore.currentEditorContent = '';
 		}
 
 		markSessionDirty();
@@ -297,16 +304,28 @@ export const tabs = {
 	},
 
 	openTableExplorationTab(tableName: string, schema: string, connectionId: string): void {
-		const tabId = `table-${connectionId}-${schema}-${tableName}`;
+		// Check if a tab for this table already exists
+		const existingTab = tabStore.tabs.find(
+			(t) =>
+				t.type === 'table-view' &&
+				(t as TableViewTab).tableName === tableName &&
+				(t as TableViewTab).schema === schema &&
+				(t as TableViewTab).connectionId === connectionId
+		);
 
-		if (tabStore.tabs.find((t) => t.id === tabId)) {
-			this.switchToTab(tabId);
+		if (existingTab) {
+			this.switchToTab(existingTab.id);
 			return;
 		}
+
+		// Generate a new numeric ID
+		const tableTabId = tabStore.nextTableTabId++;
+		const tabId = `table-${tableTabId}`;
 
 		const tableTab: TableViewTab = {
 			id: tabId,
 			type: 'table-view',
+			tableTabId,
 			title: `${schema}.${tableName}`,
 			isDirty: false,
 			canClose: true,
@@ -322,13 +341,21 @@ export const tabs = {
 	},
 
 	async saveSession(saveSessionCallback: (data: SessionData) => Promise<void>): Promise<void> {
+		// Only persist script tabs, not table-view tabs (they are ephemeral)
 		const scriptTabs = tabStore.tabs.filter((t) => t.type === 'script') as ScriptTab[];
 
+		// If active tab is a script, save its ID; otherwise, save the first script tab or null
+		let activeScriptId = null;
+		const activeTab = this.active;
+		if (activeTab?.type === 'script') {
+			activeScriptId = (activeTab as ScriptTab).scriptId;
+		} else if (scriptTabs.length > 0) {
+			activeScriptId = scriptTabs[0].scriptId;
+		}
+
 		const sessionData = {
-			openTabIds: tabStore.tabs.map((t) => t.id),
-			activeTabId: tabStore.activeTabId,
 			openScriptIds: scriptTabs.map((t) => t.scriptId),
-			activeScriptId: scriptTabs.find((t) => t.id === tabStore.activeTabId)?.scriptId || null,
+			activeScriptId,
 			unsavedChanges: Object.fromEntries(
 				scriptTabs
 					.filter((t) => !t.isNewScript && t.content !== t.script.query_text)

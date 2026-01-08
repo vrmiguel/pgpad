@@ -1,46 +1,90 @@
 <script lang="ts">
 	import TabBar from '$lib/components/ui/TabBar.svelte';
-	import { tabs, type ScriptTab } from '$lib/stores/tabs.svelte';
+	import { tabs, type ScriptTab, type TableViewTab } from '$lib/stores/tabs.svelte';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
 
-	const scriptTabs = $derived(
-		tabs.all
-			.filter((tab) => tab.type === 'script')
-			.map((tab) => {
+	// All tabs (scripts + table views)
+	const allTabs = $derived(
+		tabs.all.map((tab): { id: number; name: string } => {
+			if (tab.type === 'script') {
 				return {
-					id: tab.scriptId,
+					id: (tab as ScriptTab).scriptId,
 					name: tab.title
 				};
-			})
+			} else {
+				// table-view
+				return {
+					id: (tab as TableViewTab).tableTabId,
+					name: `📋 ${tab.title}`
+				};
+			}
+		})
 	);
 
-	const activeScriptId = $derived(
-		tabs.active?.type === 'script' ? (tabs.active as ScriptTab).scriptId : null
-	);
+	const activeTabIdForTabBar = $derived.by((): number | null => {
+		const activeTab = tabs.active;
+		if (!activeTab) return null;
+		if (activeTab.type === 'script') {
+			return (activeTab as ScriptTab).scriptId;
+		} else if (activeTab.type === 'table-view') {
+			return (activeTab as TableViewTab).tableTabId;
+		}
+		return null;
+	});
 
-	function handleTabSelect(scriptId: number) {
-		const tabId = `script-${scriptId}`;
-		tabs.switchToTab(tabId);
+	function handleTabSelect(tabId: number) {
+		// Find the tab by its numeric ID
+		const tab = tabs.all.find((t) => {
+			if (t.type === 'script') {
+				return (t as ScriptTab).scriptId === tabId;
+			} else if (t.type === 'table-view') {
+				return (t as TableViewTab).tableTabId === tabId;
+			}
+			return false;
+		});
+
+		if (tab) {
+			tabs.switchToTab(tab.id);
+		}
 	}
 
-	function handleTabClose(scriptId: number) {
-		const tabId = `script-${scriptId}`;
-		tabs.closeTab(tabId);
+	function handleTabClose(tabId: number) {
+		// Find the tab by its numeric ID
+		const tab = tabs.all.find((t) => {
+			if (t.type === 'script') {
+				return (t as ScriptTab).scriptId === tabId;
+			} else if (t.type === 'table-view') {
+				return (t as TableViewTab).tableTabId === tabId;
+			}
+			return false;
+		});
+
+		if (tab) {
+			tabs.closeTab(tab.id);
+		}
 	}
 
 	function handleNewScript() {
 		tabs.createNewScript();
 	}
 
-	function handleScriptRename(scriptId: number, newName: string) {
-		const tabId = `script-${scriptId}`;
-		tabs.renameScript(tabId, newName);
+	function handleScriptRename(tabId: number, newName: string) {
+		const tabIdStr = `script-${tabId}`;
+		tabs.renameScript(tabIdStr, newName);
+		// Table-view tabs can't be renamed
 	}
 
 	function getScriptStatus(tab: { id: number; name: string }): 'normal' | 'modified' | 'error' {
-		const tabId = `script-${tab.id}`;
-		const storeTab = tabs.all.find((t) => t.id === tabId);
+		// Find the actual tab
+		const storeTab = tabs.all.find((t) => {
+			if (t.type === 'script') {
+				return (t as ScriptTab).scriptId === tab.id;
+			} else if (t.type === 'table-view') {
+				return (t as TableViewTab).tableTabId === tab.id;
+			}
+			return false;
+		});
 		return storeTab?.isDirty ? 'modified' : 'normal';
 	}
 
@@ -49,8 +93,9 @@
 	onMount(async () => {
 		unlistenNewTab = await listen('new_tab', handleNewScript);
 		unlistenCloseTab = await listen('close_tab', () => {
-			if (activeScriptId) {
-				handleTabClose(activeScriptId);
+			const activeId = activeTabIdForTabBar;
+			if (activeId) {
+				handleTabClose(activeId);
 			}
 		});
 	});
@@ -61,8 +106,8 @@
 </script>
 
 <TabBar
-	tabs={scriptTabs}
-	activeTabId={activeScriptId}
+	tabs={allTabs}
+	activeTabId={activeTabIdForTabBar}
 	onTabSelect={handleTabSelect}
 	onTabClose={handleTabClose}
 	onNewTab={handleNewScript}
