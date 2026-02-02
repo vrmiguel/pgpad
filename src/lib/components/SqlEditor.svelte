@@ -33,6 +33,7 @@
 
 	let sqlQuery = $state('');
 	let queryToExecute = $state<string>('');
+	let executionTrigger = $state(0);
 
 	const isConnected = $derived.by(() => {
 		if (!selectedConnection) return false;
@@ -88,8 +89,9 @@
 			return;
 		}
 
-		// Update query to trigger reactive re-execution
+		// Update query and increment trigger
 		queryToExecute = query.trim();
+		executionTrigger++;
 	}
 
 	export function loadQueryFromHistory(historyQuery: string) {
@@ -181,6 +183,7 @@
 					<QueryResultsView
 						query={queryToExecute}
 						connectionId={selectedConnection}
+						{executionTrigger}
 						onQueryComplete={handleQueryComplete}
 						showResultTabs={true}
 					/>

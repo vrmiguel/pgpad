@@ -15,13 +15,21 @@
 		query: string;
 		/** Connection ID to execute against */
 		connectionId: string;
+		/** Increments each time a query should be executed */
+		executionTrigger?: number;
 		/** Callback when query completes successfully */
 		onQueryComplete?: (totalRows: number) => void;
 		/** Whether to show tabs. Useful for table-view so that it doesn't show the tabs component and takes up the whole space */
 		showResultTabs?: boolean;
 	}
 
-	let { query, connectionId, onQueryComplete, showResultTabs = true }: Props = $props();
+	let {
+		query,
+		connectionId,
+		executionTrigger = 0,
+		onQueryComplete,
+		showResultTabs = true
+	}: Props = $props();
 
 	let selectedCellData = $state<Json | null>(null);
 	let jsonInspectorData = $state<{ data: Json; position: { x: number; y: number } } | null>(null);
@@ -34,9 +42,16 @@
 	// "Loading results..." or etc, only to then be overwritten with the Table with the results.
 	let lastQueryStartedAt = $state(performance.now());
 
+	let lastExecutionTrigger = $state<number>(-1);
+
 	$effect(() => {
-		lastQueryStartedAt = performance.now();
-		executor.executeQuery(query, connectionId, onQueryComplete);
+		// Execute only when the trigger changes, i.e. when the user explicitly clicked execute
+		// This prevents automatic unwanted execution when switching databases
+		if (executionTrigger !== lastExecutionTrigger) {
+			lastQueryStartedAt = performance.now();
+			lastExecutionTrigger = executionTrigger;
+			executor.executeQuery(query, connectionId, onQueryComplete);
+		}
 	});
 
 	onDestroy(() => {
