@@ -6,7 +6,6 @@ use sqlparser::{
 pub struct ParsedStatement {
     pub statement: String,
     pub returns_values: bool,
-    #[expect(unused)]
     pub is_read_only: bool,
 }
 

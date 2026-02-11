@@ -29,6 +29,11 @@ pub struct StatementInfo {
     pub error: Option<String>,
 }
 
+pub enum DatabaseKind {
+    Postgres,
+    Sqlite,
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum QueryStatus {
@@ -49,14 +54,44 @@ impl From<u8> for QueryStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Permissions {
+    #[default]
+    ReadWrite,
+    ProtectedWrite,
+    ReadOnly,
+}
+
+impl Permissions {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ReadWrite => "read_write",
+            Self::ProtectedWrite => "protected_write",
+            Self::ReadOnly => "read_only",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "protected_write" => Self::ProtectedWrite,
+            "read_only" => Self::ReadOnly,
+            _ => Self::ReadWrite,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionInfo {
     pub id: Uuid,
     pub name: String,
     pub connected: bool,
+    pub permissions: Permissions,
     pub database_type: DatabaseInfo,
 }
 
+// TODO(vini): these types (DatabaseInfo, Database, DatabaseConnection) are all so similar the the code is currently very confusing
+// Gotta refactor
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DatabaseInfo {
     Postgres {
@@ -73,6 +108,7 @@ pub struct DatabaseConnection {
     pub id: Uuid,
     pub name: String,
     pub connected: bool,
+    pub permissions: Permissions,
     pub database: Database,
 }
 
@@ -99,12 +135,22 @@ pub enum Database {
     },
 }
 
+impl Database {
+    pub fn kind(&self) -> DatabaseKind {
+        match self {
+            Database::Postgres { .. } => DatabaseKind::Postgres,
+            Database::SQLite { .. } => DatabaseKind::Sqlite,
+        }
+    }
+}
+
 impl DatabaseConnection {
     pub fn to_connection_info(&self) -> ConnectionInfo {
         ConnectionInfo {
             id: self.id,
             name: self.name.clone(),
             connected: self.connected,
+            permissions: self.permissions,
             database_type: match &self.database {
                 Database::Postgres {
                     connection_string,
@@ -121,7 +167,12 @@ impl DatabaseConnection {
         }
     }
 
-    pub fn new(id: Uuid, name: String, database_info: DatabaseInfo) -> Self {
+    pub fn new(
+        id: Uuid,
+        name: String,
+        database_info: DatabaseInfo,
+        permissions: Permissions,
+    ) -> Self {
         let database = match database_info {
             DatabaseInfo::Postgres {
                 connection_string,
@@ -141,6 +192,7 @@ impl DatabaseConnection {
             id,
             name,
             connected: false,
+            permissions,
             database,
         }
     }

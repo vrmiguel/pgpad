@@ -15,11 +15,16 @@
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
 
-	import { Commands, type DatabaseInfo, type ConnectionInfo } from '$lib/commands.svelte';
-	import { Tabs } from 'bits-ui';
+	import {
+		Commands,
+		type DatabaseInfo,
+		type ConnectionInfo,
+		type Permissions
+	} from '$lib/commands.svelte';
+	import { Tabs, RadioGroup } from 'bits-ui';
 
 	interface Props {
-		onSubmit: (name: string, databaseInfo: DatabaseInfo) => void;
+		onSubmit: (name: string, databaseInfo: DatabaseInfo, permissions: Permissions) => void;
 		onCancel: () => void;
 		editingConnection?: ConnectionInfo | null;
 	}
@@ -27,6 +32,7 @@
 	let { onSubmit, onCancel, editingConnection = null }: Props = $props();
 
 	let connectionName = $state(editingConnection?.name || '');
+	let permissions = $state<Permissions>(editingConnection?.permissions || 'read_write');
 
 	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
 	let connectionString = $state('');
@@ -157,7 +163,7 @@
 						}
 					: { SQLite: { db_path: sqliteFilePath.trim() } };
 
-			onSubmit(connectionName.trim(), databaseInfo);
+			onSubmit(connectionName.trim(), databaseInfo, permissions);
 		}
 	}
 </script>
@@ -194,6 +200,64 @@
 					{errors.name}
 				</p>
 			{/if}
+		</div>
+
+		<div>
+			<div class="text-foreground mb-3 block text-sm font-semibold">Permissions</div>
+			<RadioGroup.Root bind:value={permissions} class="space-y-2">
+				<label
+					class={`bg-card hover:bg-muted/30 border-input relative flex cursor-pointer rounded-lg border p-4 transition-all ${permissions === 'read_write' ? 'ring-primary ring-offset-background ring-2 ring-offset-2' : ''}`}
+				>
+					<div class="flex flex-1 items-start gap-3">
+						<RadioGroup.Item
+							value="read_write"
+							class="border-input data-[state=checked]:border-primary data-[state=checked]:bg-primary after:bg-background mt-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 transition-all after:h-1.5 after:w-1.5 after:rounded-full after:opacity-0 after:transition-opacity data-[state=checked]:after:opacity-100"
+						/>
+						<div class="flex-1">
+							<div class="text-foreground mb-1 text-sm font-semibold">Read/Write</div>
+							<div class="text-muted-foreground text-xs leading-relaxed">
+								Full access with no restrictions. Use for development and testing environments.
+							</div>
+						</div>
+					</div>
+				</label>
+
+				<label
+					class={`bg-card hover:bg-muted/30 border-input relative flex cursor-pointer rounded-lg border p-4 transition-all ${permissions === 'protected_write' ? 'ring-primary ring-offset-background ring-2 ring-offset-2' : ''}`}
+				>
+					<div class="flex flex-1 items-start gap-3">
+						<RadioGroup.Item
+							value="protected_write"
+							class="border-input data-[state=checked]:border-primary data-[state=checked]:bg-primary after:bg-background mt-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 transition-all after:h-1.5 after:w-1.5 after:rounded-full after:opacity-0 after:transition-opacity data-[state=checked]:after:opacity-100"
+						/>
+						<div class="flex-1">
+							<div class="text-foreground mb-1 text-sm font-semibold">Protected Write</div>
+							<div class="text-muted-foreground text-xs leading-relaxed">
+								Requires confirmation before executing any write operations. Recommended for
+								production databases.
+							</div>
+						</div>
+					</div>
+				</label>
+
+				<label
+					class={`bg-card hover:bg-muted/30 border-input relative flex cursor-pointer rounded-lg border p-4 transition-all ${permissions === 'read_only' ? 'ring-primary ring-offset-background ring-2 ring-offset-2' : ''}`}
+				>
+					<div class="flex flex-1 items-start gap-3">
+						<RadioGroup.Item
+							value="read_only"
+							class="border-input data-[state=checked]:border-primary data-[state=checked]:bg-primary after:bg-background mt-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 transition-all after:h-1.5 after:w-1.5 after:rounded-full after:opacity-0 after:transition-opacity data-[state=checked]:after:opacity-100"
+						/>
+						<div class="flex-1">
+							<div class="text-foreground mb-1 text-sm font-semibold">Read Only</div>
+							<div class="text-muted-foreground text-xs leading-relaxed">
+								All write operations will be blocked. Use for production databases where you only
+								need to view data.
+							</div>
+						</div>
+					</div>
+				</label>
+			</RadioGroup.Root>
 		</div>
 
 		<div>
