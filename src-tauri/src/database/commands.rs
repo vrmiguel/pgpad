@@ -432,6 +432,8 @@ pub async fn is_query_read_only(
     query: &str,
     state: tauri::State<'_, AppState>,
 ) -> Result<bool, Error> {
+
+    log::info!("Checking if {query} is read-only");
     let db = state
         .connections
         .get(&connection_id)

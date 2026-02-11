@@ -85,6 +85,7 @@ pub fn run() {
             database::commands::connect_to_database,
             database::commands::disconnect_from_database,
             database::commands::submit_query,
+            database::commands::is_query_read_only,
             database::commands::wait_until_renderable,
             database::commands::fetch_page,
             database::commands::get_query_status,

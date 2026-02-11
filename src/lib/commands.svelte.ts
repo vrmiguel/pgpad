@@ -220,6 +220,10 @@ export class Commands {
 		return await invoke('submit_query', { connectionId, query });
 	}
 
+	static async isQueryReadOnly(connectionId: string, query: string): Promise<boolean> {
+		return await invoke('is_query_read_only', { connectionId, query });
+	}
+
 	static async waitUntilRenderable(queryId: QueryId): Promise<StatementInfo> {
 		return await invoke('wait_until_renderable', { queryId });
 	}
