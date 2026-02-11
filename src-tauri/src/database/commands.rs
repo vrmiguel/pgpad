@@ -10,11 +10,12 @@ use uuid::Uuid;
 use crate::{
     credentials,
     database::{
+        self,
         postgres::{self, connect::connect},
         sqlite,
         types::{
-            ConnectionInfo, Database, DatabaseConnection, DatabaseInfo, DatabaseSchema,
-            QueryStatus, StatementInfo,
+            ConnectionInfo, Database, DatabaseConnection, DatabaseInfo, DatabaseKind,
+            DatabaseSchema, QueryStatus, StatementInfo,
         },
         Certificates, ConnectionMonitor,
     },
@@ -27,6 +28,7 @@ use crate::{
 pub async fn add_connection(
     name: String,
     database_info: DatabaseInfo,
+    permissions: crate::database::types::Permissions,
     state: tauri::State<'_, AppState>,
 ) -> Result<ConnectionInfo, Error> {
     let id = Uuid::new_v4();
@@ -39,7 +41,7 @@ pub async fn add_connection(
         credentials::store_sensitive_data(&id, &password)?;
     }
 
-    let connection = DatabaseConnection::new(id, name, database_info);
+    let connection = DatabaseConnection::new(id, name, database_info, permissions);
     let info = connection.to_connection_info();
 
     state.storage.save_connection(&info)?;
@@ -53,6 +55,7 @@ pub async fn update_connection(
     conn_id: Uuid,
     name: String,
     database_info: DatabaseInfo,
+    permissions: crate::database::types::Permissions,
     state: tauri::State<'_, AppState>,
 ) -> Result<ConnectionInfo, Error> {
     let (database_info, password) = credentials::extract_sensitive_data(database_info)?;
@@ -92,6 +95,7 @@ pub async fn update_connection(
         }
 
         connection.name = name;
+        connection.permissions = permissions;
         connection.database = match database_info {
             DatabaseInfo::Postgres {
                 connection_string,
@@ -133,6 +137,7 @@ pub async fn connect_to_database(
                 stored_connection.id,
                 stored_connection.name.clone(),
                 stored_connection.database_type.clone(),
+                stored_connection.permissions,
             );
             state.connections.insert(connection_id, connection);
         }
@@ -409,6 +414,7 @@ pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result
             stored_connection.id,
             stored_connection.name,
             stored_connection.database_type,
+            stored_connection.permissions,
         );
         state.connections.insert(connection.id, connection);
     }
@@ -418,6 +424,27 @@ pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result
         state.connections.len()
     );
     Ok(())
+}
+
+#[tauri::command]
+pub async fn is_query_read_only(
+    connection_id: Uuid,
+    query: &str,
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, Error> {
+    let db = state
+        .connections
+        .get(&connection_id)
+        .with_context(|| format!("Connection not found: {}", connection_id))?
+        .database
+        .kind();
+
+    let stmts = match db {
+        DatabaseKind::Postgres => database::postgres::parser::parse_statements(query)?,
+        DatabaseKind::Sqlite => database::sqlite::parser::parse_statements(query)?,
+    };
+
+    Ok(stmts.into_iter().all(|stmt| stmt.is_read_only))
 }
 
 #[tauri::command]

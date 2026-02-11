@@ -10,7 +10,10 @@ use uuid::Uuid;
 const DB_TYPE_POSTGRES: i32 = 1;
 const DB_TYPE_SQLITE: i32 = 2;
 
-use crate::{database::types::ConnectionInfo, Result};
+use crate::{
+    database::types::{ConnectionInfo, Permissions},
+    Result,
+};
 
 struct Migrator {
     migrations: &'static [&'static str],
@@ -22,6 +25,7 @@ impl Migrator {
             migrations: &[
                 include_str!("../migrations/001.sql"),
                 include_str!("../migrations/002.sql"),
+                include_str!("../migrations/003.sql"),
             ],
         }
     }
@@ -165,8 +169,8 @@ impl Storage {
 
         conn.execute(
             "INSERT OR REPLACE INTO connections 
-             (id, name, connection_data, database_type_id, ca_cert_path, created_at, updated_at, sort_order) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 
+             (id, name, connection_data, database_type_id, ca_cert_path, permissions, created_at, updated_at, sort_order) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 
                 (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM connections))",
             (
                 &connection.id.to_string(),
@@ -174,6 +178,7 @@ impl Storage {
                 connection_data,
                 db_type_id,
                 ca_cert_path,
+                connection.permissions.as_str(),
                 now,
                 now,
             ),
@@ -204,7 +209,7 @@ impl Storage {
         let updated_rows = conn
             .execute(
                 "UPDATE connections 
-             SET name = ?2, connection_data = ?3, database_type_id = ?4, ca_cert_path = ?5, updated_at = ?6
+             SET name = ?2, connection_data = ?3, database_type_id = ?4, ca_cert_path = ?5, permissions = ?6, updated_at = ?7
              WHERE id = ?1",
                 (
                     &connection.id.to_string(),
@@ -212,6 +217,7 @@ impl Storage {
                     connection_data,
                     db_type_id,
                     ca_cert_path,
+                    connection.permissions.as_str(),
                     now,
                 ),
             )
@@ -234,7 +240,8 @@ impl Storage {
             .prepare(
                 "SELECT c.id, c.name, c.connection_data, 
                         COALESCE(dt.name, 'postgres') as db_type,
-                        c.ca_cert_path
+                        c.ca_cert_path,
+                        COALESCE(c.permissions, 'read_write') as permissions
                  FROM connections c
                  LEFT JOIN database_types dt ON c.database_type_id = dt.id
                  ORDER BY c.sort_order, c.name",
@@ -246,6 +253,7 @@ impl Storage {
                 let connection_data: String = row.get(2)?;
                 let db_type: String = row.get(3)?;
                 let ca_cert_path: Option<String> = row.get(4)?;
+                let permissions_str: String = row.get(5)?;
 
                 let database_type = match db_type.as_str() {
                     "postgres" => crate::database::types::DatabaseInfo::Postgres {
@@ -269,6 +277,7 @@ impl Storage {
                         })?
                     },
                     name: row.get(1)?,
+                    permissions: Permissions::from_str(&permissions_str),
                     database_type,
                     connected: false,
                 })

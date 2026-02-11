@@ -21,10 +21,13 @@ export type DatabaseInfo =
 	| { Postgres: { connection_string: string; ca_cert_path?: string | null } }
 	| { SQLite: { db_path: string } };
 
+export type Permissions = 'read_write' | 'protected_write' | 'read_only';
+
 export interface ConnectionInfo {
 	id: string;
 	name: string;
 	connected: boolean;
+	permissions: Permissions;
 	database_type: DatabaseInfo;
 }
 
@@ -75,8 +78,12 @@ export class Commands {
 		return await invoke('test_connection', { databaseInfo });
 	}
 
-	static async addConnection(name: string, databaseInfo: DatabaseInfo): Promise<ConnectionInfo> {
-		return await invoke('add_connection', { name, databaseInfo });
+	static async addConnection(
+		name: string,
+		databaseInfo: DatabaseInfo,
+		permissions: Permissions
+	): Promise<ConnectionInfo> {
+		return await invoke('add_connection', { name, databaseInfo, permissions });
 	}
 
 	static async connectToDatabase(connectionId: string): Promise<boolean> {
@@ -98,9 +105,15 @@ export class Commands {
 	static async updateConnection(
 		connectionId: string,
 		name: string,
-		databaseInfo: DatabaseInfo
+		databaseInfo: DatabaseInfo,
+		permissions: Permissions
 	): Promise<ConnectionInfo> {
-		return await invoke('update_connection', { connId: connectionId, name, databaseInfo });
+		return await invoke('update_connection', {
+			connId: connectionId,
+			name,
+			databaseInfo,
+			permissions
+		});
 	}
 
 	static async initializeConnections(): Promise<void> {

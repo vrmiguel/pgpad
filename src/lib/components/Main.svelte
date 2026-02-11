@@ -9,6 +9,7 @@
 		Commands,
 		type ConnectionInfo,
 		type DatabaseInfo,
+		type Permissions,
 		type Script,
 		type DatabaseSchema,
 		type QueryHistoryEntry
@@ -310,14 +311,23 @@
 		establishingConnections.delete(connectionId);
 	}
 
-	async function handleConnectionSubmit(name: string, databaseInfo: DatabaseInfo) {
+	async function handleConnectionSubmit(
+		name: string,
+		databaseInfo: DatabaseInfo,
+		permissions: Permissions
+	) {
 		try {
 			if (editingConnection) {
-				const updated = await Commands.updateConnection(editingConnection.id, name, databaseInfo);
+				const updated = await Commands.updateConnection(
+					editingConnection.id,
+					name,
+					databaseInfo,
+					permissions
+				);
 				const i = connections.findIndex((c) => c.id === editingConnection!.id);
 				if (i !== -1) connections[i] = updated;
 			} else {
-				const created = await Commands.addConnection(name, databaseInfo);
+				const created = await Commands.addConnection(name, databaseInfo, permissions);
 				connections.push(created);
 			}
 			showConnectionForm = false;
