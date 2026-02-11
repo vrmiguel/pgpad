@@ -54,18 +54,13 @@ impl From<u8> for QueryStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Permissions {
+    #[default]
     ReadWrite,
     ProtectedWrite,
     ReadOnly,
-}
-
-impl Default for Permissions {
-    fn default() -> Self {
-        Self::ReadWrite
-    }
 }
 
 impl Permissions {
