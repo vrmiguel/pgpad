@@ -427,6 +427,12 @@ pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result
 }
 
 #[tauri::command]
+pub async fn format_sql(query: &str) -> Result<String, Error> {
+    let formatted = sqlformat::format(query, &Default::default(), &Default::default());
+    Ok(formatted)
+}
+
+#[tauri::command]
 pub async fn is_query_read_only(
     connection_id: Uuid,
     query: &str,

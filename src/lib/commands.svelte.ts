@@ -243,4 +243,8 @@ export class Commands {
 	static async getColumns(queryId: QueryId): Promise<string[] | null> {
 		return await invoke('get_columns', { queryId });
 	}
+
+	static async formatSql(query: string): Promise<string> {
+		return await invoke('format_sql', { query });
+	}
 }

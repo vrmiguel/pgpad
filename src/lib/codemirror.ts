@@ -23,6 +23,7 @@ import { keymap } from '@codemirror/view';
 import { indentWithTab, history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 
 import type { DatabaseSchema } from './commands.svelte';
+import { Commands } from './commands.svelte';
 import { registerEditorThemeCallback, theme } from './stores/theme';
 import { fontSize, fontSizeUtils } from './stores/fontSize';
 import { get } from 'svelte/store';
@@ -468,6 +469,37 @@ function createFontSizeTheme(size: number) {
 	});
 }
 
+async function formatSelection(view: EditorView): Promise<boolean> {
+	const selection = view.state.selection.main;
+
+	let from: number;
+	let to: number;
+	let textToFormat: string;
+
+	if (!selection.empty) {
+		from = selection.from;
+		to = selection.to;
+		textToFormat = view.state.doc.sliceString(from, to);
+	} else {
+		from = 0;
+		to = view.state.doc.length;
+		textToFormat = view.state.doc.toString();
+	}
+
+	try {
+		const formatted = await Commands.formatSql(textToFormat);
+
+		view.dispatch({
+			changes: { from, to, insert: formatted }
+		});
+
+		return true;
+	} catch (error) {
+		console.error('Failed to format SQL:', error);
+		return false;
+	}
+}
+
 export interface CreateEditorOptions {
 	container: HTMLElement;
 	value: string;
@@ -529,6 +561,15 @@ export function createEditorInstance(options: CreateEditorOptions) {
 				mac: 'Cmd-r',
 				run: () => {
 					onExecute?.();
+					return true;
+				}
+			},
+			// Ctrl+Shift+F: Format SQL
+			{
+				key: 'Ctrl-Shift-f',
+				mac: 'Cmd-Shift-f',
+				run: (view: EditorView) => {
+					formatSelection(view);
 					return true;
 				}
 			},
