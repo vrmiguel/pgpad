@@ -65,6 +65,14 @@ fn pragma_returns_values(name: &ObjectName) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlparser::parser::Parser;
+
+    fn fingerprint_query(query: &str) -> String {
+        let mut parser = Parser::new(&SQLiteDialect {}).try_with_sql(query).unwrap();
+        let statement = parser.parse_statement().unwrap();
+        let fingerprinted = crate::database::parser::fingerprint_statement(statement).unwrap();
+        fingerprinted.to_string()
+    }
 
     // TODO: check these:
     // ATTACH/DETACH DATABASE
@@ -346,6 +354,62 @@ mod tests {
         assert!(
             !results[6].returns_values,
             "Unknown PRAGMA should not return values"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_statement_select() {
+        assert_eq!(
+            fingerprint_query("SELECT * FROM users WHERE id = 42 AND name = 'Alice'"),
+            "SELECT * FROM users WHERE id = $1 AND name = $2"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_statement_insert() {
+        assert_eq!(
+            fingerprint_query(
+                "INSERT INTO products (name, price, quantity) VALUES ('Widget', 19.99, 100)"
+            ),
+            "INSERT INTO products (name, price, quantity) VALUES ($1, $2, $3)"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_statement_update() {
+        assert_eq!(
+            fingerprint_query(
+                "UPDATE orders SET status = 'completed', total = 150.50 WHERE order_id = 5"
+            ),
+            "UPDATE orders SET status = $1, total = $2 WHERE order_id = $3"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_statement_delete() {
+        assert_eq!(
+            fingerprint_query(
+                "DELETE FROM logs WHERE created_at < '2024-01-01' AND level = 'DEBUG'"
+            ),
+            "DELETE FROM logs WHERE created_at < $1 AND level = $2"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_statement_in_clause() {
+        assert_eq!(
+            fingerprint_query(
+                "SELECT * FROM products WHERE category IN ('Electronics', 'Books', 'Toys')"
+            ),
+            "SELECT * FROM products WHERE category IN ($1, $2, $3)"
+        );
+    }
+
+    #[test]
+    fn test_fingerprint_statement_blob() {
+        assert_eq!(
+            fingerprint_query("INSERT INTO files (data) VALUES (x'48656c6c6f')"),
+            "INSERT INTO files (data) VALUES ($1)"
         );
     }
 }

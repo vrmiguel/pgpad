@@ -1,5 +1,11 @@
+use std::ops::ControlFlow;
+
 use sqlparser::{
-    ast::Statement, dialect::Dialect, keywords::Keyword, parser::Parser, tokenizer::Token,
+    ast::{self, Statement, VisitMut, VisitorMut},
+    dialect::Dialect,
+    keywords::Keyword,
+    parser::Parser,
+    tokenizer::Token,
 };
 
 #[derive(Debug)]
@@ -151,4 +157,63 @@ where
     }
 
     Ok(statements)
+}
+
+#[allow(unused)]
+pub fn fingerprint_statements<T>(dialect: &T, query: &str) -> anyhow::Result<Vec<Statement>>
+where
+    T: Dialect + SqlDialectExt,
+{
+    let mut parser = Parser::new(dialect).try_with_sql(query)?;
+
+    let mut statements = vec![];
+
+    loop {
+        while parser.consume_token(&Token::SemiColon) {}
+
+        match parser.peek_token().token {
+            Token::EOF => break,
+            Token::Word(word) if word.keyword == Keyword::END => break,
+            _ => {}
+        }
+
+        let statement = parser.parse_statement()?;
+        statements.push(statement);
+    }
+
+    Ok(statements)
+}
+
+#[allow(unused)]
+pub fn fingerprint_statement(mut statement: Statement) -> anyhow::Result<Statement> {
+    let mut visitor = FingerprintVisitor::default();
+    match statement.visit(&mut visitor) {
+        ControlFlow::Continue(_) => Ok(statement),
+        ControlFlow::Break(e) => Err(e),
+    }
+}
+
+/// Replaces any values in a statement with ordered placeholders
+#[derive(Default)]
+struct FingerprintVisitor {
+    counter: usize,
+}
+
+impl FingerprintVisitor {
+    fn next_placeholder(&mut self) -> String {
+        self.counter += 1;
+        format!("${}", self.counter)
+    }
+}
+
+impl VisitorMut for FingerprintVisitor {
+    type Break = anyhow::Error;
+
+    fn pre_visit_expr(&mut self, expr: &mut ast::Expr) -> ControlFlow<Self::Break> {
+        if matches!(expr, ast::Expr::Value(_)) {
+            let placeholder = self.next_placeholder();
+            *expr = ast::Expr::Value(ast::Value::Placeholder(placeholder).with_empty_span());
+        }
+        ControlFlow::Continue(())
+    }
 }

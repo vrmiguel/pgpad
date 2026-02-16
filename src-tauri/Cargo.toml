@@ -37,7 +37,7 @@ futures-util = "0.3.31"
 rustls-pemfile = "2.2.0"
 bytes = "1.10.1"
 hex = "0.4.3"
-sqlparser = "0.59.0"
+sqlparser = { version = "0.59.0", features = ["visitor"] }
 rfd = "0.15.4"
 keyring = { version = "3.2.0", features = ["apple-native", "windows-native", "sync-secret-service"] }
 url = "2.5.7"
