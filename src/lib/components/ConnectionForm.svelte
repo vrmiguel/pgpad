@@ -17,14 +17,14 @@
 
 	import {
 		Commands,
-		type DatabaseInfo,
+		type ConnectionConfig,
 		type ConnectionInfo,
 		type Permissions
 	} from '$lib/commands.svelte';
 	import { Tabs, RadioGroup } from 'bits-ui';
 
 	interface Props {
-		onSubmit: (name: string, databaseInfo: DatabaseInfo, permissions: Permissions) => void;
+		onSubmit: (name: string, config: ConnectionConfig, permissions: Permissions) => void;
 		onCancel: () => void;
 		editingConnection?: ConnectionInfo | null;
 	}
@@ -40,13 +40,13 @@
 	let sqliteFilePath = $state('');
 
 	if (editingConnection) {
-		if ('Postgres' in editingConnection.database_type) {
+		if ('Postgres' in editingConnection.config) {
 			databaseType = 'postgres';
-			connectionString = editingConnection.database_type.Postgres.connection_string;
-			caCertPath = editingConnection.database_type.Postgres.ca_cert_path || '';
-		} else if ('SQLite' in editingConnection.database_type) {
+			connectionString = editingConnection.config.Postgres.connection_string;
+			caCertPath = editingConnection.config.Postgres.ca_cert_path || '';
+		} else if ('SQLite' in editingConnection.config) {
 			databaseType = 'sqlite';
-			sqliteFilePath = editingConnection.database_type.SQLite.db_path;
+			sqliteFilePath = editingConnection.config.SQLite.db_path;
 		}
 	}
 	let errors = $state<Record<string, string>>({});
@@ -128,7 +128,7 @@
 		isTestingConnection = true;
 		testResult = null;
 
-		const databaseInfo: DatabaseInfo =
+		const config: ConnectionConfig =
 			databaseType === 'postgres'
 				? {
 						Postgres: {
@@ -139,7 +139,7 @@
 				: { SQLite: { db_path: sqliteFilePath.trim() } };
 
 		try {
-			const success = await Commands.testConnection(databaseInfo);
+			const success = await Commands.testConnection(config);
 			testResult = success ? 'success' : 'error';
 		} catch (error) {
 			console.error('Connection test failed:', error);
@@ -153,7 +153,7 @@
 		e.preventDefault();
 
 		if (validateForm()) {
-			const databaseInfo: DatabaseInfo =
+			const config: ConnectionConfig =
 				databaseType === 'postgres'
 					? {
 							Postgres: {
@@ -163,7 +163,7 @@
 						}
 					: { SQLite: { db_path: sqliteFilePath.trim() } };
 
-			onSubmit(connectionName.trim(), databaseInfo, permissions);
+			onSubmit(connectionName.trim(), config, permissions);
 		}
 	}
 </script>

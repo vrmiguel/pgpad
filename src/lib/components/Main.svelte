@@ -8,7 +8,7 @@
 	import {
 		Commands,
 		type ConnectionInfo,
-		type DatabaseInfo,
+		type ConnectionConfig,
 		type Permissions,
 		type Script,
 		type DatabaseSchema,
@@ -313,7 +313,7 @@
 
 	async function handleConnectionSubmit(
 		name: string,
-		databaseInfo: DatabaseInfo,
+		config: ConnectionConfig,
 		permissions: Permissions
 	) {
 		try {
@@ -321,13 +321,13 @@
 				const updated = await Commands.updateConnection(
 					editingConnection.id,
 					name,
-					databaseInfo,
+					config,
 					permissions
 				);
 				const i = connections.findIndex((c) => c.id === editingConnection!.id);
 				if (i !== -1) connections[i] = updated;
 			} else {
-				const created = await Commands.addConnection(name, databaseInfo, permissions);
+				const created = await Commands.addConnection(name, config, permissions);
 				connections.push(created);
 			}
 			showConnectionForm = false;

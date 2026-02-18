@@ -1,4 +1,4 @@
-use crate::{database::types::DatabaseInfo, error::Error};
+use crate::{database::types::ConnectionConfig, error::Error};
 use anyhow::Context;
 use keyring::Entry;
 use std::fmt::Write;
@@ -8,10 +8,10 @@ use uuid::Uuid;
 const SERVICE_NAME: &str = "pgpad";
 
 pub fn extract_sensitive_data(
-    mut database_info: DatabaseInfo,
-) -> Result<(DatabaseInfo, Option<String>), Error> {
-    match &mut database_info {
-        DatabaseInfo::Postgres {
+    mut config: ConnectionConfig,
+) -> Result<(ConnectionConfig, Option<String>), Error> {
+    match &mut config {
+        ConnectionConfig::Postgres {
             connection_string, ..
         } => {
             let mut url =
@@ -26,9 +26,9 @@ pub fn extract_sensitive_data(
             connection_string.clear();
             write!(connection_string, "{}", url)?;
 
-            Ok((database_info, password))
+            Ok((config, password))
         }
-        DatabaseInfo::SQLite { .. } => Ok((database_info, None)),
+        ConnectionConfig::SQLite { .. } => Ok((config, None)),
     }
 }
 
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn postgres_with_pw() {
         let original = "postgres://pgpad:s3cr3t@localhost:5432/mydb";
-        let dbi = DatabaseInfo::Postgres {
+        let dbi = ConnectionConfig::Postgres {
             connection_string: original.to_string(),
             ca_cert_path: None,
         };
@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(pw.as_deref(), Some("s3cr3t"));
 
         match sanitized {
-            DatabaseInfo::Postgres {
+            ConnectionConfig::Postgres {
                 connection_string, ..
             } => {
                 assert_eq!(connection_string, "postgres://pgpad@localhost:5432/mydb");
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn postgres_with_percent_encoded_pw() {
         let original = "postgres://bob:p%404ss@db.example.com/app";
-        let dbi = DatabaseInfo::Postgres {
+        let dbi = ConnectionConfig::Postgres {
             connection_string: original.to_string(),
             ca_cert_path: None,
         };
@@ -140,7 +140,7 @@ mod tests {
         assert_eq!(pw.as_deref(), Some("p%404ss"));
 
         match sanitized {
-            DatabaseInfo::Postgres {
+            ConnectionConfig::Postgres {
                 connection_string, ..
             } => {
                 assert_eq!(connection_string, "postgres://bob@db.example.com/app");
@@ -149,7 +149,7 @@ mod tests {
         }
 
         let original = "postgres://u:pa%3Ass%40word@host/db";
-        let dbi = DatabaseInfo::Postgres {
+        let dbi = ConnectionConfig::Postgres {
             connection_string: original.to_string(),
             ca_cert_path: None,
         };
@@ -158,7 +158,7 @@ mod tests {
 
         assert_eq!(pw.as_deref(), Some("pa%3Ass%40word"));
         match sanitized {
-            DatabaseInfo::Postgres {
+            ConnectionConfig::Postgres {
                 connection_string, ..
             } => {
                 assert_eq!(connection_string, "postgres://u@host/db");
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn postgres_with_empty_password() {
         let original = "postgres://john:@localhost/db";
-        let dbi = DatabaseInfo::Postgres {
+        let dbi = ConnectionConfig::Postgres {
             connection_string: original.to_string(),
             ca_cert_path: None,
         };
@@ -181,7 +181,7 @@ mod tests {
         assert_eq!(pw.as_deref(), None);
 
         match sanitized {
-            DatabaseInfo::Postgres {
+            ConnectionConfig::Postgres {
                 connection_string, ..
             } => {
                 assert_eq!(connection_string, "postgres://john@localhost/db");
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn postgres_without_password() {
         let original = "postgres://dave@localhost/mydb";
-        let dbi = DatabaseInfo::Postgres {
+        let dbi = ConnectionConfig::Postgres {
             connection_string: original.to_string(),
             ca_cert_path: None,
         };
@@ -202,7 +202,7 @@ mod tests {
 
         assert!(pw.is_none());
         match sanitized {
-            DatabaseInfo::Postgres {
+            ConnectionConfig::Postgres {
                 connection_string, ..
             } => {
                 assert_eq!(connection_string, original);
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn postgresql_scheme() {
         let original = "postgresql://erin:pw@localhost:5432/dbname?sslmode=prefer";
-        let dbi = DatabaseInfo::Postgres {
+        let dbi = ConnectionConfig::Postgres {
             connection_string: original.to_string(),
             ca_cert_path: None,
         };
@@ -223,7 +223,7 @@ mod tests {
 
         assert_eq!(pw.as_deref(), Some("pw"));
         match sanitized {
-            DatabaseInfo::Postgres {
+            ConnectionConfig::Postgres {
                 connection_string, ..
             } => {
                 assert_eq!(
@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn sqlite_is_passthrough() {
         let path = "/tmp/test.sqlite3".to_string();
-        let dbi = DatabaseInfo::SQLite {
+        let dbi = ConnectionConfig::SQLite {
             db_path: path.clone(),
         };
 
@@ -246,14 +246,14 @@ mod tests {
 
         assert!(pw.is_none());
         match sanitized {
-            DatabaseInfo::SQLite { db_path } => assert_eq!(db_path, path),
+            ConnectionConfig::SQLite { db_path } => assert_eq!(db_path, path),
             _ => panic!("expected SQLite variant"),
         }
     }
 
     #[test]
     fn invalid_url_yields_error() {
-        let dbi = DatabaseInfo::Postgres {
+        let dbi = ConnectionConfig::Postgres {
             connection_string: "not a url".to_string(),
             ca_cert_path: None,
         };

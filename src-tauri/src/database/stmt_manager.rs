@@ -10,14 +10,9 @@ use tauri::async_runtime::{spawn, spawn_blocking};
 use dashmap::DashMap;
 
 use crate::{
-    database::{
-        parser::ParsedStatement,
-        postgres, sqlite,
-        types::{channel, DatabaseClient, Page, QueryId, QueryStatus, StatementInfo},
-        QueryExecEvent,
-    },
-    utils::Condvar,
-    Error,
+    Error, database::{
+        QueryExecEvent, parser::ParsedStatement, postgres, sqlite, types::{Page, QueryId, QueryStatus, RuntimeClient, StatementInfo, channel}
+    }, utils::Condvar
 };
 
 /// The storage/state for an individual statement being executed
@@ -61,12 +56,12 @@ impl StatementManager {
     /// Note that this _will_ cancel the execution of any ongoing query, and replace it with the new one.
     // TODO(vini): not sure if this will actually cancel the ongoing query.
     // Might need to store the joinhandles so we can properly cancel them
-    pub fn submit_query(&self, client: DatabaseClient, query: &str) -> Result<Vec<QueryId>, Error> {
+    pub fn submit_query(&self, client: RuntimeClient, query: &str) -> Result<Vec<QueryId>, Error> {
         self.queries.clear();
 
         let parse_statements = match &client {
-            DatabaseClient::Postgres { .. } => postgres::parser::parse_statements,
-            DatabaseClient::SQLite { .. } => sqlite::parser::parse_statements,
+            RuntimeClient::Postgres { .. } => postgres::parser::parse_statements,
+            RuntimeClient::SQLite { .. } => sqlite::parser::parse_statements,
         };
 
         let statements = parse_statements(query)?;
@@ -137,7 +132,7 @@ impl StatementManager {
 
 /// Impl block for internal methods
 impl StatementManager {
-    fn create_worker(&self, id: QueryId, client: DatabaseClient, stmt: ParsedStatement) {
+    fn create_worker(&self, id: QueryId, client: RuntimeClient, stmt: ParsedStatement) {
         let exec_storage = ExecState {
             status: AtomicU8::new(QueryStatus::Pending as u8),
             pages: RwLock::new(vec![]),
@@ -154,7 +149,7 @@ impl StatementManager {
         let (sender, recv) = channel();
 
         match client {
-            DatabaseClient::Postgres { client } => {
+            RuntimeClient::Postgres { client } => {
                 spawn(async move {
                     if let Err(err) = postgres::execute::execute_query(&client, stmt, &sender).await
                     {
@@ -162,7 +157,7 @@ impl StatementManager {
                     }
                 });
             }
-            DatabaseClient::SQLite { connection } => {
+            RuntimeClient::SQLite { connection } => {
                 spawn_blocking(move || {
                     let conn = connection.lock().unwrap();
                     if let Err(err) = sqlite::execute::execute_query(&conn, stmt, &sender) {
@@ -210,6 +205,9 @@ impl StatementManager {
                         }
 
                         exec_storage.renderable.set();
+
+                        // TODO(vini): fingerprint query here, and save it?
+
                         break;
                     }
                 }
@@ -235,14 +233,14 @@ mod tests {
         time::Duration,
     };
 
-    use crate::database::{stmt_manager::QueryStatus, types::DatabaseClient};
+    use crate::database::{stmt_manager::QueryStatus, types::RuntimeClient};
 
     use super::StatementManager;
 
     #[tokio::test]
     async fn test_basic_functionality() {
         let stmt_manager = StatementManager::new();
-        let client = DatabaseClient::SQLite {
+        let client = RuntimeClient::SQLite {
             connection: Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap())),
         };
         let query_ids = stmt_manager.submit_query(client, "SELECT 1").unwrap();

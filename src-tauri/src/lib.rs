@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::{
     database::{
         stmt_manager::StatementManager,
-        types::{DatabaseConnection, DatabaseSchema},
+        types::{Connection, DatabaseSchema},
         ConnectionMonitor,
     },
     storage::Storage,
@@ -24,7 +24,7 @@ pub use error::{Error, Result};
 
 #[derive(Debug)]
 pub struct AppState {
-    pub connections: DashMap<Uuid, DatabaseConnection>,
+    pub connections: DashMap<Uuid, Connection>,
     pub schemas: DashMap<Uuid, Arc<DatabaseSchema>>,
     /// SQLite database for application data
     pub storage: Storage,

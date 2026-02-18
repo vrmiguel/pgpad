@@ -87,13 +87,11 @@ pub struct ConnectionInfo {
     pub name: String,
     pub connected: bool,
     pub permissions: Permissions,
-    pub database_type: DatabaseInfo,
+    pub config: ConnectionConfig,
 }
 
-// TODO(vini): these types (DatabaseInfo, Database, DatabaseConnection) are all so similar the the code is currently very confusing
-// Gotta refactor
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DatabaseInfo {
+pub enum ConnectionConfig {
     Postgres {
         connection_string: String,
         ca_cert_path: Option<String>,
@@ -104,16 +102,16 @@ pub enum DatabaseInfo {
 }
 
 #[derive(Debug)]
-pub struct DatabaseConnection {
+pub struct Connection {
     pub id: Uuid,
     pub name: String,
-    pub connected: bool,
     pub permissions: Permissions,
-    pub database: Database,
+    pub config: ConnectionConfig,
+    pub runtime: ConnectionRuntime,
 }
 
-#[derive(Clone)]
-pub enum DatabaseClient {
+#[derive(Debug, Clone)]
+pub enum RuntimeClient {
     Postgres {
         client: Arc<tokio_postgres::Client>,
     },
@@ -122,112 +120,66 @@ pub enum DatabaseClient {
     },
 }
 
-#[derive(Debug)]
-pub enum Database {
-    Postgres {
-        connection_string: String,
-        ca_cert_path: Option<String>,
-        client: Option<Arc<tokio_postgres::Client>>,
-    },
-    SQLite {
-        db_path: String,
-        connection: Option<Arc<Mutex<rusqlite::Connection>>>,
-    },
+#[derive(Debug, Clone)]
+pub enum ConnectionRuntime {
+    Disconnected,
+    Connected(RuntimeClient),
 }
 
-impl Database {
+impl ConnectionConfig {
     pub fn kind(&self) -> DatabaseKind {
         match self {
-            Database::Postgres { .. } => DatabaseKind::Postgres,
-            Database::SQLite { .. } => DatabaseKind::Sqlite,
+            ConnectionConfig::Postgres { .. } => DatabaseKind::Postgres,
+            ConnectionConfig::SQLite { .. } => DatabaseKind::Sqlite,
         }
     }
 }
 
-impl DatabaseConnection {
+impl Connection {
     pub fn to_connection_info(&self) -> ConnectionInfo {
         ConnectionInfo {
             id: self.id,
             name: self.name.clone(),
-            connected: self.connected,
+            connected: self.is_client_connected(),
             permissions: self.permissions,
-            database_type: match &self.database {
-                Database::Postgres {
-                    connection_string,
-                    ca_cert_path,
-                    ..
-                } => DatabaseInfo::Postgres {
-                    connection_string: connection_string.clone(),
-                    ca_cert_path: ca_cert_path.clone(),
-                },
-                Database::SQLite { db_path, .. } => DatabaseInfo::SQLite {
-                    db_path: db_path.clone(),
-                },
-            },
+            config: self.config.clone(),
         }
     }
 
     pub fn new(
         id: Uuid,
         name: String,
-        database_info: DatabaseInfo,
+        config: ConnectionConfig,
         permissions: Permissions,
     ) -> Self {
-        let database = match database_info {
-            DatabaseInfo::Postgres {
-                connection_string,
-                ca_cert_path,
-            } => Database::Postgres {
-                connection_string,
-                ca_cert_path,
-                client: None,
-            },
-            DatabaseInfo::SQLite { db_path } => Database::SQLite {
-                db_path,
-                connection: None,
-            },
-        };
-
         Self {
             id,
             name,
-            connected: false,
             permissions,
-            database,
+            config,
+            runtime: ConnectionRuntime::Disconnected,
         }
     }
 
     pub fn is_client_connected(&self) -> bool {
-        match &self.database {
-            Database::Postgres { client, .. } => client.is_some(),
-            Database::SQLite { connection, .. } => connection.is_some(),
-        }
+        matches!(self.runtime, ConnectionRuntime::Connected(_))
     }
 
     /// Get the inner client object
-    pub fn get_client(&self) -> Result<DatabaseClient, Error> {
-        let client = match &self.database {
-            Database::Postgres {
-                client: Some(client),
-                ..
-            } => DatabaseClient::Postgres {
-                client: client.clone(),
-            },
-            Database::Postgres { client: None, .. } => {
-                return Err(Error::Any(anyhow::anyhow!(
-                    "Postgres connection not active"
-                )));
+    pub fn get_client(&self) -> Result<RuntimeClient, Error> {
+        let client = match &self.runtime {
+            ConnectionRuntime::Connected(RuntimeClient::Postgres { client }) => {
+                RuntimeClient::Postgres {
+                    client: client.clone(),
+                }
             }
-            Database::SQLite {
-                connection: Some(sqlite_conn),
-                ..
-            } => DatabaseClient::SQLite {
-                connection: sqlite_conn.clone(),
-            },
-            Database::SQLite {
-                connection: None, ..
-            } => {
-                return Err(Error::Any(anyhow::anyhow!("SQLite connection not active")));
+            ConnectionRuntime::Connected(RuntimeClient::SQLite { connection }) => {
+                RuntimeClient::SQLite {
+                    connection: connection.clone(),
+                }
+            }
+            ConnectionRuntime::Disconnected => {
+                return Err(Error::Any(anyhow::anyhow!("Connection not active")));
             }
         };
 

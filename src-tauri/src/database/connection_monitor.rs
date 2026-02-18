@@ -44,14 +44,7 @@ impl ConnectionMonitor {
             log::error!("Connection {connection_id} not found!");
             return;
         };
-        connection.connected = false;
-        match &mut connection.database {
-            crate::database::types::Database::Postgres { client, .. } => *client = None,
-            crate::database::types::Database::SQLite {
-                connection: sqlite_conn,
-                ..
-            } => *sqlite_conn = None,
-        }
+        connection.runtime = crate::database::types::ConnectionRuntime::Disconnected;
     }
 
     fn notify_disconnect(&self, connection_id: Uuid) {

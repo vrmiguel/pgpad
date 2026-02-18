@@ -11,7 +11,7 @@ const DB_TYPE_POSTGRES: i32 = 1;
 const DB_TYPE_SQLITE: i32 = 2;
 
 use crate::{
-    database::types::{ConnectionInfo, Permissions},
+    database::types::{ConnectionConfig, ConnectionInfo, Permissions},
     Result,
 };
 
@@ -153,8 +153,8 @@ impl Storage {
         let now = chrono::Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
 
-        let (db_type_id, connection_data, ca_cert_path) = match &connection.database_type {
-            crate::database::types::DatabaseInfo::Postgres {
+        let (db_type_id, connection_data, ca_cert_path) = match &connection.config {
+            ConnectionConfig::Postgres {
                 connection_string,
                 ca_cert_path,
             } => (
@@ -162,7 +162,7 @@ impl Storage {
                 connection_string.as_str(),
                 ca_cert_path.as_deref(),
             ),
-            crate::database::types::DatabaseInfo::SQLite { db_path } => {
+            ConnectionConfig::SQLite { db_path } => {
                 (DB_TYPE_SQLITE, db_path.as_str(), None)
             }
         };
@@ -192,8 +192,8 @@ impl Storage {
         let now = chrono::Utc::now().timestamp();
         let conn = self.conn.lock().unwrap();
 
-        let (db_type_id, connection_data, ca_cert_path) = match &connection.database_type {
-            crate::database::types::DatabaseInfo::Postgres {
+        let (db_type_id, connection_data, ca_cert_path) = match &connection.config {
+            ConnectionConfig::Postgres {
                 connection_string,
                 ca_cert_path,
             } => (
@@ -201,7 +201,7 @@ impl Storage {
                 connection_string.as_str(),
                 ca_cert_path.as_deref(),
             ),
-            crate::database::types::DatabaseInfo::SQLite { db_path } => {
+            ConnectionConfig::SQLite { db_path } => {
                 (DB_TYPE_SQLITE, db_path.as_str(), None)
             }
         };
@@ -255,15 +255,15 @@ impl Storage {
                 let ca_cert_path: Option<String> = row.get(4)?;
                 let permissions_str: String = row.get(5)?;
 
-                let database_type = match db_type.as_str() {
-                    "postgres" => crate::database::types::DatabaseInfo::Postgres {
+                let config = match db_type.as_str() {
+                    "postgres" => ConnectionConfig::Postgres {
                         connection_string: connection_data,
                         ca_cert_path,
                     },
-                    "sqlite" => crate::database::types::DatabaseInfo::SQLite {
+                    "sqlite" => ConnectionConfig::SQLite {
                         db_path: connection_data,
                     },
-                    _ => crate::database::types::DatabaseInfo::Postgres {
+                    _ => ConnectionConfig::Postgres {
                         connection_string: connection_data, // Default to postgres for unknown types
                         ca_cert_path,
                     },
@@ -278,7 +278,7 @@ impl Storage {
                     },
                     name: row.get(1)?,
                     permissions: Permissions::from_str(&permissions_str),
-                    database_type,
+                    config,
                     connected: false,
                 })
             })

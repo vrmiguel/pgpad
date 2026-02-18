@@ -14,8 +14,8 @@ use crate::{
         postgres::{self, connect::connect},
         sqlite,
         types::{
-            ConnectionInfo, Database, DatabaseConnection, DatabaseInfo, DatabaseKind,
-            DatabaseSchema, QueryStatus, StatementInfo,
+            Connection, ConnectionConfig, ConnectionInfo, ConnectionRuntime, DatabaseKind,
+            DatabaseSchema, QueryStatus, RuntimeClient, StatementInfo,
         },
         Certificates, ConnectionMonitor,
     },
@@ -27,21 +27,21 @@ use crate::{
 #[tauri::command]
 pub async fn add_connection(
     name: String,
-    database_info: DatabaseInfo,
+    config: ConnectionConfig,
     permissions: crate::database::types::Permissions,
     state: tauri::State<'_, AppState>,
 ) -> Result<ConnectionInfo, Error> {
     let id = Uuid::new_v4();
 
-    let (database_info, password) = credentials::extract_sensitive_data(database_info)?;
+    let (config, password) = credentials::extract_sensitive_data(config)?;
 
-    // It's expected that add_connection receives database_info with the password included,
+    // It's expected that add_connection receives config with the password included,
     // as checked by the form in the UI. This call saves it in the keyring.
     if let Some(password) = password {
         credentials::store_sensitive_data(&id, &password)?;
     }
 
-    let connection = DatabaseConnection::new(id, name, database_info, permissions);
+    let connection = Connection::new(id, name, config, permissions);
     let info = connection.to_connection_info();
 
     state.storage.save_connection(&info)?;
@@ -54,11 +54,11 @@ pub async fn add_connection(
 pub async fn update_connection(
     conn_id: Uuid,
     name: String,
-    database_info: DatabaseInfo,
+    config: ConnectionConfig,
     permissions: crate::database::types::Permissions,
     state: tauri::State<'_, AppState>,
 ) -> Result<ConnectionInfo, Error> {
-    let (database_info, password) = credentials::extract_sensitive_data(database_info)?;
+    let (config, password) = credentials::extract_sensitive_data(config)?;
     if let Some(password) = password {
         credentials::store_sensitive_data(&conn_id, &password)?;
     }
@@ -66,50 +66,30 @@ pub async fn update_connection(
     if let Some(mut connection_entry) = state.connections.get_mut(&conn_id) {
         let connection = connection_entry.value_mut();
 
-        let config_changed = match (&connection.database, &database_info) {
+        let config_changed = match (&connection.config, &config) {
             (
-                Database::Postgres {
+                ConnectionConfig::Postgres {
                     connection_string: old,
                     ca_cert_path: old_cert,
-                    ..
                 },
-                DatabaseInfo::Postgres {
+                ConnectionConfig::Postgres {
                     connection_string: new,
                     ca_cert_path: new_cert,
                 },
             ) => old != new || old_cert != new_cert,
-            (Database::SQLite { db_path: old, .. }, DatabaseInfo::SQLite { db_path: new }) => {
+            (ConnectionConfig::SQLite { db_path: old }, ConnectionConfig::SQLite { db_path: new }) => {
                 old != new
             }
             _ => true,
         };
 
         if config_changed {
-            match &mut connection.database {
-                Database::Postgres { client, .. } => *client = None,
-                Database::SQLite {
-                    connection: conn, ..
-                } => *conn = None,
-            }
-            connection.connected = false;
+            connection.runtime = ConnectionRuntime::Disconnected;
         }
 
         connection.name = name;
         connection.permissions = permissions;
-        connection.database = match database_info {
-            DatabaseInfo::Postgres {
-                connection_string,
-                ca_cert_path,
-            } => Database::Postgres {
-                connection_string,
-                ca_cert_path,
-                client: None,
-            },
-            DatabaseInfo::SQLite { db_path } => Database::SQLite {
-                db_path,
-                connection: None,
-            },
-        };
+        connection.config = config;
     }
 
     let updated_info = state
@@ -133,10 +113,10 @@ pub async fn connect_to_database(
     if !state.connections.contains_key(&connection_id) {
         let stored_connections = state.storage.get_connections()?;
         if let Some(stored_connection) = stored_connections.iter().find(|c| c.id == connection_id) {
-            let connection = DatabaseConnection::new(
+            let connection = Connection::new(
                 stored_connection.id,
                 stored_connection.name.clone(),
-                stored_connection.database_type.clone(),
+                stored_connection.config.clone(),
                 stored_connection.permissions,
             );
             state.connections.insert(connection_id, connection);
@@ -150,11 +130,10 @@ pub async fn connect_to_database(
 
     let connection = connection_entry.value_mut();
 
-    match &mut connection.database {
-        Database::Postgres {
+    match &connection.config {
+        ConnectionConfig::Postgres {
             connection_string,
             ca_cert_path,
-            client,
         } => {
             let mut config: tokio_postgres::Config =
                 connection_string.parse().with_context(|| {
@@ -166,8 +145,9 @@ pub async fn connect_to_database(
 
             match connect(&config, &certificates, ca_cert_path.as_deref()).await {
                 Ok((pg_client, conn_check)) => {
-                    *client = Some(Arc::new(pg_client));
-                    connection.connected = true;
+                    connection.runtime = ConnectionRuntime::Connected(RuntimeClient::Postgres {
+                        client: Arc::new(pg_client),
+                    });
 
                     if let Err(e) = state.storage.update_last_connected(&connection_id) {
                         log::warn!("Failed to update last connected timestamp: {}", e);
@@ -179,18 +159,16 @@ pub async fn connect_to_database(
                 }
                 Err(e) => {
                     log::error!("Failed to connect to Postgres: {}", e);
-                    connection.connected = false;
+                    connection.runtime = ConnectionRuntime::Disconnected;
                     Ok(false)
                 }
             }
         }
-        Database::SQLite {
-            db_path,
-            connection: sqlite_conn,
-        } => match rusqlite::Connection::open(&db_path) {
+        ConnectionConfig::SQLite { db_path } => match rusqlite::Connection::open(db_path) {
             Ok(conn) => {
-                *sqlite_conn = Some(Arc::new(Mutex::new(conn)));
-                connection.connected = true;
+                connection.runtime = ConnectionRuntime::Connected(RuntimeClient::SQLite {
+                    connection: Arc::new(Mutex::new(conn)),
+                });
 
                 if let Err(e) = state.storage.update_last_connected(&connection_id) {
                     log::warn!("Failed to update last connected timestamp: {}", e);
@@ -201,7 +179,7 @@ pub async fn connect_to_database(
             }
             Err(e) => {
                 log::error!("Failed to connect to SQLite database {}: {}", db_path, e);
-                connection.connected = false;
+                connection.runtime = ConnectionRuntime::Disconnected;
                 Ok(false)
             }
         },
@@ -219,14 +197,7 @@ pub async fn disconnect_from_database(
         .with_context(|| format!("Connection not found: {}", connection_id))?;
     let connection = connection_entry.value_mut();
 
-    match &mut connection.database {
-        Database::Postgres { client, .. } => *client = None,
-        Database::SQLite {
-            connection: sqlite_conn,
-            ..
-        } => *sqlite_conn = None,
-    }
-    connection.connected = false;
+    connection.runtime = ConnectionRuntime::Disconnected;
     Ok(())
 }
 
@@ -309,7 +280,7 @@ pub async fn get_connections(
 
     for connection in &mut stored_connections {
         if let Some(runtime_connection) = state.connections.get(&connection.id) {
-            connection.connected = runtime_connection.connected;
+            connection.connected = runtime_connection.is_client_connected();
         } else {
             connection.connected = false;
         }
@@ -338,12 +309,12 @@ pub async fn remove_connection(
 
 #[tauri::command]
 pub async fn test_connection(
-    // It's expected that test_connection receives database_info with the password included
-    database_info: DatabaseInfo,
+    // It's expected that test_connection receives config with the password included
+    config: ConnectionConfig,
     certificates: tauri::State<'_, Certificates>,
 ) -> Result<bool, Error> {
-    match database_info {
-        DatabaseInfo::Postgres {
+    match config {
+        ConnectionConfig::Postgres {
             connection_string,
             ca_cert_path,
         } => {
@@ -359,7 +330,7 @@ pub async fn test_connection(
                 }
             }
         }
-        DatabaseInfo::SQLite { db_path } => match rusqlite::Connection::open(db_path) {
+        ConnectionConfig::SQLite { db_path } => match rusqlite::Connection::open(db_path) {
             Ok(_) => Ok(true),
             Err(e) => {
                 log::error!("SQLite connection test failed: {}", e);
@@ -410,10 +381,10 @@ pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result
     let stored_connections = state.storage.get_connections()?;
 
     for stored_connection in stored_connections {
-        let connection = DatabaseConnection::new(
-            stored_connection.id,
+        let connection = Connection::new(
+                stored_connection.id,
             stored_connection.name,
-            stored_connection.database_type,
+            stored_connection.config,
             stored_connection.permissions,
         );
         state.connections.insert(connection.id, connection);
@@ -443,7 +414,7 @@ pub async fn is_query_read_only(
         .connections
         .get(&connection_id)
         .with_context(|| format!("Connection not found: {}", connection_id))?
-        .database
+        .config
         .kind();
 
     let stmts = match db {
@@ -470,23 +441,16 @@ pub async fn get_database_schema(
 
     let connection = connection_entry.value();
 
-    let schema = match &connection.database {
-        Database::Postgres {
-            client: Some(client),
-            ..
-        } => postgres::schema::get_database_schema(client).await?,
-        Database::Postgres { client: None, .. } => {
-            return Err(Error::Any(anyhow::anyhow!(
-                "Postgres connection not active"
-            )))
+    let schema = match &connection.runtime {
+        ConnectionRuntime::Connected(RuntimeClient::Postgres { client }) => {
+            postgres::schema::get_database_schema(client).await?
         }
-        Database::SQLite {
-            connection: Some(conn),
-            ..
-        } => sqlite::schema::get_database_schema(Arc::clone(conn)).await?,
-        Database::SQLite {
-            connection: None, ..
-        } => return Err(Error::Any(anyhow::anyhow!("SQLite connection not active"))),
+        ConnectionRuntime::Connected(RuntimeClient::SQLite { connection }) => {
+            sqlite::schema::get_database_schema(Arc::clone(connection)).await?
+        }
+        ConnectionRuntime::Disconnected => {
+            return Err(Error::Any(anyhow::anyhow!("Connection not active")))
+        }
     };
 
     let schema = Arc::new(schema);

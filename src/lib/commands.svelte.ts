@@ -17,7 +17,7 @@ export interface StatementInfo {
 	error: string | null;
 }
 
-export type DatabaseInfo =
+export type ConnectionConfig =
 	| { Postgres: { connection_string: string; ca_cert_path?: string | null } }
 	| { SQLite: { db_path: string } };
 
@@ -28,7 +28,7 @@ export interface ConnectionInfo {
 	name: string;
 	connected: boolean;
 	permissions: Permissions;
-	database_type: DatabaseInfo;
+	config: ConnectionConfig;
 }
 
 export interface QueryHistoryEntry {
@@ -74,16 +74,16 @@ export interface Script {
 }
 
 export class Commands {
-	static async testConnection(databaseInfo: DatabaseInfo): Promise<boolean> {
-		return await invoke('test_connection', { databaseInfo });
+	static async testConnection(config: ConnectionConfig): Promise<boolean> {
+		return await invoke('test_connection', { config });
 	}
 
 	static async addConnection(
 		name: string,
-		databaseInfo: DatabaseInfo,
+		config: ConnectionConfig,
 		permissions: Permissions
 	): Promise<ConnectionInfo> {
-		return await invoke('add_connection', { name, databaseInfo, permissions });
+		return await invoke('add_connection', { name, config, permissions });
 	}
 
 	static async connectToDatabase(connectionId: string): Promise<boolean> {
@@ -105,13 +105,13 @@ export class Commands {
 	static async updateConnection(
 		connectionId: string,
 		name: string,
-		databaseInfo: DatabaseInfo,
+		config: ConnectionConfig,
 		permissions: Permissions
 	): Promise<ConnectionInfo> {
 		return await invoke('update_connection', {
 			connId: connectionId,
 			name,
-			databaseInfo,
+			config,
 			permissions
 		});
 	}

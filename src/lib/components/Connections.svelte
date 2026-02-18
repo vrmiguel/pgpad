@@ -194,9 +194,9 @@
 								<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
 							{/if}
 
-							{#if 'Postgres' in connection.database_type}
+							{#if 'Postgres' in connection.config}
 								<IconCibPostgresql class="h-4 w-4" />
-							{:else if 'SQLite' in connection.database_type}
+							{:else if 'SQLite' in connection.config}
 								<IconSimpleIconsSqlite class="h-4 w-4" />
 							{/if}
 						</div>
@@ -205,13 +205,13 @@
 								{connection.name}
 							</div>
 							<div class="text-muted-foreground truncate font-mono text-xs">
-								{#if 'Postgres' in connection.database_type}
-									{connection.database_type.Postgres.connection_string
+								{#if 'Postgres' in connection.config}
+									{connection.config.Postgres.connection_string
 										.replace(/^postgresql?:\/\/[^@]*@/, '')
 										.replace(/\/[^?]*/, '')}
-								{:else if 'SQLite' in connection.database_type}
-									{connection.database_type.SQLite.db_path.split('/').pop() ||
-										connection.database_type.SQLite.db_path}
+								{:else if 'SQLite' in connection.config}
+									{connection.config.SQLite.db_path.split('/').pop() ||
+										connection.config.SQLite.db_path}
 								{/if}
 							</div>
 						</div>
