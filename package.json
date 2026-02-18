@@ -35,7 +35,7 @@
 		"paneforge": "^1.0.0",
 		"prettier": "^3.5.3",
 		"prettier-plugin-svelte": "^3.4.0",
-		"prettier-plugin-tailwindcss": "^0.6.11",
+		"prettier-plugin-tailwindcss": "^0.7.2",
 		"svelte": "^5.28.1",
 		"svelte-check": "^4.1.6",
 		"tailwind-variants": "^0.2.1",
