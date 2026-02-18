@@ -3,7 +3,7 @@ import {
 	type QueryId,
 	type Page,
 	type QueryStatus,
-	type StatementInfo
+	type QuerySnapshot
 } from '$lib/commands.svelte';
 import { SvelteMap } from 'svelte/reactivity';
 
@@ -150,9 +150,7 @@ export class QueryExecutor {
 			return;
 		}
 
-		const columns = await this.pollForColumns(queryId);
-		if (executionId !== this.executionId) return;
-		if (!columns) {
+		if (!info.columns) {
 			this.resultTabs[tabIndex] = {
 				...this.resultTabs[tabIndex],
 				status: 'Error',
@@ -164,7 +162,7 @@ export class QueryExecutor {
 
 		this.resultTabs[tabIndex] = {
 			...this.resultTabs[tabIndex],
-			columns,
+			columns: info.columns,
 			name: tabName,
 			currentPageData: info.first_page,
 			status: info.status,
@@ -186,23 +184,12 @@ export class QueryExecutor {
 		}
 	}
 
-	private async waitUntilRenderable(queryId: QueryId): Promise<StatementInfo> {
+	private async waitUntilRenderable(queryId: QueryId): Promise<QuerySnapshot> {
 		const now = performance.now();
 		const res = await Commands.waitUntilRenderable(queryId);
 		const elapsed = performance.now() - now;
 		console.log('Wait until renderable took', elapsed, 'ms');
 		return res;
-	}
-
-	private async pollForColumns(queryId: QueryId): Promise<string[] | null> {
-		for (let i = 0; i < 50; i++) {
-			const columns = await Commands.getColumns(queryId);
-			if (columns) {
-				return columns;
-			}
-			await new Promise((resolve) => setTimeout(resolve, 100));
-		}
-		return null;
 	}
 
 	private async pollForPage(queryId: QueryId, pageIndex: number): Promise<Page | null> {

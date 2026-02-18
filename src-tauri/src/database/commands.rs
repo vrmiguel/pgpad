@@ -15,7 +15,7 @@ use crate::{
         sqlite,
         types::{
             Connection, ConnectionConfig, ConnectionInfo, ConnectionRuntime, DatabaseKind,
-            DatabaseSchema, QueryStatus, RuntimeClient, StatementInfo,
+            DatabaseSchema, QuerySnapshot, QueryStatus, RuntimeClient,
         },
         Certificates, ConnectionMonitor,
     },
@@ -225,13 +225,15 @@ pub async fn submit_query(
 pub async fn wait_until_renderable(
     query_id: usize,
     state: tauri::State<'_, AppState>,
-) -> Result<StatementInfo, Error> {
+) -> Result<QuerySnapshot, Error> {
     let now = Instant::now();
-    let renderable = state.stmt_manager.get_renderable(query_id)?;
-    renderable.wait().await;
-    let info = state.stmt_manager.fetch_query(query_id)?;
+
+    let info = state
+        .stmt_manager
+        .fetch_initial_renderable_state(query_id)
+        .await?;
     let elapsed = now.elapsed();
-    log::info!("Wait until renderable took {}ms", elapsed.as_millis());
+    log::info!("wait_until_renderable took {}ms", elapsed.as_millis());
     Ok(info)
 }
 
@@ -263,14 +265,6 @@ pub async fn get_page_count(
     state: tauri::State<'_, AppState>,
 ) -> Result<usize, Error> {
     state.stmt_manager.get_page_count(query_id)
-}
-
-#[tauri::command]
-pub async fn get_columns(
-    query_id: usize,
-    state: tauri::State<'_, AppState>,
-) -> Result<Option<Box<RawValue>>, Error> {
-    state.stmt_manager.get_columns(query_id)
 }
 
 #[tauri::command]

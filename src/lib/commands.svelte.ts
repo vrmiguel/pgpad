@@ -9,11 +9,12 @@ export type QueryId = number;
 export type QueryStatus = 'Pending' | 'Running' | 'Completed' | 'Error';
 export type Page = Json[][];
 
-export interface StatementInfo {
+export interface QuerySnapshot {
 	returns_values: boolean;
 	status: QueryStatus;
 	first_page: Page | null;
 	affected_rows: number | null;
+	columns: string[] | null;
 	error: string | null;
 }
 
@@ -224,7 +225,7 @@ export class Commands {
 		return await invoke('is_query_read_only', { connectionId, query });
 	}
 
-	static async waitUntilRenderable(queryId: QueryId): Promise<StatementInfo> {
+	static async waitUntilRenderable(queryId: QueryId): Promise<QuerySnapshot> {
 		return await invoke('wait_until_renderable', { queryId });
 	}
 
@@ -238,10 +239,6 @@ export class Commands {
 
 	static async getPageCount(queryId: QueryId): Promise<number> {
 		return await invoke('get_page_count', { queryId });
-	}
-
-	static async getColumns(queryId: QueryId): Promise<string[] | null> {
-		return await invoke('get_columns', { queryId });
 	}
 
 	static async formatSql(query: string): Promise<string> {

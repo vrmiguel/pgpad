@@ -20,12 +20,14 @@ pub type Page = Box<RawValue>;
 
 pub type ExecSender = UnboundedSender<QueryExecEvent>;
 
+/// A "snapshot" of a query
 #[derive(Debug, Clone, Serialize)]
-pub struct StatementInfo {
+pub struct QuerySnapshot {
     pub returns_values: bool,
     pub status: QueryStatus,
     pub first_page: Option<Box<RawValue>>,
     pub affected_rows: Option<usize>,
+    pub columns: Option<Box<RawValue>>,
     pub error: Option<String>,
 }
 

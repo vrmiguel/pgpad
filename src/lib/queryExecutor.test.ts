@@ -2,13 +2,12 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryExecutor } from './queryExecutor.svelte';
-import type { QueryId, QueryStatus, StatementInfo, Page } from './commands.svelte';
+import type { QueryId, QueryStatus, QuerySnapshot, Page } from './commands.svelte';
 
 vi.mock('$lib/commands.svelte', () => ({
 	Commands: {
 		submitQuery: vi.fn(),
 		waitUntilRenderable: vi.fn(),
-		getColumns: vi.fn(),
 		fetchPage: vi.fn(),
 		getQueryStatus: vi.fn(),
 		getPageCount: vi.fn()
@@ -20,18 +19,18 @@ import { Commands } from '$lib/commands.svelte';
 const mockCommands = Commands as unknown as {
 	submitQuery: ReturnType<typeof vi.fn>;
 	waitUntilRenderable: ReturnType<typeof vi.fn>;
-	getColumns: ReturnType<typeof vi.fn>;
 	fetchPage: ReturnType<typeof vi.fn>;
 	getQueryStatus: ReturnType<typeof vi.fn>;
 	getPageCount: ReturnType<typeof vi.fn>;
 };
 
-function createMockStatementInfo(overrides: Partial<StatementInfo> = {}): StatementInfo {
+function createMockStatementInfo(overrides: Partial<QuerySnapshot> = {}): QuerySnapshot {
 	return {
 		returns_values: true,
 		status: 'Completed',
 		first_page: [[1, 'test']],
 		affected_rows: null,
+		columns: ['id'],
 		error: null,
 		...overrides
 	};
@@ -64,8 +63,8 @@ describe('QueryExecutor', () => {
 			const secondQueryId: QueryId = 2;
 			const connectionId = 'conn-1';
 
-			let resolveFirstWait: ((value: StatementInfo) => void) | undefined;
-			const firstWait = new Promise<StatementInfo>((resolve) => {
+			let resolveFirstWait: ((value: QuerySnapshot) => void) | undefined;
+			const firstWait = new Promise<QuerySnapshot>((resolve) => {
 				resolveFirstWait = resolve;
 			});
 
@@ -75,7 +74,6 @@ describe('QueryExecutor', () => {
 			mockCommands.waitUntilRenderable
 				.mockReturnValueOnce(firstWait)
 				.mockResolvedValueOnce(createMockStatementInfo({ status: 'Completed' }));
-			mockCommands.getColumns.mockResolvedValue(['id']);
 			mockCommands.getPageCount.mockResolvedValue(1);
 
 			const firstExecution = executor.executeQuery('SELECT first', connectionId);
@@ -106,13 +104,13 @@ describe('QueryExecutor', () => {
 			mockCommands.waitUntilRenderable.mockResolvedValue(
 				createMockStatementInfo({
 					status: 'Completed',
+					columns: ['id', 'name'],
 					first_page: [
 						[1, 'Alice'],
 						[2, 'Bob']
 					]
 				})
 			);
-			mockCommands.getColumns.mockResolvedValue(['id', 'name']);
 			mockCommands.getPageCount.mockResolvedValue(1);
 
 			await executor.executeQuery(queryText, connectionId);
@@ -140,7 +138,6 @@ describe('QueryExecutor', () => {
 			mockCommands.waitUntilRenderable.mockResolvedValue(
 				createMockStatementInfo({ status: 'Completed' })
 			);
-			mockCommands.getColumns.mockResolvedValue(['id', 'data']);
 			mockCommands.getPageCount.mockResolvedValue(1);
 
 			await executor.executeQuery(queryText, connectionId);
@@ -234,7 +231,6 @@ describe('QueryExecutor', () => {
 			mockCommands.waitUntilRenderable.mockResolvedValue(
 				createMockStatementInfo({ status: 'Completed' })
 			);
-			mockCommands.getColumns.mockResolvedValue(['id']);
 			mockCommands.getPageCount.mockResolvedValue(pageCount);
 
 			await executor.executeQuery(queryText, connectionId, onComplete);
@@ -268,7 +264,6 @@ describe('QueryExecutor', () => {
 			mockCommands.waitUntilRenderable.mockResolvedValue(
 				createMockStatementInfo({ status: 'Completed' })
 			);
-			mockCommands.getColumns.mockResolvedValue(['id']);
 			mockCommands.getPageCount.mockResolvedValue(1);
 
 			await executor.executeQuery(queryText, connectionId);
@@ -286,7 +281,6 @@ describe('QueryExecutor', () => {
 			mockCommands.waitUntilRenderable.mockResolvedValue(
 				createMockStatementInfo({ status: 'Completed' })
 			);
-			mockCommands.getColumns.mockResolvedValue(['col']);
 			mockCommands.getPageCount.mockResolvedValue(1);
 
 			await executor.executeQuery(queryText, connectionId);
@@ -311,7 +305,6 @@ describe('QueryExecutor', () => {
 			mockCommands.waitUntilRenderable.mockResolvedValue(
 				createMockStatementInfo({ status: 'Completed' })
 			);
-			mockCommands.getColumns.mockResolvedValue(['col']);
 			mockCommands.getPageCount.mockResolvedValue(1);
 
 			await executor.executeQuery(queryText, connectionId);
@@ -335,7 +328,6 @@ describe('QueryExecutor', () => {
 			mockCommands.waitUntilRenderable.mockResolvedValue(
 				createMockStatementInfo({ status: 'Completed' })
 			);
-			mockCommands.getColumns.mockResolvedValue(['col']);
 			mockCommands.getPageCount.mockResolvedValue(1);
 
 			await executor.executeQuery(queryText, connectionId);
@@ -362,7 +354,6 @@ describe('QueryExecutor', () => {
 			mockCommands.waitUntilRenderable.mockResolvedValue(
 				createMockStatementInfo({ status: 'Completed' })
 			);
-			mockCommands.getColumns.mockResolvedValue(['col']);
 			mockCommands.getPageCount.mockResolvedValue(1);
 
 			await executor.executeQuery(queryText, connectionId);
@@ -390,7 +381,6 @@ describe('QueryExecutor', () => {
 					first_page: [[1, 'test']]
 				})
 			);
-			mockCommands.getColumns.mockResolvedValue(['id', 'name']);
 			mockCommands.getPageCount.mockResolvedValue(1);
 
 			await executor.executeQuery(queryText, connectionId);
@@ -433,8 +423,8 @@ describe('QueryExecutor', () => {
 			const connectionId = 'conn-1';
 
 			// Delay waitUntilRenderable to simulate running state
-			let resolveWait: (value: StatementInfo) => void;
-			const waitPromise = new Promise<StatementInfo>((resolve) => {
+			let resolveWait: (value: QuerySnapshot) => void;
+			const waitPromise = new Promise<QuerySnapshot>((resolve) => {
 				resolveWait = resolve;
 			});
 
@@ -450,7 +440,6 @@ describe('QueryExecutor', () => {
 
 			// Complete the query
 			resolveWait!(createMockStatementInfo({ status: 'Completed' }));
-			mockCommands.getColumns.mockResolvedValue(['id']);
 			mockCommands.getPageCount.mockResolvedValue(1);
 			await executePromise;
 			await flushPromises();
@@ -496,7 +485,6 @@ describe('QueryExecutor', () => {
 					first_page: []
 				})
 			);
-			mockCommands.getColumns.mockResolvedValue(['id', 'name']);
 			mockCommands.getPageCount.mockResolvedValue(0);
 
 			await executor.executeQuery(queryText, connectionId);
@@ -521,7 +509,6 @@ describe('QueryExecutor', () => {
 					first_page: createMockPage(2)
 				})
 			);
-			mockCommands.getColumns.mockResolvedValue(['id', 'name']);
 		});
 
 		it('should load initial page (page 0)', async () => {
@@ -696,7 +683,6 @@ describe('QueryExecutor', () => {
 						first_page: [[1]]
 					})
 				);
-				mockCommands.getColumns.mockResolvedValue(['id']);
 				mockCommands.getQueryStatus.mockImplementation(() => {
 					statusCalls++;
 					return Promise.resolve((statusCalls < 2 ? 'Running' : 'Completed') as QueryStatus);
@@ -740,7 +726,6 @@ describe('QueryExecutor', () => {
 						first_page: [[1]]
 					})
 				);
-				mockCommands.getColumns.mockResolvedValue(['id']);
 
 				// Make status transition happen after a couple polls
 				mockCommands.getQueryStatus.mockImplementation(() => {
@@ -793,7 +778,6 @@ describe('QueryExecutor', () => {
 						first_page: [[1]]
 					})
 				);
-				mockCommands.getColumns.mockResolvedValue(['id']);
 				mockCommands.getQueryStatus.mockResolvedValue('Completed' as QueryStatus);
 				mockCommands.getPageCount.mockResolvedValue(3);
 
@@ -831,7 +815,6 @@ describe('QueryExecutor', () => {
 						first_page: [[1]]
 					})
 				);
-				mockCommands.getColumns.mockResolvedValue(['id']);
 				mockCommands.getQueryStatus.mockRejectedValue(new Error('poll failed'));
 				mockCommands.getPageCount.mockResolvedValue(0);
 
@@ -867,7 +850,6 @@ describe('QueryExecutor', () => {
 						first_page: [[1]]
 					})
 				);
-				mockCommands.getColumns.mockResolvedValue(['id']);
 				mockCommands.getQueryStatus.mockResolvedValue('Running' as QueryStatus);
 				mockCommands.getPageCount.mockResolvedValue(null as any);
 
@@ -913,7 +895,6 @@ describe('QueryExecutor', () => {
 						first_page: [[1]]
 					})
 				);
-				mockCommands.getColumns.mockResolvedValue(['id']);
 				mockCommands.getQueryStatus.mockResolvedValue('Running' as QueryStatus);
 				mockCommands.getPageCount.mockResolvedValue(null as any);
 
@@ -984,10 +965,10 @@ describe('QueryExecutor', () => {
 				createMockStatementInfo({
 					status: 'Completed',
 					returns_values: true,
-					first_page: [[]]
+					first_page: [[]],
+					columns: manyColumns
 				})
 			);
-			mockCommands.getColumns.mockResolvedValue(manyColumns);
 			mockCommands.getPageCount.mockResolvedValue(1);
 
 			await executor.executeQuery('SELECT * FROM wide_table', 'conn-1');
@@ -997,33 +978,23 @@ describe('QueryExecutor', () => {
 		});
 
 		it('should handle failure to get column information', async () => {
-			vi.useFakeTimers();
+			mockCommands.submitQuery.mockResolvedValue([1]);
+			mockCommands.waitUntilRenderable.mockResolvedValue(
+				createMockStatementInfo({
+					status: 'Completed',
+					returns_values: true,
+					first_page: [[1]],
+					columns: null
+				})
+			);
 
-			try {
-				mockCommands.submitQuery.mockResolvedValue([1]);
-				mockCommands.waitUntilRenderable.mockResolvedValue(
-					createMockStatementInfo({
-						status: 'Completed',
-						returns_values: true,
-						first_page: [[1]]
-					})
-				);
-				// Always return null to simulate column fetch failure
-				mockCommands.getColumns.mockResolvedValue(null);
+			await executor.executeQuery('SELECT * FROM users', 'conn-1');
+			await flushPromises();
 
-				const executePromise = executor.executeQuery('SELECT * FROM users', 'conn-1');
-
-				// Run through all the polling attempts (50 retries * 100ms = 5000ms)
-				await vi.advanceTimersByTimeAsync(5100);
-				await executePromise;
-
-				expect(executor.resultTabs[0]).toMatchObject({
-					status: 'Error',
-					error: 'Failed to get column information'
-				});
-			} finally {
-				vi.useRealTimers();
-			}
+			expect(executor.resultTabs[0]).toMatchObject({
+				status: 'Error',
+				error: 'Failed to get column information'
+			});
 		});
 
 		it('should return correct tab status for getTabStatus', async () => {

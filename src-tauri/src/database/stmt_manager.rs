@@ -13,7 +13,7 @@ use crate::{
     database::{
         parser::ParsedStatement,
         postgres, sqlite,
-        types::{channel, Page, QueryId, QueryStatus, RuntimeClient, StatementInfo},
+        types::{channel, Page, QueryId, QuerySnapshot, QueryStatus, RuntimeClient},
         QueryExecEvent,
     },
     utils::Condvar,
@@ -80,13 +80,19 @@ impl StatementManager {
         Ok(query_ids)
     }
 
-    /// Fetches some general data on a query execution.
+    /// Fetches initial data on a query in execution. This will block until said data is available.
     /// Useful for the front-end to poll the execution status, mainly when it is still trying to load the first page of results
-    pub fn fetch_query(&self, query_id: QueryId) -> Result<StatementInfo, Error> {
+    pub async fn fetch_initial_renderable_state(
+        &self,
+        query_id: QueryId,
+    ) -> Result<QuerySnapshot, Error> {
         let exec_state = self.get(query_id)?;
+        // Wait for the data to load in
+        exec_state.renderable.wait().await;
+
         let returns_values = exec_state.returns_values;
 
-        let info = StatementInfo {
+        let info = QuerySnapshot {
             returns_values,
             status: exec_state.status.load(Ordering::Relaxed).into(),
             first_page: if returns_values {
@@ -97,6 +103,7 @@ impl StatementManager {
             },
             affected_rows: *exec_state.rows_affected.read().expect("RwLock poisoned"),
             error: exec_state.error.read().expect("RwLock poisoned").clone(),
+            columns: exec_state.columns.read().expect("RwLock poisoned").clone(),
         };
 
         Ok(info)
@@ -109,11 +116,6 @@ impl StatementManager {
         Ok(pages.get(page_idx).cloned())
     }
 
-    pub fn get_renderable(&self, query_id: QueryId) -> Result<Condvar, Error> {
-        let exec_state = self.get(query_id)?;
-        Ok(exec_state.renderable.clone())
-    }
-
     pub fn get_query_status(&self, query_id: QueryId) -> Result<QueryStatus, Error> {
         let exec_state = self.get(query_id)?;
 
@@ -124,14 +126,6 @@ impl StatementManager {
         let exec_state = self.get(query_id)?;
         let page_count = exec_state.pages.read().expect("RwLock poisoned").len();
         Ok(page_count)
-    }
-
-    pub fn get_columns(&self, query_id: QueryId) -> Result<Option<Box<RawValue>>, Error> {
-        let exec_state = self.get(query_id)?;
-
-        let columns = exec_state.columns.read().expect("RwLock poisoned");
-
-        Ok(columns.clone())
     }
 }
 
@@ -220,14 +214,12 @@ impl StatementManager {
         });
     }
 
-    fn get(
-        &self,
-        query_id: QueryId,
-    ) -> Result<dashmap::mapref::one::Ref<'_, usize, Arc<ExecState>>, Error> {
+    fn get(&self, query_id: QueryId) -> Result<Arc<ExecState>, Error> {
         self.queries
             .get(&query_id)
             .with_context(|| format!("Did not find QueryId({query_id}) in StatementManager"))
             .map_err(Into::into)
+            .map(|entry| entry.clone())
     }
 }
 
@@ -262,9 +254,11 @@ mod tests {
         }
 
         let columns = stmt_manager
-            .get_columns(0)
+            .fetch_initial_renderable_state(0)
+            .await
             .unwrap()
-            .expect("get_columns returned None");
+            .columns
+            .expect("columns returned None");
         assert_eq!(serde_json::to_string(&columns).unwrap(), "[\"1\"]");
 
         let page = stmt_manager
