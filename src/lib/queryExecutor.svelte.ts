@@ -29,7 +29,9 @@ export class QueryExecutor {
 
 	private nextResultTabId = 1;
 	private pageCountPolls = new SvelteMap<QueryId, ReturnType<typeof setInterval>>();
+	private latestPageRequests = new SvelteMap<QueryId, number>();
 	private onComplete?: (totalRows: number) => void;
+	private executionId = 0;
 
 	constructor() {}
 
@@ -38,6 +40,7 @@ export class QueryExecutor {
 			clearInterval(interval);
 		}
 		this.pageCountPolls.clear();
+		this.latestPageRequests.clear();
 	}
 
 	async executeQuery(
@@ -45,6 +48,7 @@ export class QueryExecutor {
 		connectionId: string,
 		onComplete?: (totalRows: number) => void
 	) {
+		const currentExecutionId = ++this.executionId;
 		// Store callback for use in completion handlers
 		this.onComplete = onComplete;
 		// Clear previous results
@@ -52,6 +56,7 @@ export class QueryExecutor {
 			clearInterval(interval);
 		}
 		this.pageCountPolls.clear();
+		this.latestPageRequests.clear();
 		this.resultTabs = [];
 		this.activeResultTabId = null;
 		this.nextResultTabId = 1;
@@ -61,9 +66,12 @@ export class QueryExecutor {
 
 			// Create a tab per statement
 			for (const queryId of queryIds) {
-				await this.initializeQueryTab(queryId, queryText);
+				await this.initializeQueryTab(queryId, queryText, currentExecutionId);
 			}
 		} catch (error) {
+			if (currentExecutionId !== this.executionId) {
+				return;
+			}
 			console.error('Failed to execute query:', error);
 
 			const errorObj = error as { message: string };
@@ -87,7 +95,9 @@ export class QueryExecutor {
 		}
 	}
 
-	private async initializeQueryTab(queryId: QueryId, queryText: string) {
+	private async initializeQueryTab(queryId: QueryId, queryText: string, executionId: number) {
+		if (executionId !== this.executionId) return;
+
 		const tabId = this.nextResultTabId++;
 
 		const newTab: QueryResultTab = {
@@ -106,6 +116,7 @@ export class QueryExecutor {
 		this.activeResultTabId = tabId;
 
 		const info = await this.waitUntilRenderable(queryId);
+		if (executionId !== this.executionId) return;
 
 		const tabIndex = this.resultTabs.findIndex((t) => t.id === tabId);
 		if (tabIndex < 0) return;
@@ -140,6 +151,7 @@ export class QueryExecutor {
 		}
 
 		const columns = await this.pollForColumns(queryId);
+		if (executionId !== this.executionId) return;
 		if (!columns) {
 			this.resultTabs[tabIndex] = {
 				...this.resultTabs[tabIndex],
@@ -170,7 +182,7 @@ export class QueryExecutor {
 
 			this.onComplete?.((pageCount || 0) * 50);
 		} else {
-			this.pollForPageCount(queryId);
+			this.pollForPageCount(queryId, executionId);
 		}
 	}
 
@@ -205,8 +217,17 @@ export class QueryExecutor {
 		return null;
 	}
 
-	private pollForPageCount(queryId: QueryId) {
+	private pollForPageCount(queryId: QueryId, executionId: number) {
 		const poll = async () => {
+			if (executionId !== this.executionId) {
+				const oldInterval = this.pageCountPolls.get(queryId);
+				if (oldInterval) {
+					clearInterval(oldInterval);
+					this.pageCountPolls.delete(queryId);
+				}
+				return;
+			}
+
 			try {
 				const status = await Commands.getQueryStatus(queryId);
 				const pageCount = await Commands.getPageCount(queryId);
@@ -248,6 +269,11 @@ export class QueryExecutor {
 				}
 			} catch (error) {
 				console.error('Error polling for page count:', error);
+				const interval = this.pageCountPolls.get(queryId);
+				if (interval) {
+					clearInterval(interval);
+					this.pageCountPolls.delete(queryId);
+				}
 			}
 		};
 
@@ -260,7 +286,11 @@ export class QueryExecutor {
 		const tabIndex = this.resultTabs.findIndex((t) => t.queryId === queryId);
 		if (tabIndex < 0) return;
 
+		const requestId = (this.latestPageRequests.get(queryId) ?? 0) + 1;
+		this.latestPageRequests.set(queryId, requestId);
+
 		const page = await this.pollForPage(queryId, pageIndex);
+		if (this.latestPageRequests.get(queryId) !== requestId) return;
 		if (page) {
 			this.resultTabs[tabIndex] = {
 				...this.resultTabs[tabIndex],

@@ -2,3 +2,4 @@
 *.html linguist-detectable=false
 *.js linguist-detectable=false
 *.py linguist-detectable=false
+*.test.ts linguist-detectable=false

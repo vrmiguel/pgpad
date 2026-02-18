@@ -59,6 +59,44 @@ describe('QueryExecutor', () => {
 	});
 
 	describe('Query Execution', () => {
+		it('should ignore stale async results from a previous executeQuery call', async () => {
+			const firstQueryId: QueryId = 1;
+			const secondQueryId: QueryId = 2;
+			const connectionId = 'conn-1';
+
+			let resolveFirstWait: ((value: StatementInfo) => void) | undefined;
+			const firstWait = new Promise<StatementInfo>((resolve) => {
+				resolveFirstWait = resolve;
+			});
+
+			mockCommands.submitQuery
+				.mockResolvedValueOnce([firstQueryId])
+				.mockResolvedValueOnce([secondQueryId]);
+			mockCommands.waitUntilRenderable
+				.mockReturnValueOnce(firstWait)
+				.mockResolvedValueOnce(createMockStatementInfo({ status: 'Completed' }));
+			mockCommands.getColumns.mockResolvedValue(['id']);
+			mockCommands.getPageCount.mockResolvedValue(1);
+
+			const firstExecution = executor.executeQuery('SELECT first', connectionId);
+			await flushPromises();
+
+			await executor.executeQuery('SELECT second', connectionId);
+			await flushPromises();
+
+			expect(executor.resultTabs).toHaveLength(1);
+			expect(executor.resultTabs[0].queryId).toBe(secondQueryId);
+			expect(executor.resultTabs[0].query).toBe('SELECT second');
+
+			resolveFirstWait!(createMockStatementInfo({ status: 'Completed' }));
+			await firstExecution;
+			await flushPromises();
+
+			expect(executor.resultTabs).toHaveLength(1);
+			expect(executor.resultTabs[0].queryId).toBe(secondQueryId);
+			expect(executor.resultTabs[0].query).toBe('SELECT second');
+		});
+
 		it('should execute a single-statement query successfully', async () => {
 			const queryId: QueryId = 1;
 			const queryText = 'SELECT * FROM users';
@@ -572,9 +610,121 @@ describe('QueryExecutor', () => {
 			// Should not throw, tab should remain unchanged
 			expect(executor.resultTabs[0].currentPageIndex).toBe(0);
 		});
+
+		it('should keep latest page request when concurrent loadPage calls race', async () => {
+			vi.useFakeTimers();
+
+			try {
+				mockCommands.getPageCount.mockResolvedValue(3);
+
+				const slowPage = createMockPage(1);
+				const fastPage = createMockPage(4);
+				let slowAttempts = 0;
+				mockCommands.fetchPage.mockImplementation(async (_queryId, pageIndex) => {
+					if (pageIndex === 1) {
+						slowAttempts++;
+						return slowAttempts >= 3 ? slowPage : null;
+					}
+					if (pageIndex === 2) {
+						return fastPage;
+					}
+					return null;
+				});
+
+				await executor.executeQuery('SELECT * FROM users', 'conn-1');
+				await Promise.resolve();
+
+				const queryId = executor.resultTabs[0].queryId;
+				const slowLoad = executor.loadPage(queryId, 1);
+				const fastLoad = executor.loadPage(queryId, 2);
+
+				await fastLoad;
+				expect(executor.resultTabs[0].currentPageIndex).toBe(2);
+				expect(executor.resultTabs[0].currentPageData).toEqual(fastPage);
+
+				await vi.advanceTimersByTimeAsync(350);
+				await slowLoad;
+
+				expect(executor.resultTabs[0].currentPageIndex).toBe(2);
+				expect(executor.resultTabs[0].currentPageData).toEqual(fastPage);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it('should keep current page unchanged when loadPage times out', async () => {
+			vi.useFakeTimers();
+
+			try {
+				mockCommands.getPageCount.mockResolvedValue(2);
+				mockCommands.fetchPage.mockResolvedValue(null);
+
+				await executor.executeQuery('SELECT * FROM users', 'conn-1');
+				await Promise.resolve();
+
+				const initialPage = executor.resultTabs[0].currentPageData;
+				const queryId = executor.resultTabs[0].queryId;
+				const loadPromise = executor.loadPage(queryId, 1);
+
+				await vi.advanceTimersByTimeAsync(10100);
+				await loadPromise;
+
+				expect(executor.resultTabs[0].currentPageIndex).toBe(0);
+				expect(executor.resultTabs[0].currentPageData).toEqual(initialPage);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
 	});
 
 	describe('Polling & Cleanup', () => {
+		it('checks if pageCountPolls works', async () => {
+			vi.useFakeTimers();
+
+			const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+			const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+
+			try {
+				const queryId: QueryId = 1;
+				let statusCalls = 0;
+
+				mockCommands.submitQuery.mockResolvedValue([queryId]);
+				mockCommands.waitUntilRenderable.mockResolvedValue(
+					createMockStatementInfo({
+						status: 'Running',
+						returns_values: true,
+						first_page: [[1]]
+					})
+				);
+				mockCommands.getColumns.mockResolvedValue(['id']);
+				mockCommands.getQueryStatus.mockImplementation(() => {
+					statusCalls++;
+					return Promise.resolve((statusCalls < 2 ? 'Running' : 'Completed') as QueryStatus);
+				});
+				mockCommands.getPageCount.mockResolvedValue(2);
+
+				await executor.executeQuery('SELECT * FROM users', 'conn-1');
+				await Promise.resolve();
+
+				expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+				expect(clearIntervalSpy).not.toHaveBeenCalled();
+
+				await vi.advanceTimersByTimeAsync(250);
+				await Promise.resolve();
+
+				expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+
+				const statusCallsAfterComplete = mockCommands.getQueryStatus.mock.calls.length;
+				await vi.advanceTimersByTimeAsync(1000);
+				await Promise.resolve();
+				expect(mockCommands.getQueryStatus.mock.calls.length).toBe(statusCallsAfterComplete);
+			} finally {
+				setIntervalSpy.mockRestore();
+				clearIntervalSpy.mockRestore();
+				vi.useRealTimers();
+			}
+		});
+
 		it('should poll for page count while query is running', async () => {
 			vi.useFakeTimers();
 
@@ -663,6 +813,43 @@ describe('QueryExecutor', () => {
 
 				await executePromise;
 			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it('should stop polling when getQueryStatus/getPageCount throws', async () => {
+			vi.useFakeTimers();
+
+			const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+			try {
+				const queryId: QueryId = 1;
+				mockCommands.submitQuery.mockResolvedValue([queryId]);
+				mockCommands.waitUntilRenderable.mockResolvedValue(
+					createMockStatementInfo({
+						status: 'Running',
+						returns_values: true,
+						first_page: [[1]]
+					})
+				);
+				mockCommands.getColumns.mockResolvedValue(['id']);
+				mockCommands.getQueryStatus.mockRejectedValue(new Error('poll failed'));
+				mockCommands.getPageCount.mockResolvedValue(0);
+
+				await executor.executeQuery('SELECT * FROM users', 'conn-1');
+				await Promise.resolve();
+
+				await vi.advanceTimersByTimeAsync(250);
+				await Promise.resolve();
+
+				expect(clearIntervalSpy).toHaveBeenCalled();
+				const statusCallsAfterFailure = mockCommands.getQueryStatus.mock.calls.length;
+
+				await vi.advanceTimersByTimeAsync(1000);
+				await Promise.resolve();
+
+				expect(mockCommands.getQueryStatus.mock.calls.length).toBe(statusCallsAfterFailure);
+			} finally {
+				clearIntervalSpy.mockRestore();
 				vi.useRealTimers();
 			}
 		});
