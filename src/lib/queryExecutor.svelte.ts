@@ -5,6 +5,7 @@ import {
 	type QueryStatus,
 	type StatementInfo
 } from '$lib/commands.svelte';
+import { SvelteMap } from 'svelte/reactivity';
 
 export interface QueryResultTab {
 	id: number;
@@ -27,7 +28,7 @@ export class QueryExecutor {
 	activeResultTabId = $state<number | null>(null);
 
 	private nextResultTabId = 1;
-	private pageCountPolls = new Map<QueryId, ReturnType<typeof setInterval>>();
+	private pageCountPolls = new SvelteMap<QueryId, ReturnType<typeof setInterval>>();
 	private onComplete?: (totalRows: number) => void;
 
 	constructor() {}

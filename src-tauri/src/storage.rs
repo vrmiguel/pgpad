@@ -162,9 +162,7 @@ impl Storage {
                 connection_string.as_str(),
                 ca_cert_path.as_deref(),
             ),
-            ConnectionConfig::SQLite { db_path } => {
-                (DB_TYPE_SQLITE, db_path.as_str(), None)
-            }
+            ConnectionConfig::SQLite { db_path } => (DB_TYPE_SQLITE, db_path.as_str(), None),
         };
 
         conn.execute(
@@ -201,9 +199,7 @@ impl Storage {
                 connection_string.as_str(),
                 ca_cert_path.as_deref(),
             ),
-            ConnectionConfig::SQLite { db_path } => {
-                (DB_TYPE_SQLITE, db_path.as_str(), None)
-            }
+            ConnectionConfig::SQLite { db_path } => (DB_TYPE_SQLITE, db_path.as_str(), None),
         };
 
         let updated_rows = conn

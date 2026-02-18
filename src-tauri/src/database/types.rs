@@ -146,12 +146,7 @@ impl Connection {
         }
     }
 
-    pub fn new(
-        id: Uuid,
-        name: String,
-        config: ConnectionConfig,
-        permissions: Permissions,
-    ) -> Self {
+    pub fn new(id: Uuid, name: String, config: ConnectionConfig, permissions: Permissions) -> Self {
         Self {
             id,
             name,

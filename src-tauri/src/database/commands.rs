@@ -77,9 +77,10 @@ pub async fn update_connection(
                     ca_cert_path: new_cert,
                 },
             ) => old != new || old_cert != new_cert,
-            (ConnectionConfig::SQLite { db_path: old }, ConnectionConfig::SQLite { db_path: new }) => {
-                old != new
-            }
+            (
+                ConnectionConfig::SQLite { db_path: old },
+                ConnectionConfig::SQLite { db_path: new },
+            ) => old != new,
             _ => true,
         };
 
@@ -382,7 +383,7 @@ pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result
 
     for stored_connection in stored_connections {
         let connection = Connection::new(
-                stored_connection.id,
+            stored_connection.id,
             stored_connection.name,
             stored_connection.config,
             stored_connection.permissions,

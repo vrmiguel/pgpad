@@ -10,9 +10,14 @@ use tauri::async_runtime::{spawn, spawn_blocking};
 use dashmap::DashMap;
 
 use crate::{
-    Error, database::{
-        QueryExecEvent, parser::ParsedStatement, postgres, sqlite, types::{Page, QueryId, QueryStatus, RuntimeClient, StatementInfo, channel}
-    }, utils::Condvar
+    database::{
+        parser::ParsedStatement,
+        postgres, sqlite,
+        types::{channel, Page, QueryId, QueryStatus, RuntimeClient, StatementInfo},
+        QueryExecEvent,
+    },
+    utils::Condvar,
+    Error,
 };
 
 /// The storage/state for an individual statement being executed
