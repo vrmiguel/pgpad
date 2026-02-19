@@ -31,7 +31,7 @@ pub struct QuerySnapshot {
     pub error: Option<String>,
 }
 
-pub enum DatabaseKind {
+pub enum Database {
     Postgres,
     Sqlite,
 }
@@ -129,10 +129,10 @@ pub enum ConnectionRuntime {
 }
 
 impl ConnectionConfig {
-    pub fn kind(&self) -> DatabaseKind {
+    pub fn kind(&self) -> Database {
         match self {
-            ConnectionConfig::Postgres { .. } => DatabaseKind::Postgres,
-            ConnectionConfig::SQLite { .. } => DatabaseKind::Sqlite,
+            ConnectionConfig::Postgres { .. } => Database::Postgres,
+            ConnectionConfig::SQLite { .. } => Database::Sqlite,
         }
     }
 }

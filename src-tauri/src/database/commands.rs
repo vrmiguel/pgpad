@@ -14,7 +14,7 @@ use crate::{
         postgres::{self, connect::connect},
         sqlite,
         types::{
-            Connection, ConnectionConfig, ConnectionInfo, ConnectionRuntime, DatabaseKind,
+            Connection, ConnectionConfig, ConnectionInfo, ConnectionRuntime, Database,
             DatabaseSchema, QuerySnapshot, QueryStatus, RuntimeClient,
         },
         Certificates, ConnectionMonitor,
@@ -413,8 +413,8 @@ pub async fn is_query_read_only(
         .kind();
 
     let stmts = match db {
-        DatabaseKind::Postgres => database::postgres::parser::parse_statements(query)?,
-        DatabaseKind::Sqlite => database::sqlite::parser::parse_statements(query)?,
+        Database::Postgres => database::postgres::parser::parse_statements(query)?,
+        Database::Sqlite => database::sqlite::parser::parse_statements(query)?,
     };
 
     Ok(stmts.into_iter().all(|stmt| stmt.is_read_only))

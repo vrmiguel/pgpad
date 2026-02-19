@@ -28,18 +28,16 @@ export class QueryExecutor {
 	activeResultTabId = $state<number | null>(null);
 
 	private nextResultTabId = 1;
-	private pageCountPolls = new SvelteMap<QueryId, ReturnType<typeof setInterval>>();
 	private latestPageRequests = new SvelteMap<QueryId, number>();
 	private onComplete?: (totalRows: number) => void;
 	private executionId = 0;
+	private pollingAbortController: AbortController | null = null;
 
 	constructor() {}
 
 	dispose() {
-		for (const interval of this.pageCountPolls.values()) {
-			clearInterval(interval);
-		}
-		this.pageCountPolls.clear();
+		this.stopPollingLoop();
+		this.executionId++;
 		this.latestPageRequests.clear();
 	}
 
@@ -52,10 +50,7 @@ export class QueryExecutor {
 		// Store callback for use in completion handlers
 		this.onComplete = onComplete;
 		// Clear previous results
-		for (const interval of this.pageCountPolls.values()) {
-			clearInterval(interval);
-		}
-		this.pageCountPolls.clear();
+		this.stopPollingLoop();
 		this.latestPageRequests.clear();
 		this.resultTabs = [];
 		this.activeResultTabId = null;
@@ -74,7 +69,7 @@ export class QueryExecutor {
 			}
 			console.error('Failed to execute query:', error);
 
-			const errorObj = error as { message: string };
+			const errorMsg = error instanceof Error ? error.message : String(error);
 			const tabId = this.nextResultTabId++;
 
 			const errorTab: QueryResultTab = {
@@ -87,7 +82,7 @@ export class QueryExecutor {
 				currentPageIndex: 0,
 				currentPageData: null,
 				totalPages: null,
-				error: errorObj.message
+				error: errorMsg
 			};
 
 			this.resultTabs = [errorTab];
@@ -180,7 +175,7 @@ export class QueryExecutor {
 
 			this.onComplete?.((pageCount || 0) * 50);
 		} else {
-			this.pollForPageCount(queryId, executionId);
+			this.startPollingLoop(executionId);
 		}
 	}
 
@@ -204,69 +199,100 @@ export class QueryExecutor {
 		return null;
 	}
 
-	private pollForPageCount(queryId: QueryId, executionId: number) {
-		const poll = async () => {
-			if (executionId !== this.executionId) {
-				const oldInterval = this.pageCountPolls.get(queryId);
-				if (oldInterval) {
-					clearInterval(oldInterval);
-					this.pageCountPolls.delete(queryId);
+	private startPollingLoop(executionId: number) {
+		if (this.pollingAbortController && !this.pollingAbortController.signal.aborted) {
+			return;
+		}
+
+		const controller = new AbortController();
+		this.pollingAbortController = controller;
+
+		void this.runPollingLoop(executionId, controller.signal);
+	}
+
+	private stopPollingLoop() {
+		this.pollingAbortController?.abort();
+		this.pollingAbortController = null;
+	}
+
+	private async runPollingLoop(executionId: number, signal: AbortSignal) {
+		while (!signal.aborted && executionId === this.executionId) {
+			const runningQueryIds = this.resultTabs
+				.filter((t) => t.status === 'Running' && t.queryReturnsResults !== false)
+				.map((t) => t.queryId);
+
+			if (runningQueryIds.length === 0) {
+				break;
+			}
+
+			for (const queryId of runningQueryIds) {
+				if (signal.aborted || executionId !== this.executionId) {
+					return;
 				}
+				await this.pollQueryProgress(queryId);
+			}
+
+			await this.sleep(200, signal);
+		}
+
+		if (this.pollingAbortController?.signal === signal) {
+			this.pollingAbortController = null;
+		}
+	}
+
+	private async pollQueryProgress(queryId: QueryId) {
+		try {
+			const status = await Commands.getQueryStatus(queryId);
+			const pageCount = await Commands.getPageCount(queryId);
+
+			const tabIndex = this.resultTabs.findIndex((t) => t.queryId === queryId);
+			if (tabIndex < 0) return;
+			const tab = this.resultTabs[tabIndex];
+
+			let changed = false;
+			if (tab.totalPages !== pageCount) {
+				this.resultTabs[tabIndex] = { ...this.resultTabs[tabIndex], totalPages: pageCount };
+				changed = true;
+			}
+
+			if (tab.status !== status) {
+				this.resultTabs[tabIndex] = { ...this.resultTabs[tabIndex], status };
+				changed = true;
+			}
+
+			if (changed) {
+				this.resultTabs = [...this.resultTabs];
+			}
+
+			if (status === 'Completed') {
+				const totalRows = (pageCount || 0) * 50;
+				this.onComplete?.(totalRows);
+			}
+		} catch (error) {
+			console.error('Error polling for page count:', error);
+			this.stopPollingLoop();
+		}
+	}
+
+	private async sleep(ms: number, signal?: AbortSignal): Promise<void> {
+		await new Promise<void>((resolve) => {
+			if (signal?.aborted) {
+				resolve();
 				return;
 			}
 
-			try {
-				const status = await Commands.getQueryStatus(queryId);
-				const pageCount = await Commands.getPageCount(queryId);
+			const timeout = setTimeout(() => {
+				signal?.removeEventListener('abort', onAbort);
+				resolve();
+			}, ms);
 
-				const tab = this.resultTabs.find((t) => t.queryId === queryId);
-				if (!tab) return;
+			const onAbort = () => {
+				clearTimeout(timeout);
+				resolve();
+			};
 
-				let changed = false;
-
-				if (tab.totalPages !== pageCount) {
-					const tabIndex = this.resultTabs.findIndex((t) => t.queryId === queryId);
-					if (tabIndex >= 0) {
-						this.resultTabs[tabIndex] = { ...this.resultTabs[tabIndex], totalPages: pageCount };
-						changed = true;
-					}
-				}
-
-				if (tab.status !== status) {
-					const tabIndex = this.resultTabs.findIndex((t) => t.queryId === queryId);
-					if (tabIndex >= 0) {
-						this.resultTabs[tabIndex] = { ...this.resultTabs[tabIndex], status };
-						changed = true;
-					}
-				}
-
-				if (changed) {
-					this.resultTabs = [...this.resultTabs];
-				}
-
-				if (status === 'Completed') {
-					const interval = this.pageCountPolls.get(queryId);
-					if (interval) {
-						clearInterval(interval);
-						this.pageCountPolls.delete(queryId);
-					}
-
-					const totalRows = (tab.totalPages || 0) * 50;
-					this.onComplete?.(totalRows);
-				}
-			} catch (error) {
-				console.error('Error polling for page count:', error);
-				const interval = this.pageCountPolls.get(queryId);
-				if (interval) {
-					clearInterval(interval);
-					this.pageCountPolls.delete(queryId);
-				}
-			}
-		};
-
-		poll();
-		const interval = setInterval(poll, 200);
-		this.pageCountPolls.set(queryId, interval);
+			signal?.addEventListener('abort', onAbort, { once: true });
+		});
 	}
 
 	async loadPage(queryId: QueryId, pageIndex: number) {

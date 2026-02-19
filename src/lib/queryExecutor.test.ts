@@ -665,11 +665,8 @@ describe('QueryExecutor', () => {
 	});
 
 	describe('Polling & Cleanup', () => {
-		it('checks if pageCountPolls works', async () => {
+		it('should run polling loop and stop after completion', async () => {
 			vi.useFakeTimers();
-
-			const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
-			const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
 
 			try {
 				const queryId: QueryId = 1;
@@ -692,21 +689,14 @@ describe('QueryExecutor', () => {
 				await executor.executeQuery('SELECT * FROM users', 'conn-1');
 				await Promise.resolve();
 
-				expect(setIntervalSpy).toHaveBeenCalledTimes(1);
-				expect(clearIntervalSpy).not.toHaveBeenCalled();
-
 				await vi.advanceTimersByTimeAsync(250);
 				await Promise.resolve();
-
-				expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
 
 				const statusCallsAfterComplete = mockCommands.getQueryStatus.mock.calls.length;
 				await vi.advanceTimersByTimeAsync(1000);
 				await Promise.resolve();
 				expect(mockCommands.getQueryStatus.mock.calls.length).toBe(statusCallsAfterComplete);
 			} finally {
-				setIntervalSpy.mockRestore();
-				clearIntervalSpy.mockRestore();
 				vi.useRealTimers();
 			}
 		});
@@ -804,7 +794,6 @@ describe('QueryExecutor', () => {
 		it('should stop polling when getQueryStatus/getPageCount throws', async () => {
 			vi.useFakeTimers();
 
-			const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
 			try {
 				const queryId: QueryId = 1;
 				mockCommands.submitQuery.mockResolvedValue([queryId]);
@@ -824,7 +813,6 @@ describe('QueryExecutor', () => {
 				await vi.advanceTimersByTimeAsync(250);
 				await Promise.resolve();
 
-				expect(clearIntervalSpy).toHaveBeenCalled();
 				const statusCallsAfterFailure = mockCommands.getQueryStatus.mock.calls.length;
 
 				await vi.advanceTimersByTimeAsync(1000);
@@ -832,12 +820,11 @@ describe('QueryExecutor', () => {
 
 				expect(mockCommands.getQueryStatus.mock.calls.length).toBe(statusCallsAfterFailure);
 			} finally {
-				clearIntervalSpy.mockRestore();
 				vi.useRealTimers();
 			}
 		});
 
-		it('should clear all intervals on dispose', async () => {
+		it('should stop polling loop on dispose', async () => {
 			vi.useFakeTimers();
 
 			try {
@@ -882,7 +869,7 @@ describe('QueryExecutor', () => {
 			expect(true).toBe(true);
 		});
 
-		it('should clear old intervals when executing new query', async () => {
+		it('should stop old polling loop when executing a new query', async () => {
 			vi.useFakeTimers();
 
 			try {
