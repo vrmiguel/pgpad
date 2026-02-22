@@ -43,6 +43,8 @@ keyring = { version = "3.2.0", features = ["apple-native", "windows-native", "sy
 url = "2.5.7"
 env_logger = "0.11.8"
 sqlformat = "0.5.0"
+tree-sitter = "0.25.9"
+tree-sitter-sequel = "0.3.8"
 
 [profile.release]
 panic = "abort"

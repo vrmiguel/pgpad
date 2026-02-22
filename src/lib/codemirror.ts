@@ -543,6 +543,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		lspTransport = null;
 		lspClient = null;
 	}
+	const useLspCompletions = lspClient !== null;
 
 	// Create compartments for dynamic reconfiguration
 	const themeCompartment = new Compartment();
@@ -641,7 +642,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		highlightSelectionMatches(),
 		keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
 		sql({ dialect: PostgreSQL }),
-		schemaCompartment.of(createSqlAutocompletion(currentSchema)),
+		schemaCompartment.of(useLspCompletions ? [] : createSqlAutocompletion(currentSchema)),
 		EditorView.lineWrapping,
 		EditorView.updateListener.of((update) => {
 			if (update.docChanged) {
@@ -757,6 +758,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 
 	const updateSchema = (newSchema: DatabaseSchema | null) => {
 		currentSchema = newSchema;
+		if (useLspCompletions) return;
 		view.dispatch({
 			effects: schemaCompartment.reconfigure(createSqlAutocompletion(currentSchema))
 		});
