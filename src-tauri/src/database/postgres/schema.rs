@@ -26,6 +26,15 @@ pub async fn get_database_schema(client: &Client) -> Result<DatabaseSchema, Erro
         WHERE 
             t.table_type = 'BASE TABLE'
             AND t.table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+            -- Exclude child partitions: keep only regular tables and partition roots
+            AND NOT EXISTS (
+                SELECT 1
+                FROM pg_inherits i
+                JOIN pg_class child ON child.oid = i.inhrelid
+                JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+                WHERE child.relname = t.table_name
+                AND child_ns.nspname = t.table_schema
+            )
         ORDER BY 
             t.table_schema, t.table_name, c.ordinal_position
     "#;
@@ -79,4 +88,64 @@ pub async fn get_database_schema(client: &Client) -> Result<DatabaseSchema, Erro
         schemas,
         unique_columns,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use anyhow::Context;
+    use pgtemp::PgTempDB;
+
+    use super::get_database_schema;
+
+    #[tokio::test]
+    async fn excludes_partition_children_from_schema_listing() -> anyhow::Result<()> {
+        let db = PgTempDB::async_new().await;
+        let (client, conn) = tokio_postgres::connect(&db.connection_uri(), tokio_postgres::NoTls)
+            .await
+            .context("Failed to connect to temporary postgres")?;
+
+        tokio::task::spawn(async move {
+            if let Err(e) = conn.await {
+                eprintln!("Connection error: {}", e);
+            }
+        });
+
+        client
+            .batch_execute(
+                "
+                CREATE TABLE measurements (
+                    city_id int NOT NULL,
+                    logdate date NOT NULL,
+                    peaktemp int,
+                    unitsales int
+                ) PARTITION BY RANGE (logdate);
+
+                CREATE TABLE measurements_2025_01 PARTITION OF measurements
+                    FOR VALUES FROM ('2025-01-01') TO ('2025-02-01');
+
+                CREATE TABLE measurements_2025_02 PARTITION OF measurements
+                    FOR VALUES FROM ('2025-02-01') TO ('2025-03-01');
+                ",
+            )
+            .await
+            .context("Failed to create partitioned test tables")?;
+
+        let schema = get_database_schema(&client).await?;
+
+        let measurement_tables: HashSet<String> = schema
+            .tables
+            .into_iter()
+            .filter(|table| table.name.starts_with("measurements"))
+            .map(|table| table.name)
+            .collect();
+
+        assert_eq!(
+            measurement_tables,
+            HashSet::from([String::from("measurements")])
+        );
+
+        Ok(())
+    }
 }
