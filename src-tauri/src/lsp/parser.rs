@@ -599,7 +599,7 @@ impl ParsingContext {
     }
 
     /// Check if a node has a child of a specific kind
-    fn node_has_child_of_kind(&self, node: Node, kind: &str) -> bool {
+    fn node_has_child_of_kind(node: Node, kind: &str) -> bool {
         let mut cursor = node.walk();
 
         if cursor.goto_first_child() {
@@ -609,7 +609,7 @@ impl ParsingContext {
                 }
 
                 // Also check grandchildren
-                if self.node_has_child_of_kind(cursor.node(), kind) {
+                if Self::node_has_child_of_kind(cursor.node(), kind) {
                     return true;
                 }
 
@@ -878,7 +878,7 @@ impl ParsingContext {
     /// Analyze SELECT clause state
     fn analyze_select_state(&self, node: &Node, _cursor_point: Point) -> ParseState {
         // Check if we have a FROM clause yet
-        let has_from = self.node_has_child_of_kind(node.parent().unwrap_or(*node), "from");
+        let has_from = Self::node_has_child_of_kind(node.parent().unwrap_or(*node), "from");
 
         if has_from {
             // We have FROM, so we might be expecting WHERE or other clauses
@@ -995,10 +995,10 @@ impl ParsingContext {
     fn extract_next_identifier(&self, text: &str) -> Option<String> {
         let trimmed = text.trim_start();
 
-        if trimmed.starts_with('"') {
+        if let Some(stripped) = trimmed.strip_prefix('"') {
             // Quoted identifier
-            if let Some(end_quote) = trimmed[1..].find('"') {
-                return Some(trimmed[1..end_quote + 1].to_string());
+            if let Some(end_quote) = stripped.find('"') {
+                return Some(stripped[..end_quote].to_string());
             }
         } else {
             // Unquoted identifier
@@ -1097,12 +1097,12 @@ mod tests {
             // Simulate LSP didChange event
             context
                 .did_change(query.to_string())
-                .expect(&format!("Failed to parse query: '{}'", query));
+                .unwrap_or_else(|_| panic!("Failed to parse query: '{}'", query));
 
             // Simulate LSP completion request
             let actual = context
                 .suggestion_for_position(cursor_pos)
-                .expect(&format!("Failed to get completions for query: '{}'", query));
+                .unwrap_or_else(|_| panic!("Failed to get completions for query: '{}'", query));
 
             // Assert the suggestion type matches expected
             assert_eq!(

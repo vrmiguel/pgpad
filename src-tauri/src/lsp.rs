@@ -288,7 +288,7 @@ impl LanguageServer {
             return true;
         }
 
-        if identifier.chars().next().map_or(false, |c| c.is_numeric()) {
+        if identifier.chars().next().is_some_and(|c| c.is_numeric()) {
             return true;
         }
         false
@@ -537,7 +537,7 @@ impl LanguageServer {
         let mut completion_items = Vec::new();
 
         for keyword in SQL_KEYWORDS {
-            if self.should_include_keyword(&keyword.keyword, params) {
+            if self.should_include_keyword(keyword.keyword, params) {
                 completion_items.push(CompletionItem {
                     label: keyword.keyword.to_string(),
                     kind: completion_kind::KEYWORD,
@@ -679,7 +679,7 @@ impl LanguageServer {
                 .iter()
                 .filter(|item| {
                     item.kind == completion_kind::FIELD
-                        && item.filter_text.as_ref().map_or(false, |filter_text| {
+                        && item.filter_text.as_ref().is_some_and(|filter_text| {
                             tables.iter().any(|table| filter_text.starts_with(table))
                         })
                 })
