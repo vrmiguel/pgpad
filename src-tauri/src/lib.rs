@@ -2,6 +2,7 @@ mod credentials;
 mod database;
 mod error;
 mod init;
+mod lsp;
 mod storage;
 mod utils;
 mod window;
@@ -72,6 +73,7 @@ pub fn run() {
 
             init::build_window(app)?;
             init::build_menu(app)?;
+            lsp::setup_listener(app.handle().clone());
 
             let handle = app.handle();
             let monitor = ConnectionMonitor::new(handle.clone());
