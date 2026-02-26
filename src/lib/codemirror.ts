@@ -19,11 +19,13 @@ import {
 	closeBrackets,
 	closeBracketsKeymap
 } from '@codemirror/autocomplete';
+import { LSPClient, languageServerExtensions } from '@codemirror/lsp-client';
 import { keymap } from '@codemirror/view';
 import { indentWithTab, history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 
 import type { DatabaseSchema } from './commands.svelte';
 import { Commands } from './commands.svelte';
+import { TauriLSPTransport } from './lsp-transport';
 import { registerEditorThemeCallback, theme } from './stores/theme';
 import { fontSize, fontSizeUtils } from './stores/fontSize';
 import { get } from 'svelte/store';
@@ -530,6 +532,18 @@ export function createEditorInstance(options: CreateEditorOptions) {
 
 	let currentSchema = schema;
 	let currentFontSize = get(fontSize);
+	let lspTransport: TauriLSPTransport | null = null;
+	let lspClient: LSPClient | null = null;
+
+	try {
+		lspTransport = new TauriLSPTransport();
+		lspClient = new LSPClient({ extensions: languageServerExtensions() }).connect(lspTransport);
+	} catch (error) {
+		console.error('Failed to initialize LSP client:', error);
+		lspTransport = null;
+		lspClient = null;
+	}
+	const useLspCompletions = lspClient !== null;
 
 	// Create compartments for dynamic reconfiguration
 	const themeCompartment = new Compartment();
@@ -628,7 +642,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		highlightSelectionMatches(),
 		keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
 		sql({ dialect: PostgreSQL }),
-		schemaCompartment.of(createSqlAutocompletion(currentSchema)),
+		schemaCompartment.of(useLspCompletions ? [] : createSqlAutocompletion(currentSchema)),
 		EditorView.lineWrapping,
 		EditorView.updateListener.of((update) => {
 			if (update.docChanged) {
@@ -639,6 +653,10 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		readOnlyCompartment.of(disabled ? EditorState.readOnly.of(true) : []),
 		fontSizeCompartment.of(createFontSizeTheme(currentFontSize))
 	];
+
+	if (lspClient) {
+		extensions.push(lspClient.plugin('file:///pgpad/sql-editor.sql'));
+	}
 
 	const state = EditorState.create({
 		doc: value,
@@ -740,8 +758,16 @@ export function createEditorInstance(options: CreateEditorOptions) {
 
 	const updateSchema = (newSchema: DatabaseSchema | null) => {
 		currentSchema = newSchema;
+		if (useLspCompletions) return;
 		view.dispatch({
 			effects: schemaCompartment.reconfigure(createSqlAutocompletion(currentSchema))
+		});
+	};
+
+	const updateSelectedConnection = (newConnectionId: string | null) => {
+		if (!lspTransport) return;
+		void lspTransport.updateSelectedConnection(newConnectionId).catch((error) => {
+			console.error('Failed to notify LSP about selected connection:', error);
 		});
 	};
 
@@ -754,6 +780,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		getExecutableText,
 		getSelectedText,
 		updateSchema,
+		updateSelectedConnection,
 		saveState,
 		restoreState,
 		zoomIn,
@@ -764,6 +791,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		dispose: () => {
 			unregisterThemeCallback();
 			unsubscribeFontSize();
+			lspTransport?.dispose();
 			view.destroy();
 		}
 	};

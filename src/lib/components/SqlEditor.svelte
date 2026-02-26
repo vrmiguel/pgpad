@@ -186,6 +186,11 @@
 		}
 	});
 
+	$effect(() => {
+		if (!sqlEditor) return;
+		sqlEditor.updateSelectedConnection(selectedConnection ?? null);
+	});
+
 	onMount(() => {
 		const initializeEditor = () => {
 			if (editorContainer && editorContainer.offsetParent !== null) {
