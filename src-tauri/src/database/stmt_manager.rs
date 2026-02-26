@@ -1,11 +1,11 @@
 use std::sync::{
     atomic::{AtomicU8, Ordering},
-    Arc, RwLock,
+    Arc, Mutex, RwLock,
 };
 
 use anyhow::Context;
 use serde_json::value::RawValue;
-use tauri::async_runtime::{spawn, spawn_blocking};
+use tokio::task::{self, JoinHandle};
 
 use dashmap::DashMap;
 
@@ -40,6 +40,8 @@ struct ExecState {
 /// Executes and keeps track of the execution of queries.
 pub struct StatementManager {
     queries: DashMap<QueryId, Arc<ExecState>>,
+    /// Handles for tasks spawned by the current batch of queries
+    task_handles: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl std::fmt::Debug for StatementManager {
@@ -53,15 +55,20 @@ impl StatementManager {
     pub fn new() -> Self {
         Self {
             queries: DashMap::new(),
+            task_handles: Mutex::new(Vec::new()),
         }
     }
 
-    /// Submits a new query (possibly containing multiple statements) for execution.
-    ///
-    /// Note that this _will_ cancel the execution of any ongoing query, and replace it with the new one.
-    // TODO(vini): not sure if this will actually cancel the ongoing query.
-    // Might need to store the joinhandles so we can properly cancel them
+    fn stop_workers(&self) {
+        let mut handles = self.task_handles.lock().unwrap();
+        for handle in handles.drain(..) {
+            handle.abort();
+        }
+    }
+
+    /// Submits a new query (possibly containing multiple statements) for execution
     pub fn submit_query(&self, client: RuntimeClient, query: &str) -> Result<Vec<QueryId>, Error> {
+        self.stop_workers();
         self.queries.clear();
 
         let parse_statements = match &client {
@@ -71,9 +78,11 @@ impl StatementManager {
 
         let statements = parse_statements(query)?;
         let mut query_ids = Vec::with_capacity(statements.len());
+        let mut handles = self.task_handles.lock().unwrap();
 
         for (idx, statement) in statements.into_iter().enumerate() {
-            self.create_worker(idx as QueryId, client.clone(), statement);
+            let new_handles = self.create_worker(idx as QueryId, client.clone(), statement);
+            handles.extend(new_handles);
             query_ids.push(idx);
         }
 
@@ -131,7 +140,12 @@ impl StatementManager {
 
 /// Impl block for internal methods
 impl StatementManager {
-    fn create_worker(&self, id: QueryId, client: RuntimeClient, stmt: ParsedStatement) {
+    fn create_worker(
+        &self,
+        id: QueryId,
+        client: RuntimeClient,
+        stmt: ParsedStatement,
+    ) -> [JoinHandle<()>; 2] {
         let exec_storage = ExecState {
             status: AtomicU8::new(QueryStatus::Pending as u8),
             pages: RwLock::new(vec![]),
@@ -147,26 +161,21 @@ impl StatementManager {
 
         let (sender, recv) = channel();
 
-        match client {
-            RuntimeClient::Postgres { client } => {
-                spawn(async move {
-                    if let Err(err) = postgres::execute::execute_query(&client, stmt, &sender).await
-                    {
-                        log::error!("Error executing Postgres query: {}", err);
-                    }
-                });
-            }
-            RuntimeClient::SQLite { connection } => {
-                spawn_blocking(move || {
-                    let conn = connection.lock().unwrap();
-                    if let Err(err) = sqlite::execute::execute_query(&conn, stmt, &sender) {
-                        log::error!("Error executing SQLite query: {}", err);
-                    }
-                });
-            }
-        }
+        let executor_handle = match client {
+            RuntimeClient::Postgres { client } => task::spawn(async move {
+                if let Err(err) = postgres::execute::execute_query(&client, stmt, &sender).await {
+                    log::error!("Error executing Postgres query: {}", err);
+                }
+            }),
+            RuntimeClient::SQLite { connection } => task::spawn_blocking(move || {
+                let conn = connection.lock().unwrap();
+                if let Err(err) = sqlite::execute::execute_query(&conn, stmt, &sender) {
+                    log::error!("Error executing SQLite query: {}", err);
+                }
+            }),
+        };
 
-        tokio::task::spawn(async move {
+        let receiver_handle = task::spawn(async move {
             let mut recv = recv;
 
             exec_storage
@@ -212,6 +221,8 @@ impl StatementManager {
                 }
             }
         });
+
+        [executor_handle, receiver_handle]
     }
 
     fn get(&self, query_id: QueryId) -> Result<Arc<ExecState>, Error> {
