@@ -1,6 +1,9 @@
 <script lang="ts">
 	import type { ConnectionInfo } from '$lib/commands.svelte';
-	import { Cable, Plus, Settings2, Unplug } from '@lucide/svelte';
+	import Cable from '~icons/lucide/cable';
+	import Plus from '~icons/lucide/plus';
+	import Settings2 from '~icons/lucide/settings-2';
+	import Unplug from '~icons/lucide/unplug';
 	import { MenuItem, PredefinedMenuItem, Menu } from '@tauri-apps/api/menu';
 	import type { SvelteSet } from 'svelte/reactivity';
 	import IconCibPostgresql from '~icons/cib/postgresql';
@@ -127,7 +130,7 @@
 			class="hover:bg-accent h-7 w-7 rounded-xs p-1"
 			onclick={() => showConnectionForm()}
 		>
-			<Plus size="20" strokeWidth="1" />
+			<Plus class="h-5 w-5" stroke-width="1" />
 		</button>
 		<button
 			disabled={!selectedConnectionInfo}
@@ -139,7 +142,7 @@
 				}
 			}}
 		>
-			<Settings2 size="20" strokeWidth="1" />
+			<Settings2 class="h-5 w-5" stroke-width="1" />
 		</button>
 		<button
 			disabled={!selectedConnectionInfo?.connected}
@@ -151,7 +154,7 @@
 				}
 			}}
 		>
-			<Unplug size="20" strokeWidth="1" />
+			<Unplug class="h-5 w-5" stroke-width="1" />
 		</button>
 	</div>
 

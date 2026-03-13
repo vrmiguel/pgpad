@@ -9,7 +9,8 @@
 	import { onMount } from 'svelte';
 	import { EditorState } from '@codemirror/state';
 	import { AlertDialog } from 'bits-ui';
-	import { AlertTriangle, ShieldX } from '@lucide/svelte';
+	import AlertTriangle from '~icons/lucide/alert-triangle';
+	import ShieldX from '~icons/lucide/shield-x';
 
 	interface Props {
 		selectedConnection: string | null;

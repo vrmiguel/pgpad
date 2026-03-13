@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { History } from '@lucide/svelte';
+	import History from '~icons/lucide/history';
 
 	import type { QueryHistoryEntry } from '$lib/commands.svelte';
 

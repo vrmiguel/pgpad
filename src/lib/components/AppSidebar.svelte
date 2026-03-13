@@ -1,13 +1,11 @@
 <script lang="ts">
-	import {
-		Cable,
-		Plus,
-		ChevronLeft,
-		ChevronRight,
-		FileJson,
-		TableProperties,
-		History
-	} from '@lucide/svelte';
+	import Cable from '~icons/lucide/cable';
+	import Plus from '~icons/lucide/plus';
+	import ChevronLeft from '~icons/lucide/chevron-left';
+	import ChevronRight from '~icons/lucide/chevron-right';
+	import FileJson from '~icons/lucide/file-json';
+	import TableProperties from '~icons/lucide/table-properties';
+	import History from '~icons/lucide/history';
 
 	import { Button } from '$lib/components/ui/button';
 	import DatabaseSchemaItems from './DatabaseSchemaItems.svelte';
@@ -188,7 +186,7 @@
 		</div>
 
 		<div class="min-h-0 flex-1">
-			<Tabs.Root value={sidebarTabState} class="flex h-full flex-col">
+			<Tabs.Root bind:value={sidebarTabState} class="flex h-full flex-col">
 				<!-- Triggers  -->
 				<div class="border-b p-2">
 					<Tabs.List

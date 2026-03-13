@@ -1,6 +1,8 @@
 <script lang="ts">
 	import JsonViewer from './JsonViewer.svelte';
-	import { X, Copy, Check } from '@lucide/svelte';
+	import X from '~icons/lucide/x';
+	import Copy from '~icons/lucide/copy';
+	import Check from '~icons/lucide/check';
 	import type { Json } from '$lib/commands.svelte';
 
 	interface Props {

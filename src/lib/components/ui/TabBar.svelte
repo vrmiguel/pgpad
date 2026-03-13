@@ -1,5 +1,7 @@
 <script lang="ts" generics="T extends TabItem">
-	import { X, Plus, Circle } from '@lucide/svelte';
+	import X from '~icons/lucide/x';
+	import Plus from '~icons/lucide/plus';
+	import Circle from '~icons/lucide/circle';
 	import { Button } from '$lib/components/ui/button';
 
 	interface TabItem {

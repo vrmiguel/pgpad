@@ -22,9 +22,9 @@
 	"devDependencies": {
 		"@eslint/compat": "^1.2.9",
 		"@iconify-json/cib": "^1.2.3",
+		"@iconify-json/lucide": "^1.2.49",
 		"@iconify-json/simple-icons": "^1.2.49",
 		"@internationalized/date": "^3.9.0",
-		"@lucide/svelte": "^0.563.1",
 		"@sveltejs/vite-plugin-svelte": "^5.0.3",
 		"@tauri-apps/cli": "^2.5.0",
 		"@tsconfig/svelte": "^5.0.4",

@@ -1,16 +1,14 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import {
-		Cable,
-		X,
-		CheckCircle,
-		AlertCircle,
-		Info,
-		FolderOpen,
-		FilePlus,
-		FileCheck
-	} from '@lucide/svelte';
+	import Cable from '~icons/lucide/cable';
+	import X from '~icons/lucide/x';
+	import CheckCircle from '~icons/lucide/check-circle';
+	import AlertCircle from '~icons/lucide/alert-circle';
+	import Info from '~icons/lucide/info';
+	import FolderOpen from '~icons/lucide/folder-open';
+	import FilePlus from '~icons/lucide/file-plus';
+	import FileCheck from '~icons/lucide/file-check';
 
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';

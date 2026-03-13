@@ -3,15 +3,13 @@
 	import { Button } from '$lib/components/ui/button';
 	import { CellFormatter } from '$lib/utils/cell-formatter';
 
-	import {
-		ChevronUp,
-		ChevronDown,
-		ChevronsUpDown,
-		ChevronLeft,
-		ChevronRight,
-		Search,
-		MoreHorizontal
-	} from '@lucide/svelte';
+	import ChevronUp from '~icons/lucide/chevron-up';
+	import ChevronDown from '~icons/lucide/chevron-down';
+	import ChevronsUpDown from '~icons/lucide/chevrons-up-down';
+	import ChevronLeft from '~icons/lucide/chevron-left';
+	import ChevronRight from '~icons/lucide/chevron-right';
+	import Search from '~icons/lucide/search';
+	import MoreHorizontal from '~icons/lucide/more-horizontal';
 
 	interface Props {
 		data: Row[];

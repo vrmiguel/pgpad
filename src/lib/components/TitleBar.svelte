@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { Minus, Square, X, Play, Save } from '@lucide/svelte';
+	import Minus from '~icons/lucide/minus';
+	import Square from '~icons/lucide/square';
+	import X from '~icons/lucide/x';
+	import Play from '~icons/lucide/play';
+	import Save from '~icons/lucide/save';
 	import { Button } from '$lib/components/ui/button';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { Commands } from '$lib/commands.svelte';

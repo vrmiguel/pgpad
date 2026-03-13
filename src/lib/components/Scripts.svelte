@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Script } from '$lib/commands.svelte';
-	import { FileJson } from '@lucide/svelte';
+	import FileJson from '~icons/lucide/file-json';
 	import { Button } from './ui/button';
 	import type { SvelteSet } from 'svelte/reactivity';
 	import { Menu, MenuItem } from '@tauri-apps/api/menu';

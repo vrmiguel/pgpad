@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { TableProperties, Search, ChevronRightIcon } from '@lucide/svelte';
+	import TableProperties from '~icons/lucide/table-properties';
+	import Search from '~icons/lucide/search';
+	import ChevronRightIcon from '~icons/lucide/chevron-right';
 	import type { DatabaseSchema } from '$lib/commands.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 

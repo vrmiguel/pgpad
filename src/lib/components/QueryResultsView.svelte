@@ -2,7 +2,10 @@
 	import { onDestroy } from 'svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import { ChevronLeft, ChevronRight, Copy, Check } from '@lucide/svelte';
+	import ChevronLeft from '~icons/lucide/chevron-left';
+	import ChevronRight from '~icons/lucide/chevron-right';
+	import Copy from '~icons/lucide/copy';
+	import Check from '~icons/lucide/check';
 	import Table from './Table.svelte';
 	import JsonInspector from './JsonInspector.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
