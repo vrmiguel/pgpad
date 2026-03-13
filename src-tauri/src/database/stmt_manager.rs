@@ -256,8 +256,14 @@ mod tests {
     #[tokio::test]
     async fn test_basic_functionality() {
         let (columns, page) = run_query("SELECT 1").await;
-        assert_eq!(serde_json::to_string(columns.get()).unwrap(), "[\"1\"]");
-        assert_eq!(serde_json::to_string(page.get()).unwrap(), r#"[[1]]"#);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(columns.get()).unwrap(),
+            json!(["1"])
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(page.get()).unwrap(),
+            json!([[1]])
+        );
     }
 
     async fn run_query(query: &str) -> (Box<RawValue>, Box<RawValue>) {
