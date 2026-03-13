@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { TableProperties, Search, ChevronRightIcon } from '@lucide/svelte';
 	import type { DatabaseSchema } from '$lib/commands.svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	interface Props {
 		databaseSchema: DatabaseSchema | null;
@@ -14,6 +15,8 @@
 	const sortedTables = $derived(
 		databaseSchema?.tables?.toSorted((a, b) => a.name.localeCompare(b.name)) || []
 	);
+
+	const openTables = new SvelteSet<string>();
 </script>
 
 <div class="scrollable-container h-full space-y-3 overflow-y-auto">
@@ -50,7 +53,13 @@
 		</div>
 	{:else}
 		{#each sortedTables as table (table.name)}
-			<details class="group">
+			<details
+				class="group"
+				ontoggle={(e) => {
+					if (e.currentTarget.open) openTables.add(table.name);
+					else openTables.delete(table.name);
+				}}
+			>
 				<summary
 					class="relative flex list-none items-center gap-3 rounded-none p-1 transition-all duration-200 hover:bg-black/3 dark:hover:bg-white/3"
 				>
@@ -80,23 +89,25 @@
 					{/if}
 					<div class="bg-border/40 absolute right-0 bottom-0 left-0 h-px"></div>
 				</summary>
-				<div class="relative ml-5 space-y-0.5">
-					{#each table.columns as column (column.name)}
-						<div
-							class="flex items-center gap-2 rounded-none px-2 py-1.5 text-xs transition-colors duration-200 hover:bg-black/2 dark:hover:bg-white/2"
-						>
-							<div class="flex-shrink-0">
-								<div class="bg-muted-foreground/30 h-1 w-1 rounded-full"></div>
+				{#if openTables.has(table.name)}
+					<div class="relative ml-5 space-y-0.5">
+						{#each table.columns as column (column.name)}
+							<div
+								class="flex items-center gap-2 rounded-none px-2 py-1.5 text-xs transition-colors duration-200 hover:bg-black/2 dark:hover:bg-white/2"
+							>
+								<div class="flex-shrink-0">
+									<div class="bg-muted-foreground/30 h-1 w-1 rounded-full"></div>
+								</div>
+								<div class="min-w-0 flex-1">
+									<span class="text-foreground font-medium">{column.name}</span>
+									<span class="text-muted-foreground/60 ml-2 text-xs">
+										{column.data_type}{column.is_nullable ? '' : ' • not null'}
+									</span>
+								</div>
 							</div>
-							<div class="min-w-0 flex-1">
-								<span class="text-foreground font-medium">{column.name}</span>
-								<span class="text-muted-foreground/60 ml-2 text-xs">
-									{column.data_type}{column.is_nullable ? '' : ' • not null'}
-								</span>
-							</div>
-						</div>
-					{/each}
-				</div>
+						{/each}
+					</div>
+				{/if}
 			</details>
 		{/each}
 	{/if}
