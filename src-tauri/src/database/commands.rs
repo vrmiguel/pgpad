@@ -533,3 +533,33 @@ pub async fn get_session_state(state: tauri::State<'_, AppState>) -> Result<Opti
     let session_data = state.storage.get_setting("session_state")?;
     Ok(session_data)
 }
+
+/// Export page to CSV
+#[tauri::command]
+pub async fn export_page(
+    query_id: usize,
+    page_index: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, Error> {
+    let now = Instant::now();
+    let columns = state
+        .stmt_manager
+        .get_columns(query_id)?
+        .ok_or_else(|| anyhow::anyhow!("No columns found yet"))?;
+
+    let page = state
+        .stmt_manager
+        .fetch_page(query_id, page_index)?
+        .ok_or_else(|| anyhow::anyhow!("No page {page_index} found yet"))?;
+
+    let csv_export = database::export::export_to_csv(columns.get(), page.get())?;
+
+    let elapsed = now.elapsed();
+
+    log::info!(
+        "Took {}us to export page {page_index} to CSV",
+        elapsed.as_micros()
+    );
+
+    Ok(csv_export)
+}

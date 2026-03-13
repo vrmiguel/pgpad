@@ -103,6 +103,7 @@ pub fn run() {
             database::commands::save_session_state,
             database::commands::get_session_state,
             database::commands::format_sql,
+            database::commands::export_page,
             window::commands::minimize_window,
             window::commands::maximize_window,
             window::commands::close_window,
