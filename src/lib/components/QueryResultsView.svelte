@@ -2,13 +2,13 @@
 	import { onDestroy } from 'svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
+	import { ChevronLeft, ChevronRight, Copy, Check } from '@lucide/svelte';
 	import Table from './Table.svelte';
 	import JsonInspector from './JsonInspector.svelte';
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import KeyboardShortcuts from './KeyboardShortcuts.svelte';
 	import { QueryExecutor } from '$lib/queryExecutor.svelte';
-	import type { Json } from '$lib/commands.svelte';
+	import { Commands, type Json } from '$lib/commands.svelte';
 
 	interface Props {
 		/** The SQL query to execute */
@@ -34,7 +34,29 @@
 	let selectedCellData = $state<Json | null>(null);
 	let jsonInspectorData = $state<{ data: Json; position: { x: number; y: number } } | null>(null);
 
+	const COPY_SUCCESS_DURATION = 2000;
+	let copySuccess = $state(false);
+	let isCopying = $state(false);
+
 	const executor = $state(new QueryExecutor());
+
+	async function handleCopyPage(queryId: number, pageIndex: number): Promise<void> {
+		if (isCopying) return;
+
+		isCopying = true;
+		try {
+			const blobPromise = Commands.exportPage(queryId, pageIndex).then(
+				(csv) => new Blob([csv], { type: 'text/plain' })
+			);
+			await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blobPromise })]);
+			copySuccess = true;
+			setTimeout(() => (copySuccess = false), COPY_SUCCESS_DURATION);
+		} catch (err) {
+			console.error('Failed to copy page to clipboard:', err);
+		} finally {
+			isCopying = false;
+		}
+	}
 
 	// This is not meant to truly and accurately measure any query's execution time, it's just for the
 	// UI to not "flicker" if executing a very fast query.
@@ -97,11 +119,32 @@
 							/>
 						</CardContent>
 
-						{#if activeTab.totalPages && activeTab.totalPages > 1}
-							<div
-								class="border-border/30 bg-muted/20 flex flex-shrink-0 items-center border-t px-3 py-2"
-							>
-								<div class="text-muted-foreground flex items-center gap-2 text-xs">
+						<div
+							class="border-border/30 bg-muted/20 flex flex-shrink-0 items-center border-t px-3 py-1.5"
+						>
+							<div class="text-muted-foreground flex items-center gap-2 text-xs">
+								<span>{activeTab.currentPageData.length} rows</span>
+								<span>•</span>
+								<Button
+									variant="ghost"
+									size="sm"
+									class="h-6 gap-1 px-2 text-xs"
+									onclick={() => handleCopyPage(activeTab.queryId, activeTab.currentPageIndex)}
+									disabled={isCopying}
+								>
+									{#if copySuccess}
+										<Check class="h-3 w-3 text-green-600" />
+										<span class="text-green-600">Copied</span>
+									{:else}
+										<Copy class="h-3 w-3" />
+										Copy
+									{/if}
+								</Button>
+							</div>
+
+							{#if activeTab.totalPages && activeTab.totalPages > 1}
+								<div class="text-muted-foreground ml-2 flex items-center gap-2 text-xs">
+									<span>•</span>
 									<span>Page {activeTab.currentPageIndex + 1} of {activeTab.totalPages}</span>
 								</div>
 
@@ -188,8 +231,10 @@
 										<ChevronRight class="h-3 w-3" />
 									</Button>
 								</div>
-							</div>
-						{/if}
+							{:else}
+								<div class="flex-1"></div>
+							{/if}
+						</div>
 
 						{#if jsonInspectorData}
 							<JsonInspector

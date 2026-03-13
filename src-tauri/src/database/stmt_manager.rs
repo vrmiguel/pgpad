@@ -118,6 +118,15 @@ impl StatementManager {
         Ok(info)
     }
 
+    pub fn get_columns(&self, query_id: QueryId) -> Result<Option<Box<RawValue>>, Error> {
+        Ok(self
+            .get(query_id)?
+            .columns
+            .read()
+            .expect("RwLock poisoned")
+            .clone())
+    }
+
     /// Fetches a page of results for a given query.
     pub fn fetch_page(&self, query_id: QueryId, page_idx: usize) -> Result<Option<Page>, Error> {
         let exec_state = self.get(query_id)?;
@@ -236,46 +245,70 @@ impl StatementManager {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{Arc, Mutex},
-        time::Duration,
-    };
+    use std::sync::{Arc, Mutex};
 
-    use crate::database::{stmt_manager::QueryStatus, types::RuntimeClient};
+    use serde_json::{json, value::RawValue};
+
+    use crate::database::types::RuntimeClient;
 
     use super::StatementManager;
 
     #[tokio::test]
     async fn test_basic_functionality() {
+        let (columns, page) = run_query("SELECT 1").await;
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(columns.get()).unwrap(),
+            json!(["1"])
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(page.get()).unwrap(),
+            json!([[1]])
+        );
+    }
+
+    async fn run_query(query: &str) -> (Box<RawValue>, Box<RawValue>) {
         let stmt_manager = StatementManager::new();
+
         let client = RuntimeClient::SQLite {
             connection: Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap())),
         };
-        let query_ids = stmt_manager.submit_query(client, "SELECT 1").unwrap();
+        let query_ids = stmt_manager.submit_query(client, query).unwrap();
         assert_eq!(query_ids, vec![0]);
 
-        let mut attempt = 0;
-        while attempt < 3 {
-            attempt += 1;
-            let page = stmt_manager.get_query_status(0).unwrap();
-            if page == QueryStatus::Completed {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-
-        let columns = stmt_manager
+        let snapshot = stmt_manager
             .fetch_initial_renderable_state(0)
             .await
-            .unwrap()
-            .columns
-            .expect("columns returned None");
-        assert_eq!(serde_json::to_string(&columns).unwrap(), "[\"1\"]");
+            .unwrap();
 
-        let page = stmt_manager
-            .fetch_page(0, 0)
-            .unwrap()
-            .expect("Page not found after 3 attempts");
-        assert_eq!(serde_json::to_string(&page).unwrap(), r#"[[1]]"#);
+        (
+            snapshot.columns.expect("columns returned None"),
+            snapshot.first_page.expect("columns returned None"),
+        )
+    }
+
+    #[tokio::test]
+    async fn text_csv_exports() {
+        let query = r"
+        SELECT column1 AS id, column2 AS name, column3 AS price
+        FROM (
+            VALUES
+                (1, 'apple', 0.99),
+                (2, 'banana', 1.25),
+                (3, 'cherry', 2.50));";
+        let (columns, page) = run_query(query).await;
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(columns.get()).unwrap(),
+            json!(["id", "name", "price"])
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(page.get()).unwrap(),
+            json!([[1, "apple", 0.99], [2, "banana", 1.25], [3, "cherry", 2.5]])
+        );
+
+        let csv_export = crate::database::export::export_to_csv(columns.get(), page.get()).unwrap();
+        assert_eq!(
+            csv_export,
+            "id,name,price\n1,\"apple\",0.99\n2,\"banana\",1.25\n3,\"cherry\",2.5\n"
+        );
     }
 }

@@ -244,4 +244,8 @@ export class Commands {
 	static async formatSql(query: string): Promise<string> {
 		return await invoke('format_sql', { query });
 	}
+
+	static async exportPage(queryId: QueryId, pageIndex: number): Promise<string> {
+		return await invoke('export_page', { queryId, pageIndex });
+	}
 }
