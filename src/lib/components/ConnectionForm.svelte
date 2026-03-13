@@ -29,15 +29,17 @@
 
 	let { onSubmit, onCancel, editingConnection = null }: Props = $props();
 
-	let connectionName = $state(editingConnection?.name || '');
-	let permissions = $state<Permissions>(editingConnection?.permissions || 'read_write');
-
+	let connectionName = $state('');
+	let permissions = $state<Permissions>('read_write');
 	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
 	let connectionString = $state('');
 	let caCertPath = $state<string>('');
 	let sqliteFilePath = $state('');
 
-	if (editingConnection) {
+	$effect.pre(() => {
+		if (!editingConnection) return;
+		connectionName = editingConnection.name || '';
+		permissions = editingConnection.permissions || 'read_write';
 		if ('Postgres' in editingConnection.config) {
 			databaseType = 'postgres';
 			connectionString = editingConnection.config.Postgres.connection_string;
@@ -46,7 +48,7 @@
 			databaseType = 'sqlite';
 			sqliteFilePath = editingConnection.config.SQLite.db_path;
 		}
-	}
+	});
 	let errors = $state<Record<string, string>>({});
 	let isTestingConnection = $state(false);
 	let testResult = $state<'success' | 'error' | null>(null);
@@ -267,14 +269,16 @@
 				<Tabs.List class="bg-muted/20 grid w-full grid-cols-2 gap-1 rounded-lg p-1">
 					<Tabs.Trigger
 						value="postgres"
-						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
+						disabled={isEditing}
+						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
 					>
 						<IconCibPostgresql class="h-4 w-4" />
 						PostgreSQL
 					</Tabs.Trigger>
 					<Tabs.Trigger
 						value="sqlite"
-						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
+						disabled={isEditing}
+						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
 					>
 						<IconSimpleIconsSqlite class="h-4 w-4" />
 						SQLite
