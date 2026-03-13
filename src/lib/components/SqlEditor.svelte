@@ -181,7 +181,7 @@
 	}
 
 	$effect(() => {
-		if (selectedConnection) {
+		if (isConnected) {
 			loadDatabaseSchema();
 		}
 	});
