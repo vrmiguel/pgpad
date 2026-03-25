@@ -113,42 +113,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
-name = "app"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "bytes",
- "chrono",
- "dashmap",
- "dirs",
- "env_logger",
- "futures-util",
- "hex",
- "jsax",
- "keyring",
- "log",
- "pgtemp",
- "rfd",
- "rusqlite",
- "rustls",
- "rustls-native-certs",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "sqlformat",
- "sqlparser",
- "tauri",
- "tauri-build",
- "thiserror 2.0.17",
- "tokio",
- "tokio-postgres",
- "tokio-postgres-rustls",
- "url",
- "uuid",
- "webpki-roots",
-]
-
-[[package]]
 name = "ashpd"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3069,6 +3033,50 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "pgpad-core"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "chrono",
+ "dashmap",
+ "dirs",
+ "env_logger",
+ "futures-util",
+ "hex",
+ "jsax",
+ "keyring",
+ "log",
+ "pgtemp",
+ "rfd",
+ "rusqlite",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "sqlformat",
+ "sqlparser",
+ "tauri",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-postgres",
+ "tokio-postgres-rustls",
+ "url",
+ "uuid",
+ "webpki-roots",
+]
+
+[[package]]
+name = "pgpad-tauri"
+version = "1.0.0"
+dependencies = [
+ "pgpad-core",
+ "tauri",
+ "tauri-build",
+]
 
 [[package]]
 name = "pgtemp"

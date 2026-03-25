@@ -1,56 +1,18 @@
 [package]
-name = "app"
+name = "pgpad-tauri"
 version = "1.0.0"
 description = ""
 authors = ["vrmiguel"]
 license = "GPLv3"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-name = "app_lib"
+name = "pgpad_tauri"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.3.1", features = [] }
 
 [dependencies]
-serde_json = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-log = "0.4"
+pgpad-core = { path = "../pgpad-core" }
 tauri = { version = "2.9.2", features = ["macos-private-api"] }
-thiserror = "2.0.17"
-tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1", "with-uuid-1"] }
-tokio = { version = "1.0" }
-uuid = { version = "1.0", features = ["v4", "serde"] }
-dashmap = "6.0"
-anyhow = "1.0.98"
-rustls = "0.23.29"
-rustls-native-certs = "0.8.1"
-webpki-roots = "1.0.2"
-tokio-postgres-rustls = "0.13.0"
-dirs = "6.0.0"
-rusqlite = { version = "0.37.0", features = ["bundled", "column_decltype"] }
-chrono = { version = "0.4", features = ["serde"] }
-futures-util = "0.3.31"
-rustls-pemfile = "2.2.0"
-bytes = "1.10.1"
-hex = "0.4.3"
-sqlparser = { version = "0.59.0", features = ["visitor"] }
-rfd = "0.15.4"
-keyring = { version = "3.2.0", features = ["apple-native", "windows-native", "sync-secret-service"] }
-url = "2.5.7"
-env_logger = "0.11.8"
-sqlformat = "0.5.0"
-jsax = "0.1.1"
-
-[profile.release]
-panic = "abort"
-codegen-units = 1
-lto = true
-opt-level = 3
-strip = true
-
-[dev-dependencies]
-pgtemp = "0.6.0"
