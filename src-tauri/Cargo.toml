@@ -15,4 +15,4 @@ tauri-build = { version = "2.3.1", features = [] }
 
 [dependencies]
 pgpad-core = { path = "../pgpad-core" }
-tauri = { version = "2.9.2", features = ["macos-private-api"] }
+tauri = { version = "2.10.1", features = ["macos-private-api"] }
