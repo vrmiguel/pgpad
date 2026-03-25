@@ -48,7 +48,6 @@ impl AppState {
 }
 
 #[allow(clippy::missing_panics_doc)]
-
 pub fn builder() -> tauri::Builder<tauri::Wry> {
     let app_state = match AppState::new() {
         Ok(app_state) => app_state,
