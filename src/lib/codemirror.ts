@@ -5,7 +5,8 @@ import {
 	highlightSpecialChars,
 	lineNumbers,
 	rectangularSelection,
-	hoverTooltip
+	hoverTooltip,
+	tooltips
 } from '@codemirror/view';
 import { EditorState, type Extension, Compartment, Transaction } from '@codemirror/state';
 import { PostgreSQL, sql } from '@codemirror/lang-sql';
@@ -509,6 +510,17 @@ function createFontSizeTheme(size: number) {
 	});
 }
 
+function editorTooltipSpace(view: EditorView) {
+	const rect = view.scrollDOM.getBoundingClientRect();
+
+	return {
+		top: rect.top,
+		left: rect.left,
+		bottom: rect.bottom,
+		right: rect.right
+	};
+}
+
 async function formatSelection(view: EditorView): Promise<boolean> {
 	const selection = view.state.selection.main;
 
@@ -667,6 +679,9 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		highlightActiveLine(),
 		highlightActiveLineGutter(),
 		highlightSelectionMatches(),
+		tooltips({
+			tooltipSpace: editorTooltipSpace
+		}),
 		keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
 		sql({ dialect: PostgreSQL }),
 		schemaCompartment.of(createSqlAutocompletion(currentSchema)),
