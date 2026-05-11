@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use futures_util::{pin_mut, TryStreamExt};
 use tokio_postgres::{types::ToSql, Client};
 
@@ -8,6 +10,25 @@ use crate::{
     utils::serialize_as_json_array,
     Error,
 };
+
+pub struct DbError<'a>(&'a tokio_postgres::Error);
+
+impl Display for DbError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(db) = self.0.as_db_error() {
+            f.write_str(db.message())?;
+            if let Some(detail) = db.detail() {
+                write!(f, "\nDETAIL: {detail}")?;
+            }
+            if let Some(hint) = db.hint() {
+                write!(f, "\nHINT: {hint}")?;
+            }
+            Ok(())
+        } else {
+            write!(f, "{}", self.0)
+        }
+    }
+}
 
 pub async fn execute_query(
     client: &Client,
@@ -41,7 +62,7 @@ async fn execute_query_with_results(
         Ok(stmt) => stmt,
         Err(e) => {
             log::error!("Query preparation failed: {:?}", e);
-            let error_msg = format!("Query failed: {}", e);
+            let error_msg = DbError(&e).to_string();
 
             sender.send(QueryExecEvent::Finished {
                 elapsed_ms: started_at.elapsed().as_millis() as u64,
@@ -87,7 +108,7 @@ async fn execute_query_with_results(
                     }
                     Err(e) => {
                         log::error!("Error processing row: {}", e);
-                        let error_msg = format!("Query failed: {}", e);
+                        let error_msg = DbError(&e).to_string();
 
                         sender.send(QueryExecEvent::Finished {
                             elapsed_ms: started_at.elapsed().as_millis() as u64,
@@ -125,7 +146,7 @@ async fn execute_query_with_results(
         }
         Err(e) => {
             log::error!("Query execution failed: {:?}", e);
-            let error_msg = format!("Query failed: {}", e);
+            let error_msg = DbError(&e).to_string();
 
             sender.send(QueryExecEvent::Finished {
                 elapsed_ms: started_at.elapsed().as_millis() as u64,
@@ -158,7 +179,7 @@ async fn execute_modification_query(
         }
         Err(e) => {
             log::error!("Modification query failed: {:?}", e);
-            let error_msg = format!("Query failed: {}", e);
+            let error_msg = DbError(&e).to_string();
 
             sender.send(QueryExecEvent::Finished {
                 elapsed_ms: started_at.elapsed().as_millis() as u64,
