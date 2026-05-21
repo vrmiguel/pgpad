@@ -31,6 +31,7 @@ import { registerEditorThemeCallback, theme } from './stores/theme';
 import { fontSize, fontSizeUtils } from './stores/fontSize';
 import { get } from 'svelte/store';
 import TableTooltip from './components/TableTooltip.svelte';
+import { completionIntentBoost, inferSqlCompletionIntent } from './sqlCompletionContext';
 
 interface ExtendedCompletion extends Completion {
 	formattedLabel?: string;
@@ -335,7 +336,7 @@ function formatIdentifierForCompletion(identifier: string): string {
 	return identifier;
 }
 
-function createSqlAutocompletion(schema: DatabaseSchema | null) {
+export function createSqlCompletionSource(schema: DatabaseSchema | null) {
 	const cachedCompletions = generateSchemaCompletions(schema);
 
 	const completionsByFirstChar = new Map<string, ExtendedCompletion[]>();
@@ -367,95 +368,102 @@ function createSqlAutocompletion(schema: DatabaseSchema | null) {
 		completionsByFirstChar.get(firstChar)!.push(keywordCompletion);
 	}
 
-	return autocompletion({
-		override: [
-			(context: CompletionContext): CompletionResult | null => {
-				const word = context.matchBefore(/[\w.]*/);
-				if (!word) return null;
+	return (context: CompletionContext): CompletionResult | null => {
+		const word = context.matchBefore(/[\w.]*/);
+		if (!word) return null;
 
-				if (word.from === word.to && !context.explicit) return null;
+		if (word.from === word.to && !context.explicit) return null;
 
-				// Check if there's an opening quote before the matched word
-				const charBeforeWord =
-					word.from > 0 ? context.state.doc.sliceString(word.from - 1, word.from) : '';
-				const hasOpeningQuote = charBeforeWord === '"' || charBeforeWord === "'";
+		// Check if there's an opening quote before the matched word
+		const charBeforeWord =
+			word.from > 0 ? context.state.doc.sliceString(word.from - 1, word.from) : '';
+		const hasOpeningQuote = charBeforeWord === '"' || charBeforeWord === "'";
 
-				// Check if there's a closing quote after the cursor (from auto-closing brackets)
-				const charAfterCursor =
-					word.to < context.state.doc.length
-						? context.state.doc.sliceString(word.to, word.to + 1)
-						: '';
-				const hasAutoClosingQuote =
-					hasOpeningQuote && (charAfterCursor === '"' || charAfterCursor === "'");
+		// Check if there's a closing quote after the cursor (from auto-closing brackets)
+		const charAfterCursor =
+			word.to < context.state.doc.length ? context.state.doc.sliceString(word.to, word.to + 1) : '';
+		const hasAutoClosingQuote =
+			hasOpeningQuote && (charAfterCursor === '"' || charAfterCursor === "'");
 
-				const searchText = word.text;
+		const searchText = word.text;
+		const completionIntent = inferSqlCompletionIntent(
+			context.state.doc.sliceString(0, hasOpeningQuote ? word.from - 1 : word.from)
+		);
 
-				const maxOptions = 100;
-				const tempOptions = new Array(maxOptions);
-				let tempCount = 0;
+		const maxOptions = 100;
+		const tempOptions = new Array(maxOptions);
+		let tempCount = 0;
 
-				const isShortSearch = searchText.length < 2;
+		const isShortSearch = searchText.length < 2;
 
-				const firstChar = searchText[0]?.toLowerCase() || '';
-				const relevantCompletions = completionsByFirstChar.get(firstChar) || [];
+		const firstChar = searchText[0]?.toLowerCase() || '';
+		const relevantCompletions = completionsByFirstChar.get(firstChar) || [];
 
-				// Process keywords first to give them priority
-				const keywords = relevantCompletions.filter((c) => c.type === 'keyword');
-				const nonKeywords = relevantCompletions.filter((c) => c.type !== 'keyword');
-				const orderedCompletions = [...keywords, ...nonKeywords];
+		// Process keywords first to give them priority
+		const keywords = relevantCompletions.filter((c) => c.type === 'keyword');
+		const nonKeywords = relevantCompletions.filter((c) => c.type !== 'keyword');
+		const orderedCompletions = [...keywords, ...nonKeywords];
 
-				for (const completion of orderedCompletions) {
-					if (tempCount >= maxOptions) break;
+		for (const completion of orderedCompletions) {
+			if (tempCount >= maxOptions) break;
 
-					let boost = completion.boost || 0;
-					let matches = false;
+			let boost = completion.boost || 0;
+			let matches = false;
 
-					if (startsWith(completion.label, searchText)) {
-						matches = true;
+			if (startsWith(completion.label, searchText)) {
+				matches = true;
 
-						if (completion.type === 'keyword') {
-							boost = (completion.boost || 0) + (isShortSearch ? 2.0 : 1.0);
+				if (completion.type === 'keyword') {
+					boost = (completion.boost || 0) + (isShortSearch ? 2.0 : 1.0);
 
-							if (completion.label.startsWith(searchText)) {
-								boost += 0.2;
-							}
-						} else {
-							// Schema items get lower boost for short searches
-							boost = isShortSearch ? 0.1 : 0.4;
-						}
-					} else if (!isShortSearch) {
-						if (completion.label.includes('.') && includes(completion.label, '.' + searchText)) {
-							matches = true;
-							boost = completion.type === 'keyword' ? (completion.boost || 0) * 0.9 : 0.3;
-						} else if (includes(completion.label, searchText)) {
-							matches = true;
-							boost = completion.type === 'keyword' ? (completion.boost || 0) * 0.8 : 0.2;
-						}
+					if (completion.label.startsWith(searchText)) {
+						boost += 0.2;
 					}
-
-					if (matches) {
-						tempOptions[tempCount++] = {
-							label: completion.formattedLabel || completion.label,
-							type: completion.type,
-							info: completion.info,
-							detail: completion.detail,
-							boost
-						};
-					}
+				} else {
+					// Schema items get lower boost for short searches
+					boost = isShortSearch ? 0.1 : 0.4;
 				}
+			} else if (!isShortSearch) {
+				if (completion.label.includes('.') && includes(completion.label, '.' + searchText)) {
+					matches = true;
+					boost = completion.type === 'keyword' ? (completion.boost || 0) * 0.9 : 0.3;
+				} else if (includes(completion.label, searchText)) {
+					matches = true;
+					boost = completion.type === 'keyword' ? (completion.boost || 0) * 0.8 : 0.2;
+				}
+			}
 
-				const sortedOptions = tempOptions
-					.slice(0, tempCount)
-					.sort((a, b) => (b.boost || 0) - (a.boost || 0));
+			if (matches) {
+				boost += completionIntentBoost(completion, completionIntent);
 
-				return {
-					from: hasOpeningQuote ? word.from - 1 : word.from,
-					to: hasAutoClosingQuote ? word.to + 1 : word.to,
-					options: sortedOptions,
-					validFor: searchText.length >= 2 ? /^[\w.]*$/ : /^[\w.]{0,3}$/
+				tempOptions[tempCount++] = {
+					label: completion.label.toLowerCase(),
+					displayLabel: completion.formattedLabel || completion.label,
+					apply: completion.formattedLabel || completion.label,
+					type: completion.type,
+					info: completion.info,
+					detail: completion.detail,
+					boost
 				};
 			}
-		]
+		}
+
+		const sortedOptions = tempOptions
+			.slice(0, tempCount)
+			.sort((a, b) => (b.boost || 0) - (a.boost || 0));
+
+		return {
+			from: hasOpeningQuote ? word.from - 1 : word.from,
+			to: hasAutoClosingQuote ? word.to + 1 : word.to,
+			options: sortedOptions,
+			validFor: searchText.length >= 2 ? /^[\w.]*$/ : /^[\w.]{0,3}$/
+		};
+	};
+}
+
+function createSqlAutocompletion(schema: DatabaseSchema | null) {
+	return autocompletion({
+		override: [createSqlCompletionSource(schema)]
 	});
 }
 
