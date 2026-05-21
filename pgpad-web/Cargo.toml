@@ -14,3 +14,9 @@ serde_json = "1.0"
 tokio = { version = "1.0", features = ["macros", "net", "rt-multi-thread"] }
 tower-http = { version = "0.6", features = ["fs"] }
 uuid = { version = "1.0", features = ["serde"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+tempfile = "3.23"
+tower = { version = "0.5", features = ["util"] }
