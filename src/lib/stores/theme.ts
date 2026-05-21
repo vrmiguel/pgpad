@@ -1,16 +1,7 @@
 import { writable } from 'svelte/store';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getSystemTheme, onSystemThemeChanged, type SystemTheme } from '$lib/platform/theme';
 
-type Theme = 'light' | 'dark' | 'auto';
-
-async function getSystemTheme() {
-	try {
-		const theme = await getCurrentWindow().theme();
-		return theme;
-	} catch (error) {
-		console.error('Error getting system theme:', error);
-	}
-}
+type Theme = SystemTheme | 'auto';
 
 const defaultTheme = 'auto';
 const initialTheme =
@@ -21,22 +12,17 @@ const initialTheme =
 export const theme = writable<Theme>(initialTheme as Theme);
 
 const editorThemeCallbacks = new Set<(theme: 'light' | 'dark') => void>();
+let currentTheme = initialTheme as Theme;
 
 theme.subscribe((value) => {
+	currentTheme = value;
+
 	if (typeof localStorage !== 'undefined') {
 		localStorage.setItem('theme', value);
 	}
 
 	if (value === 'auto') {
-		getSystemTheme()
-			.then((systemTheme) => {
-				const resolvedTheme = systemTheme || 'light';
-				applyResolvedTheme(resolvedTheme);
-			})
-			.catch((error) => {
-				console.error('Error resolving system theme:', error);
-				applyResolvedTheme('light');
-			});
+		applyResolvedTheme(getSystemTheme());
 	} else {
 		applyResolvedTheme(value);
 	}
@@ -54,29 +40,15 @@ function applyResolvedTheme(resolvedTheme: 'light' | 'dark') {
 	editorThemeCallbacks.forEach((callback) => callback(resolvedTheme));
 }
 
-if (typeof document !== 'undefined') {
-	if (initialTheme === 'auto') {
-		getSystemTheme()
-			.then((systemTheme) => {
-				const resolvedTheme = systemTheme || 'light';
-				applyResolvedTheme(resolvedTheme);
-			})
-			.catch((error) => {
-				console.error('Error resolving initial system theme:', error);
-				applyResolvedTheme('light');
-			});
-	} else if (initialTheme === 'dark') {
-		document.documentElement.classList.add('dark');
+onSystemThemeChanged((systemTheme) => {
+	if (currentTheme === 'auto') {
+		applyResolvedTheme(systemTheme);
 	}
-}
+});
 
 export function toggleTheme() {
 	theme.update((current) => (current === 'light' ? 'dark' : 'light'));
 }
-
-getCurrentWindow().onThemeChanged(({ payload: currentTheme }) => {
-	theme.set(currentTheme);
-});
 
 export function registerEditorThemeCallback(callback: (theme: 'light' | 'dark') => void) {
 	editorThemeCallbacks.add(callback);
