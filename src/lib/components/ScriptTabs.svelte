@@ -1,7 +1,7 @@
 <script lang="ts">
 	import TabBar from '$lib/components/ui/TabBar.svelte';
 	import { tabs, type ScriptTab, type TableViewTab } from '$lib/stores/tabs.svelte';
-	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+	import { backend } from '$lib/backend';
 	import { onDestroy, onMount } from 'svelte';
 
 	// All tabs (scripts + table views)
@@ -88,11 +88,11 @@
 		return storeTab?.isDirty ? 'modified' : 'normal';
 	}
 
-	let unlistenNewTab: UnlistenFn | null = null;
-	let unlistenCloseTab: UnlistenFn | null = null;
+	let unlistenNewTab: (() => void) | null = null;
+	let unlistenCloseTab: (() => void) | null = null;
 	onMount(async () => {
-		unlistenNewTab = await listen('new_tab', handleNewScript);
-		unlistenCloseTab = await listen('close_tab', () => {
+		unlistenNewTab = await backend.listen('new_tab', handleNewScript);
+		unlistenCloseTab = await backend.listen('close_tab', () => {
 			const activeId = activeTabIdForTabBar;
 			if (activeId) {
 				handleTabClose(activeId);

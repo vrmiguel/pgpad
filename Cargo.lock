@@ -2965,9 +2965,16 @@ dependencies = [
 name = "pgpad-web"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
+ "dirs",
+ "log",
+ "pgpad-core",
+ "serde",
+ "serde_json",
  "tokio",
  "tower-http",
+ "uuid",
 ]
 
 [[package]]
