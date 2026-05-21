@@ -74,7 +74,7 @@ impl Permissions {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_storage_str(s: &str) -> Self {
         match s {
             "protected_write" => Self::ProtectedWrite,
             "read_only" => Self::ReadOnly,

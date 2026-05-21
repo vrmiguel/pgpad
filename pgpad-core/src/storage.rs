@@ -273,7 +273,7 @@ impl Storage {
                         })?
                     },
                     name: row.get(1)?,
-                    permissions: Permissions::from_str(&permissions_str),
+                    permissions: Permissions::from_storage_str(&permissions_str),
                     config,
                     connected: false,
                 })

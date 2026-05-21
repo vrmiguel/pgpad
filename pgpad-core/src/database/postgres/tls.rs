@@ -10,6 +10,12 @@ pub struct Certificates {
     pub certs: Arc<OnceCell<Arc<rustls::RootCertStore>>>,
 }
 
+impl Default for Certificates {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Certificates {
     pub fn new() -> Self {
         Self {

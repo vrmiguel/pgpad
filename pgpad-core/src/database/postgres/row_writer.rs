@@ -27,6 +27,12 @@ pub struct RowWriter {
     row_count: usize,
 }
 
+impl Default for RowWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RowWriter {
     pub fn new() -> Self {
         Self {
