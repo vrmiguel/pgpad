@@ -24,12 +24,11 @@ use crate::{
     AppState,
 };
 
-#[tauri::command]
 pub async fn add_connection(
     name: String,
     config: ConnectionConfig,
     permissions: crate::database::types::Permissions,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<ConnectionInfo, Error> {
     let id = Uuid::new_v4();
 
@@ -50,13 +49,12 @@ pub async fn add_connection(
     Ok(info)
 }
 
-#[tauri::command]
 pub async fn update_connection(
     conn_id: Uuid,
     name: String,
     config: ConnectionConfig,
     permissions: crate::database::types::Permissions,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<ConnectionInfo, Error> {
     let (config, password) = credentials::extract_sensitive_data(config)?;
     if let Some(password) = password {
@@ -104,12 +102,11 @@ pub async fn update_connection(
     Ok(updated_info)
 }
 
-#[tauri::command]
 pub async fn connect_to_database(
     connection_id: Uuid,
-    state: tauri::State<'_, AppState>,
-    monitor: tauri::State<'_, ConnectionMonitor>,
-    certificates: tauri::State<'_, Certificates>,
+    state: &AppState,
+    monitor: &ConnectionMonitor,
+    certificates: &Certificates,
 ) -> Result<bool, Error> {
     if !state.connections.contains_key(&connection_id) {
         let stored_connections = state.storage.get_connections()?;
@@ -144,8 +141,15 @@ pub async fn connect_to_database(
                 credentials::get_password(&connection_id)?.map(|pw| config.password(pw));
             }
 
-            match connect(&config, &certificates, ca_cert_path.as_deref()).await {
-                Ok((pg_client, conn_check)) => {
+            match connect(
+                &config,
+                certificates,
+                ca_cert_path.as_deref(),
+                monitor.notifier(connection_id),
+            )
+            .await
+            {
+                Ok(pg_client) => {
                     connection.runtime = ConnectionRuntime::Connected(RuntimeClient::Postgres {
                         client: Arc::new(pg_client),
                     });
@@ -153,8 +157,6 @@ pub async fn connect_to_database(
                     if let Err(e) = state.storage.update_last_connected(&connection_id) {
                         log::warn!("Failed to update last connected timestamp: {}", e);
                     }
-
-                    monitor.add_connection(connection_id, conn_check).await;
 
                     Ok(true)
                 }
@@ -187,11 +189,7 @@ pub async fn connect_to_database(
     }
 }
 
-#[tauri::command]
-pub async fn disconnect_from_database(
-    connection_id: Uuid,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), Error> {
+pub async fn disconnect_from_database(connection_id: Uuid, state: &AppState) -> Result<(), Error> {
     let mut connection_entry = state
         .connections
         .get_mut(&connection_id)
@@ -202,11 +200,10 @@ pub async fn disconnect_from_database(
     Ok(())
 }
 
-#[tauri::command]
 pub async fn submit_query(
     connection_id: Uuid,
     query: &str,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<Vec<usize>, Error> {
     let connection_entry = state
         .connections
@@ -221,10 +218,9 @@ pub async fn submit_query(
     Ok(query_ids)
 }
 
-#[tauri::command]
 pub async fn wait_until_renderable(
     query_id: usize,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<QuerySnapshot, Error> {
     let now = Instant::now();
 
@@ -237,11 +233,10 @@ pub async fn wait_until_renderable(
     Ok(info)
 }
 
-#[tauri::command]
 pub async fn fetch_page(
     query_id: usize,
     page_index: usize,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<Option<Box<RawValue>>, Error> {
     let now = Instant::now();
     let page = state.stmt_manager.fetch_page(query_id, page_index)?;
@@ -251,26 +246,15 @@ pub async fn fetch_page(
     Ok(page)
 }
 
-#[tauri::command]
-pub async fn get_query_status(
-    query_id: usize,
-    state: tauri::State<'_, AppState>,
-) -> Result<QueryStatus, Error> {
+pub async fn get_query_status(query_id: usize, state: &AppState) -> Result<QueryStatus, Error> {
     state.stmt_manager.get_query_status(query_id)
 }
 
-#[tauri::command]
-pub async fn get_page_count(
-    query_id: usize,
-    state: tauri::State<'_, AppState>,
-) -> Result<usize, Error> {
+pub async fn get_page_count(query_id: usize, state: &AppState) -> Result<usize, Error> {
     state.stmt_manager.get_page_count(query_id)
 }
 
-#[tauri::command]
-pub async fn get_connections(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<ConnectionInfo>, Error> {
+pub async fn get_connections(state: &AppState) -> Result<Vec<ConnectionInfo>, Error> {
     let mut stored_connections = state.storage.get_connections()?;
 
     for connection in &mut stored_connections {
@@ -284,11 +268,7 @@ pub async fn get_connections(
     Ok(stored_connections)
 }
 
-#[tauri::command]
-pub async fn remove_connection(
-    connection_id: Uuid,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), Error> {
+pub async fn remove_connection(connection_id: Uuid, state: &AppState) -> Result<(), Error> {
     if let Err(e) = credentials::delete_password(&connection_id) {
         log::debug!(
             "Could not delete password from keyring (may not exist): {}",
@@ -302,11 +282,10 @@ pub async fn remove_connection(
     Ok(())
 }
 
-#[tauri::command]
 pub async fn test_connection(
     // It's expected that test_connection receives config with the password included
     config: ConnectionConfig,
-    certificates: tauri::State<'_, Certificates>,
+    certificates: &Certificates,
 ) -> Result<bool, Error> {
     match config {
         ConnectionConfig::Postgres {
@@ -317,8 +296,10 @@ pub async fn test_connection(
                 format!("Failed to parse connection string: {}", connection_string)
             })?;
             log::info!("Testing Postgres connection: {config:?}");
-            match connect(&config, &certificates, ca_cert_path.as_deref()).await {
-                Ok(_) => Ok(true),
+            match postgres::connect::test_connection(&config, certificates, ca_cert_path.as_deref())
+                .await
+            {
+                Ok(()) => Ok(true),
                 Err(e) => {
                     log::error!("Postgres connection test failed: {}", e);
                     Ok(false)
@@ -335,7 +316,6 @@ pub async fn test_connection(
     }
 }
 
-#[tauri::command]
 pub async fn save_query_to_history(
     connection_id: String,
     query: String,
@@ -343,7 +323,7 @@ pub async fn save_query_to_history(
     status: String,
     row_count: u64,
     error_message: Option<String>,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<(), Error> {
     let entry = QueryHistoryEntry {
         id: 0, // Sqlite will assign,
@@ -360,19 +340,17 @@ pub async fn save_query_to_history(
     Ok(())
 }
 
-#[tauri::command]
 pub async fn get_query_history(
     connection_id: String,
     limit: Option<u32>,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<Vec<QueryHistoryEntry>, Error> {
     state
         .storage
         .get_query_history(&connection_id, limit.map(|l| l as i64))
 }
 
-#[tauri::command]
-pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result<(), Error> {
+pub async fn initialize_connections(state: &AppState) -> Result<(), Error> {
     let stored_connections = state.storage.get_connections()?;
 
     for stored_connection in stored_connections {
@@ -392,17 +370,15 @@ pub async fn initialize_connections(state: tauri::State<'_, AppState>) -> Result
     Ok(())
 }
 
-#[tauri::command]
 pub async fn format_sql(query: &str) -> Result<String, Error> {
     let formatted = sqlformat::format(query, &Default::default(), &Default::default());
     Ok(formatted)
 }
 
-#[tauri::command]
 pub async fn is_query_read_only(
     connection_id: Uuid,
     query: &str,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<bool, Error> {
     log::info!("Checking if {query} is read-only");
     let db = state
@@ -420,10 +396,9 @@ pub async fn is_query_read_only(
     Ok(stmts.into_iter().all(|stmt| stmt.is_read_only))
 }
 
-#[tauri::command]
 pub async fn get_database_schema(
     connection_id: Uuid,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<Arc<DatabaseSchema>, Error> {
     if let Some(schema) = state.schemas.get(&connection_id) {
         return Ok(schema.clone());
@@ -455,13 +430,12 @@ pub async fn get_database_schema(
 }
 
 // Script management commands
-#[tauri::command]
 pub async fn save_script(
     name: String,
     content: String,
     connection_id: Option<Uuid>,
     description: Option<String>,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<i64, Error> {
     let script = SavedQuery {
         id: 0, // New script
@@ -479,14 +453,13 @@ pub async fn save_script(
     Ok(script_id)
 }
 
-#[tauri::command]
 pub async fn update_script(
     id: i64,
     name: String,
     content: String,
     connection_id: Option<Uuid>,
     description: Option<String>,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<(), Error> {
     let script = SavedQuery {
         id,
@@ -504,42 +477,34 @@ pub async fn update_script(
     Ok(())
 }
 
-#[tauri::command]
 pub async fn get_scripts(
     connection_id: Option<Uuid>,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<Vec<SavedQuery>, Error> {
     let scripts = state.storage.get_saved_queries(connection_id.as_ref())?;
     Ok(scripts)
 }
 
-#[tauri::command]
-pub async fn delete_script(id: i64, state: tauri::State<'_, AppState>) -> Result<(), Error> {
+pub async fn delete_script(id: i64, state: &AppState) -> Result<(), Error> {
     state.storage.delete_saved_query(id)?;
     Ok(())
 }
 
-#[tauri::command]
-pub async fn save_session_state(
-    session_data: &str,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), Error> {
+pub async fn save_session_state(session_data: &str, state: &AppState) -> Result<(), Error> {
     state.storage.set_setting("session_state", session_data)?;
     Ok(())
 }
 
-#[tauri::command]
-pub async fn get_session_state(state: tauri::State<'_, AppState>) -> Result<Option<String>, Error> {
+pub async fn get_session_state(state: &AppState) -> Result<Option<String>, Error> {
     let session_data = state.storage.get_setting("session_state")?;
     Ok(session_data)
 }
 
 /// Export page to CSV
-#[tauri::command]
 pub async fn export_page(
     query_id: usize,
     page_index: usize,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
 ) -> Result<String, Error> {
     let now = Instant::now();
     let columns = state

@@ -16,3 +16,12 @@ tauri-build = { version = "2.3.1", features = [] }
 [dependencies]
 pgpad-core = { path = "../pgpad-core" }
 tauri = { version = "2.10.1", features = ["macos-private-api"] }
+anyhow = "1.0.98"
+dirs = "6.0.0"
+env_logger = "0.11.8"
+log = "0.4"
+rfd = "0.15.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0" }
+uuid = { version = "1.0", features = ["serde"] }

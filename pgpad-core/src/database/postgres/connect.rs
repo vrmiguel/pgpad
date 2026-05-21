@@ -1,17 +1,53 @@
-use crate::{database::Certificates, error::Error};
+use crate::{
+    database::{Certificates, ConnectionDropNotifier},
+    error::Error,
+};
 
 use anyhow::Context;
-use tauri::async_runtime::JoinHandle;
 use tokio_postgres::{tls::MakeTlsConnect, Client, Connection, NoTls, Socket};
 use tokio_postgres_rustls::MakeRustlsConnect;
-
-pub type ConnectionCheck = JoinHandle<()>;
 
 pub async fn connect(
     config: &tokio_postgres::Config,
     certificates: &Certificates,
     ca_cert_path: Option<&str>,
-) -> Result<(Client, ConnectionCheck), Error> {
+    drop_notifier: ConnectionDropNotifier,
+) -> Result<Client, Error> {
+    connect_inner(
+        config,
+        certificates,
+        ca_cert_path,
+        ConnectionMode::Monitored(drop_notifier),
+    )
+    .await
+}
+
+pub async fn test_connection(
+    config: &tokio_postgres::Config,
+    certificates: &Certificates,
+    ca_cert_path: Option<&str>,
+) -> Result<(), Error> {
+    connect_inner(
+        config,
+        certificates,
+        ca_cert_path,
+        ConnectionMode::Unmonitored,
+    )
+    .await?;
+    Ok(())
+}
+
+enum ConnectionMode {
+    Monitored(ConnectionDropNotifier),
+    Unmonitored,
+}
+
+async fn connect_inner(
+    config: &tokio_postgres::Config,
+    certificates: &Certificates,
+    ca_cert_path: Option<&str>,
+    mode: ConnectionMode,
+) -> Result<Client, Error> {
     use tokio_postgres::config::SslMode;
 
     let client = match config.get_ssl_mode() {
@@ -31,10 +67,16 @@ pub async fn connect(
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to connect to Postgres: {}", e))?;
 
-            let conn_check =
-                tauri::async_runtime::spawn(check_connection::<MakeRustlsConnect>(conn));
+            match mode {
+                ConnectionMode::Monitored(drop_notifier) => {
+                    tokio::spawn(check_connection::<MakeRustlsConnect>(conn, drop_notifier));
+                }
+                ConnectionMode::Unmonitored => {
+                    tokio::spawn(log_connection::<MakeRustlsConnect>(conn));
+                }
+            }
 
-            (client, conn_check)
+            client
         }
         // Mostly SslMode::Disable, but the enum was marked as non_exhaustive
         _other => {
@@ -43,16 +85,33 @@ pub async fn connect(
                 .await
                 .with_context(|| format!("Failed to connect to Postgres '{config:?}'",))?;
 
-            let conn_check = tauri::async_runtime::spawn(check_connection::<NoTls>(conn));
+            match mode {
+                ConnectionMode::Monitored(drop_notifier) => {
+                    tokio::spawn(check_connection::<NoTls>(conn, drop_notifier));
+                }
+                ConnectionMode::Unmonitored => {
+                    tokio::spawn(log_connection::<NoTls>(conn));
+                }
+            }
 
-            (client, conn_check)
+            client
         }
     };
 
     Ok(client)
 }
 
-async fn check_connection<T>(conn: Connection<Socket, T::Stream>)
+async fn check_connection<T>(
+    conn: Connection<Socket, T::Stream>,
+    drop_notifier: ConnectionDropNotifier,
+) where
+    T: MakeTlsConnect<Socket>,
+{
+    log_connection::<T>(conn).await;
+    drop_notifier.notify();
+}
+
+async fn log_connection<T>(conn: Connection<Socket, T::Stream>)
 where
     T: MakeTlsConnect<Socket>,
 {

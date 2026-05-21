@@ -1,102 +1,69 @@
-use std::{sync::Arc, time::Duration};
-
-use tauri::{Emitter, EventTarget, Manager};
-use tokio::sync::RwLock;
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::{database::postgres::connect::ConnectionCheck, AppState};
+pub type DroppedConnectionReceiver = mpsc::UnboundedReceiver<Uuid>;
+type DroppedConnectionSender = mpsc::UnboundedSender<Uuid>;
 
-type ConnectionId = Uuid;
+#[derive(Clone)]
+pub struct ConnectionDropNotifier {
+    connection_id: Uuid,
+    sender: DroppedConnectionSender,
+}
+
+impl ConnectionDropNotifier {
+    pub fn notify(&self) {
+        if let Err(e) = self.sender.send(self.connection_id) {
+            log::error!("Failed to publish dropped connection event: {e}");
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct ConnectionMonitor {
-    app: tauri::AppHandle,
-    connections: Arc<RwLock<Vec<(ConnectionId, ConnectionCheck)>>>,
+    sender: DroppedConnectionSender,
 }
 
 impl ConnectionMonitor {
-    pub fn new(app: tauri::AppHandle) -> Self {
-        let monitor = Self {
-            app,
-            connections: Arc::new(RwLock::new(Vec::new())),
-        };
-
-        let polling_monitor = monitor.clone();
-        tauri::async_runtime::spawn(async move { polling_monitor.poll().await });
-
-        monitor
+    pub fn new() -> (Self, DroppedConnectionReceiver) {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        (Self { sender }, receiver)
     }
 
-    pub async fn add_connection(&self, connection_id: Uuid, conn_check: ConnectionCheck) {
-        log::info!("Adding connection {connection_id} to ConnectionMonitor");
-        self.connections
-            .write()
+    pub fn notifier(&self, connection_id: Uuid) -> ConnectionDropNotifier {
+        ConnectionDropNotifier {
+            connection_id,
+            sender: self.sender.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use tokio::time::timeout;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn notifier_sends_dropped_connection_id() {
+        let (monitor, mut dropped_connections) = ConnectionMonitor::new();
+        let connection_id = Uuid::new_v4();
+
+        monitor.notifier(connection_id).notify();
+
+        let dropped_connection = timeout(Duration::from_secs(1), dropped_connections.recv())
             .await
-            .push((connection_id, conn_check));
-    }
+            .expect("timed out waiting for dropped connection")
+            .expect("dropped connection channel closed");
 
-    fn persist_disconnect(&self, connection_id: Uuid) {
-        let Some(state_manager) = self.app.try_state::<AppState>() else {
-            log::error!("No state manager found!");
-            return;
-        };
-        let Some(mut connection) = state_manager.connections.get_mut(&connection_id) else {
-            log::error!("Connection {connection_id} not found!");
-            return;
-        };
-        connection.runtime = crate::database::types::ConnectionRuntime::Disconnected;
-    }
+        assert_eq!(dropped_connection, connection_id);
 
-    fn notify_disconnect(&self, connection_id: Uuid) {
-        self.persist_disconnect(connection_id);
-        match self
-            .app
-            .emit_to(EventTarget::App, "end-of-connection", connection_id)
-        {
-            Ok(()) => {
-                log::info!("End-of-connection event emitted for connection {connection_id}");
-            }
-            Err(e) => {
-                log::error!("Error emitting end-of-connection event: {e}");
-            }
-        }
-    }
-
-    async fn get_dropped_connections(
-        &self,
-        mut dropped_conns: Vec<ConnectionId>,
-    ) -> Vec<ConnectionId> {
-        let connections = self.connections.read().await;
-
-        for (connection_id, conn_check) in &*connections {
-            if conn_check.inner().is_finished() {
-                dropped_conns.push(*connection_id);
-            }
-        }
-
-        dropped_conns
-    }
-
-    async fn poll(self) {
-        let mut dropped_conns = Vec::new();
-
-        loop {
-            dropped_conns = self.get_dropped_connections(dropped_conns).await;
-
-            if !dropped_conns.is_empty() {
-                for connection_id in &dropped_conns {
-                    self.notify_disconnect(*connection_id);
-                }
-
-                self.connections
-                    .write()
-                    .await
-                    .retain(|(id, _)| !dropped_conns.contains(id));
-
-                dropped_conns.clear();
-            }
-
-            tokio::time::sleep(Duration::from_secs(5)).await;
-        }
+        assert!(
+            timeout(Duration::from_millis(50), dropped_connections.recv())
+                .await
+                .is_err(),
+            "connection should only be reported once"
+        );
     }
 }

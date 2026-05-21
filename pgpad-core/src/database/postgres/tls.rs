@@ -1,57 +1,34 @@
-use std::{
-    io::Cursor,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{io::Cursor, sync::Arc};
 
-use anyhow::ensure;
-use tauri::async_runtime::{spawn, spawn_blocking};
 use tokio::sync::OnceCell;
 
 pub const RDS_CERTIFICATES: &str = include_str!("../../../../certs/aws-rds-global-bundle.pem");
 pub const AZURE_CERTIFICATES: &str = include_str!("../../../../certs/azure-baltimore-root.pem");
 
+#[derive(Clone)]
 pub struct Certificates {
     pub certs: Arc<OnceCell<Arc<rustls::RootCertStore>>>,
 }
 
+impl Default for Certificates {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Certificates {
-    /// Returns a 'handle' to the certificates, while loading them in the background.
     pub fn new() -> Self {
-        let certs = Arc::new(OnceCell::new());
-
-        let certs_for_init = certs.clone();
-        spawn(async move {
-            let now = Instant::now();
-            let certificates = load_certificates().await;
-            println!("Certificates loaded in {:?}ms", now.elapsed().as_millis());
-
-            // rustls wants an Arc in `with_root_certificates` so let's just create it once here
-            // ¯\_(ツ)_/¯
-            let certificates = Arc::new(certificates);
-
-            certs_for_init
-                .set(certificates)
-                .expect("Certificates set twice");
-        });
-
-        Self { certs }
+        Self {
+            certs: Arc::new(OnceCell::new()),
+        }
     }
 
     pub async fn read(&self) -> anyhow::Result<Arc<rustls::RootCertStore>> {
-        let mut max_wait = 10;
-        while !self.certs.initialized() {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-
-            ensure!(
-                max_wait > 0,
-                "Certificates not initialized within the expected time"
-            );
-            max_wait -= 1;
-        }
-
-        // Safety: `initialized` just returned true
-        Ok(self.certs.get().unwrap().clone())
+        Ok(self
+            .certs
+            .get_or_init(|| async { Arc::new(load_certificates().await) })
+            .await
+            .clone())
     }
 
     pub async fn with_custom_cert(
@@ -104,7 +81,7 @@ impl Certificates {
 async fn load_certificates() -> rustls::RootCertStore {
     let mut cert_store = webpki_certificates();
 
-    let native_certs_handle = spawn_blocking(rustls_native_certs::load_native_certs);
+    let native_certs_handle = tokio::task::spawn_blocking(rustls_native_certs::load_native_certs);
 
     if let Err(e) = load_pem_certificates(RDS_CERTIFICATES, &mut cert_store) {
         eprintln!("Error loading RDS certificates: {}", e);
