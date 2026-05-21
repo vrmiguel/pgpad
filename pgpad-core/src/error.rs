@@ -8,13 +8,13 @@ pub enum Error {
     #[error(transparent)]
     Any(#[from] anyhow::Error),
     #[error(transparent)]
-    Tauri(#[from] tauri::Error),
-    #[error(transparent)]
     Rusqlite(#[from] rusqlite::Error),
     #[error(transparent)]
     Fmt(#[from] std::fmt::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Join(#[from] tokio::task::JoinError),
 }
 
 impl<T: Debug> From<tokio::sync::mpsc::error::SendError<T>> for Error {

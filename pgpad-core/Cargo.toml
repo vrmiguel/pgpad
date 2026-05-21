@@ -10,10 +10,9 @@ edition = "2021"
 name = "pgpad_core"
 
 [dependencies]
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["raw_value"] }
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.10.1", features = ["macos-private-api"] }
 thiserror = "2.0.17"
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1", "with-uuid-1"] }
 tokio = { version = "1.0" }
@@ -24,7 +23,6 @@ rustls = "0.23.29"
 rustls-native-certs = "0.8.1"
 webpki-roots = "1.0.2"
 tokio-postgres-rustls = "0.13.0"
-dirs = "6.0.0"
 rusqlite = { version = "0.37.0", features = ["bundled", "column_decltype"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3.31"
@@ -32,10 +30,8 @@ rustls-pemfile = "2.2.0"
 bytes = "1.10.1"
 hex = "0.4.3"
 sqlparser = { version = "0.59.0", features = ["visitor"] }
-rfd = "0.15.4"
 keyring = { version = "3.2.0", features = ["apple-native", "windows-native", "sync-secret-service"] }
 url = "2.5.7"
-env_logger = "0.11.8"
 sqlformat = "0.5.0"
 jsax = "0.1.1"
 

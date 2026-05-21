@@ -2,10 +2,10 @@ use anyhow::Context;
 use rfd::AsyncFileDialog;
 use tauri::Manager;
 
-use crate::Error;
+use crate::error::{Error, Result};
 
 #[tauri::command]
-pub async fn minimize_window(app: tauri::AppHandle) -> Result<(), Error> {
+pub async fn minimize_window(app: tauri::AppHandle) -> Result {
     app.get_webview_window("main")
         .context("Failed to get main window")?
         .minimize()
@@ -15,7 +15,7 @@ pub async fn minimize_window(app: tauri::AppHandle) -> Result<(), Error> {
 }
 
 #[tauri::command]
-pub async fn maximize_window(app: tauri::AppHandle) -> Result<(), Error> {
+pub async fn maximize_window(app: tauri::AppHandle) -> Result {
     app.get_webview_window("main")
         .context("Failed to get main window")?
         .maximize()
@@ -25,7 +25,7 @@ pub async fn maximize_window(app: tauri::AppHandle) -> Result<(), Error> {
 }
 
 #[tauri::command]
-pub async fn close_window(app: tauri::AppHandle) -> Result<(), Error> {
+pub async fn close_window(app: tauri::AppHandle) -> Result {
     app.get_webview_window("main")
         .context("Failed to get main window")?
         .close()
@@ -35,7 +35,7 @@ pub async fn close_window(app: tauri::AppHandle) -> Result<(), Error> {
 }
 
 #[tauri::command]
-pub async fn open_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>, Error> {
+pub async fn open_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>> {
     let chosen_file = run_dialog(app, || {
         AsyncFileDialog::new()
             .set_title("Pick a SQLite database file")
@@ -49,7 +49,7 @@ pub async fn open_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>, Err
 }
 
 #[tauri::command]
-pub async fn save_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>, Error> {
+pub async fn save_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>> {
     let chosen_file = run_dialog(app, || {
         AsyncFileDialog::new()
             .set_title("Create a new SQLite database file")
@@ -62,7 +62,7 @@ pub async fn save_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>, Err
 }
 
 #[tauri::command]
-pub async fn pick_ca_cert(app: tauri::AppHandle) -> Result<Option<String>, Error> {
+pub async fn pick_ca_cert(app: tauri::AppHandle) -> Result<Option<String>> {
     let chosen_file = run_dialog(app, || {
         AsyncFileDialog::new()
             .set_title("Pick a certificate file")
@@ -75,7 +75,7 @@ pub async fn pick_ca_cert(app: tauri::AppHandle) -> Result<Option<String>, Error
     Ok(chosen_file)
 }
 
-async fn run_dialog<F, Fut, T>(app: tauri::AppHandle, make_future: F) -> Result<Option<T>, Error>
+async fn run_dialog<F, Fut, T>(app: tauri::AppHandle, make_future: F) -> Result<Option<T>>
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: std::future::Future<Output = Option<T>> + Send + 'static,
@@ -94,5 +94,5 @@ where
     })?;
 
     rx.await
-        .map_err(|_| Error::Any(anyhow::anyhow!("Failed to receive dialog result")))
+        .map_err(|_| Error::from(anyhow::anyhow!("Failed to receive dialog result")))
 }

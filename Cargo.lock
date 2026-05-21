@@ -2839,15 +2839,12 @@ dependencies = [
  "bytes",
  "chrono",
  "dashmap",
- "dirs",
- "env_logger",
  "futures-util",
  "hex",
  "jsax",
  "keyring",
  "log",
  "pgtemp",
- "rfd",
  "rusqlite",
  "rustls",
  "rustls-native-certs",
@@ -2856,7 +2853,6 @@ dependencies = [
  "serde_json",
  "sqlformat",
  "sqlparser",
- "tauri",
  "thiserror 2.0.18",
  "tokio",
  "tokio-postgres",
@@ -2870,9 +2866,18 @@ dependencies = [
 name = "pgpad-tauri"
 version = "1.0.0"
 dependencies = [
+ "anyhow",
+ "dirs",
+ "env_logger",
+ "log",
  "pgpad-core",
+ "rfd",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

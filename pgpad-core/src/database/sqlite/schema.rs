@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub async fn get_database_schema(conn: Arc<Mutex<Connection>>) -> Result<DatabaseSchema, Error> {
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let conn = conn.lock().unwrap();
 
         let mut tables_stmt = conn.prepare(
