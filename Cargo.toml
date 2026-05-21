@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "pgpad-core",
+    "pgpad-web",
     "src-tauri"
 ]
 resolver = "2"
