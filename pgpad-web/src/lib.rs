@@ -17,6 +17,7 @@ use pgpad_core::{
     },
     AppState, Certificates, ConnectionMonitor, QueryHistoryEntry,
 };
+use rfd::FileDialog;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::value::RawValue;
 use tower_http::services::{ServeDir, ServeFile};
@@ -122,9 +123,9 @@ pub fn router(static_dir: PathBuf, state: WebState) -> Router {
         .route("/api/commands/minimize_window", post(noop_command))
         .route("/api/commands/maximize_window", post(noop_command))
         .route("/api/commands/close_window", post(noop_command))
-        .route("/api/commands/open_sqlite_db", post(none_command))
-        .route("/api/commands/save_sqlite_db", post(none_command))
-        .route("/api/commands/pick_ca_cert", post(none_command))
+        .route("/api/commands/open_sqlite_db", post(open_sqlite_db))
+        .route("/api/commands/save_sqlite_db", post(save_sqlite_db))
+        .route("/api/commands/pick_ca_cert", post(pick_ca_cert))
         .route("/api/commands/{command}", post(fallback_command))
         .fallback_service(static_files)
         .with_state(state)
@@ -138,6 +139,7 @@ struct CommandError {
 enum CommandHttpError {
     BadRequest(String),
     Core(pgpad_core::Error),
+    Join(tokio::task::JoinError),
     NotImplemented(String),
     Serialize(serde_json::Error),
 }
@@ -146,7 +148,7 @@ impl CommandHttpError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
-            Self::Core(_) | Self::Serialize(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Core(_) | Self::Join(_) | Self::Serialize(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
         }
     }
@@ -155,6 +157,7 @@ impl CommandHttpError {
         match self {
             Self::BadRequest(message) | Self::NotImplemented(message) => message.clone(),
             Self::Core(error) => error.to_string(),
+            Self::Join(error) => error.to_string(),
             Self::Serialize(error) => error.to_string(),
         }
     }
@@ -179,6 +182,12 @@ impl From<pgpad_core::Error> for CommandHttpError {
 impl From<serde_json::Error> for CommandHttpError {
     fn from(error: serde_json::Error) -> Self {
         Self::Serialize(error)
+    }
+}
+
+impl From<tokio::task::JoinError> for CommandHttpError {
+    fn from(error: tokio::task::JoinError) -> Self {
+        Self::Join(error)
     }
 }
 
@@ -605,8 +614,48 @@ async fn noop_command() -> CommandResult<()> {
     Ok(Json(()))
 }
 
-async fn none_command() -> CommandResult<Option<String>> {
-    Ok(Json(None))
+async fn run_file_dialog<F>(dialog: F) -> Result<Option<String>, CommandHttpError>
+where
+    F: FnOnce() -> Option<PathBuf> + Send + 'static,
+{
+    Ok(tokio::task::spawn_blocking(dialog)
+        .await?
+        .map(|path| path.to_string_lossy().into_owned()))
+}
+
+async fn open_sqlite_db() -> CommandResult<Option<String>> {
+    Ok(Json(
+        run_file_dialog(|| {
+            FileDialog::new()
+                .set_title("Pick a SQLite database file")
+                .add_filter("SQLite database", &["db", "sqlite", "sqlite3"])
+                .pick_file()
+        })
+        .await?,
+    ))
+}
+
+async fn save_sqlite_db() -> CommandResult<Option<String>> {
+    Ok(Json(
+        run_file_dialog(|| {
+            FileDialog::new()
+                .set_title("Create a new SQLite database file")
+                .save_file()
+        })
+        .await?,
+    ))
+}
+
+async fn pick_ca_cert() -> CommandResult<Option<String>> {
+    Ok(Json(
+        run_file_dialog(|| {
+            FileDialog::new()
+                .set_title("Pick a certificate file")
+                .add_filter("Certificate files", &["pem", "crt", "cer", "ca-bundle"])
+                .pick_file()
+        })
+        .await?,
+    ))
 }
 
 async fn fallback_command(Path(command): Path<String>) -> Result<Json<()>, CommandHttpError> {

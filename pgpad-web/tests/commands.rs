@@ -289,11 +289,6 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
         assert_eq!(response, Value::Null);
     }
 
-    for command_name in ["open_sqlite_db", "save_sqlite_db", "pick_ca_cert"] {
-        let response: Value = command_ok(app.clone(), command_name, json!({})).await;
-        assert_eq!(response, Value::Null);
-    }
-
     let (status, body) = command(app, "not_real", json!({})).await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
     let error: Value = serde_json::from_slice(&body).expect("failed to parse error body");

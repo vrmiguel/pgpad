@@ -2971,6 +2971,7 @@ dependencies = [
  "http-body-util",
  "log",
  "pgpad-core",
+ "rfd",
  "rusqlite",
  "serde",
  "serde_json",
