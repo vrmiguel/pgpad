@@ -113,9 +113,18 @@ pub fn router(static_dir: PathBuf, state: WebState) -> Router {
             post(save_query_to_history),
         )
         .route("/api/commands/export_page", post(export_page))
+        .route("/api/commands/save_script", post(save_script))
+        .route("/api/commands/update_script", post(update_script))
         .route("/api/commands/get_scripts", post(get_scripts))
+        .route("/api/commands/delete_script", post(delete_script))
         .route("/api/commands/get_query_history", post(get_query_history))
         .route("/api/commands/format_sql", post(format_sql))
+        .route("/api/commands/minimize_window", post(noop_command))
+        .route("/api/commands/maximize_window", post(noop_command))
+        .route("/api/commands/close_window", post(noop_command))
+        .route("/api/commands/open_sqlite_db", post(none_command))
+        .route("/api/commands/save_sqlite_db", post(none_command))
+        .route("/api/commands/pick_ca_cert", post(none_command))
         .route("/api/commands/{command}", post(fallback_command))
         .fallback_service(static_files)
         .with_state(state)
@@ -473,6 +482,68 @@ async fn export_page(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SaveScriptArgs {
+    name: String,
+    content: String,
+    connection_id: Option<Uuid>,
+    description: Option<String>,
+}
+
+async fn save_script(
+    State(state): State<WebState>,
+    CommandJson(SaveScriptArgs {
+        name,
+        content,
+        connection_id,
+        description,
+    }): CommandJson<SaveScriptArgs>,
+) -> CommandResult<i64> {
+    Ok(Json(
+        services::save_script(
+            name,
+            content,
+            connection_id,
+            description,
+            state.app_state.as_ref(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateScriptArgs {
+    id: i64,
+    name: String,
+    content: String,
+    connection_id: Option<Uuid>,
+    description: Option<String>,
+}
+
+async fn update_script(
+    State(state): State<WebState>,
+    CommandJson(UpdateScriptArgs {
+        id,
+        name,
+        content,
+        connection_id,
+        description,
+    }): CommandJson<UpdateScriptArgs>,
+) -> CommandResult<()> {
+    services::update_script(
+        id,
+        name,
+        content,
+        connection_id,
+        description,
+        state.app_state.as_ref(),
+    )
+    .await?;
+    Ok(Json(()))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GetScriptsArgs {
     connection_id: Option<Uuid>,
 }
@@ -484,6 +555,19 @@ async fn get_scripts(
     Ok(Json(
         services::get_scripts(connection_id, state.app_state.as_ref()).await?,
     ))
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteScriptArgs {
+    id: i64,
+}
+
+async fn delete_script(
+    State(state): State<WebState>,
+    CommandJson(DeleteScriptArgs { id }): CommandJson<DeleteScriptArgs>,
+) -> CommandResult<()> {
+    services::delete_script(id, state.app_state.as_ref()).await?;
+    Ok(Json(()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -515,6 +599,14 @@ async fn format_sql(
     CommandJson(FormatSqlArgs { query }): CommandJson<FormatSqlArgs>,
 ) -> CommandResult<String> {
     Ok(Json(services::format_sql(&query).await?))
+}
+
+async fn noop_command() -> CommandResult<()> {
+    Ok(Json(()))
+}
+
+async fn none_command() -> CommandResult<Option<String>> {
+    Ok(Json(None))
 }
 
 async fn fallback_command(Path(command): Path<String>) -> Result<Json<()>, CommandHttpError> {

@@ -216,6 +216,64 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
         "SELECT id, name FROM items ORDER BY id"
     );
 
+    let script_id: i64 = command_ok(
+        app.clone(),
+        "save_script",
+        json!({
+            "name": "Smoke script",
+            "content": "SELECT id, name FROM items ORDER BY id",
+            "connectionId": connection_id,
+            "description": "Created by the web command integration test"
+        }),
+    )
+    .await;
+
+    let scripts: Vec<Value> = command_ok(
+        app.clone(),
+        "get_scripts",
+        json!({ "connectionId": connection_id }),
+    )
+    .await;
+    assert_eq!(scripts.len(), 1);
+    assert_eq!(scripts[0]["id"], script_id);
+    assert_eq!(scripts[0]["name"], "Smoke script");
+
+    let _: Value = command_ok(
+        app.clone(),
+        "update_script",
+        json!({
+            "id": script_id,
+            "name": "Updated smoke script",
+            "content": "SELECT name FROM items ORDER BY id",
+            "connectionId": connection_id,
+            "description": null
+        }),
+    )
+    .await;
+
+    let scripts: Vec<Value> = command_ok(
+        app.clone(),
+        "get_scripts",
+        json!({ "connectionId": connection_id }),
+    )
+    .await;
+    assert_eq!(scripts.len(), 1);
+    assert_eq!(scripts[0]["name"], "Updated smoke script");
+    assert_eq!(
+        scripts[0]["query_text"],
+        "SELECT name FROM items ORDER BY id"
+    );
+
+    let _: Value = command_ok(app.clone(), "delete_script", json!({ "id": script_id })).await;
+
+    let scripts: Vec<Value> = command_ok(
+        app.clone(),
+        "get_scripts",
+        json!({ "connectionId": connection_id }),
+    )
+    .await;
+    assert!(scripts.is_empty());
+
     let _: Value = command_ok(
         app.clone(),
         "disconnect_from_database",
@@ -225,6 +283,16 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
 
     let connections: Vec<Value> = command_ok(app.clone(), "get_connections", json!({})).await;
     assert_eq!(connections[0]["connected"], false);
+
+    for command_name in ["minimize_window", "maximize_window", "close_window"] {
+        let response: Value = command_ok(app.clone(), command_name, json!({})).await;
+        assert_eq!(response, Value::Null);
+    }
+
+    for command_name in ["open_sqlite_db", "save_sqlite_db", "pick_ca_cert"] {
+        let response: Value = command_ok(app.clone(), command_name, json!({})).await;
+        assert_eq!(response, Value::Null);
+    }
 
     let (status, body) = command(app, "not_real", json!({})).await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
