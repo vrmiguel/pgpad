@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { backend } from '$lib/backend';
 
 // What Rust sends us after processing query results (basically, JSON)
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
@@ -76,7 +76,7 @@ export interface Script {
 
 export class Commands {
 	static async testConnection(config: ConnectionConfig): Promise<boolean> {
-		return await invoke('test_connection', { config });
+		return await backend.invoke('test_connection', { config });
 	}
 
 	static async addConnection(
@@ -84,23 +84,23 @@ export class Commands {
 		config: ConnectionConfig,
 		permissions: Permissions
 	): Promise<ConnectionInfo> {
-		return await invoke('add_connection', { name, config, permissions });
+		return await backend.invoke('add_connection', { name, config, permissions });
 	}
 
 	static async connectToDatabase(connectionId: string): Promise<boolean> {
-		return await invoke('connect_to_database', { connectionId });
+		return await backend.invoke('connect_to_database', { connectionId });
 	}
 
 	static async disconnectFromDatabase(connectionId: string): Promise<void> {
-		return await invoke('disconnect_from_database', { connectionId });
+		return await backend.invoke('disconnect_from_database', { connectionId });
 	}
 
 	static async getConnections(): Promise<ConnectionInfo[]> {
-		return await invoke('get_connections');
+		return await backend.invoke('get_connections');
 	}
 
 	static async removeConnection(connectionId: string): Promise<void> {
-		return await invoke('remove_connection', { connectionId });
+		return await backend.invoke('remove_connection', { connectionId });
 	}
 
 	static async updateConnection(
@@ -109,7 +109,7 @@ export class Commands {
 		config: ConnectionConfig,
 		permissions: Permissions
 	): Promise<ConnectionInfo> {
-		return await invoke('update_connection', {
+		return await backend.invoke('update_connection', {
 			connId: connectionId,
 			name,
 			config,
@@ -118,7 +118,7 @@ export class Commands {
 	}
 
 	static async initializeConnections(): Promise<void> {
-		return await invoke('initialize_connections');
+		return await backend.invoke('initialize_connections');
 	}
 
 	static async saveQueryToHistory(
@@ -129,7 +129,7 @@ export class Commands {
 		rowCount: number = 0,
 		errorMessage?: string
 	): Promise<void> {
-		await invoke('save_query_to_history', {
+		await backend.invoke('save_query_to_history', {
 			connectionId,
 			query,
 			durationMs,
@@ -140,11 +140,11 @@ export class Commands {
 	}
 
 	static async getQueryHistory(connectionId: string, limit?: number): Promise<QueryHistoryEntry[]> {
-		return await invoke('get_query_history', { connectionId, limit });
+		return await backend.invoke('get_query_history', { connectionId, limit });
 	}
 
 	static async getDatabaseSchema(connectionId: string): Promise<DatabaseSchema> {
-		return await invoke('get_database_schema', { connectionId });
+		return await backend.invoke('get_database_schema', { connectionId });
 	}
 
 	static async saveScript(
@@ -153,7 +153,7 @@ export class Commands {
 		connectionId?: string,
 		description?: string
 	): Promise<number> {
-		return await invoke('save_script', {
+		return await backend.invoke('save_script', {
 			name,
 			content,
 			connectionId: connectionId || null,
@@ -168,7 +168,7 @@ export class Commands {
 		connectionId?: string,
 		description?: string
 	): Promise<void> {
-		return await invoke('update_script', {
+		return await backend.invoke('update_script', {
 			id,
 			name,
 			content,
@@ -178,74 +178,74 @@ export class Commands {
 	}
 
 	static async getScripts(connectionId?: string): Promise<Script[]> {
-		return await invoke('get_scripts', { connectionId: connectionId || null });
+		return await backend.invoke('get_scripts', { connectionId: connectionId || null });
 	}
 
 	static async deleteScript(id: number): Promise<void> {
-		await invoke('delete_script', { id });
+		await backend.invoke('delete_script', { id });
 	}
 
 	static async minimizeWindow(): Promise<void> {
-		await invoke('minimize_window');
+		await backend.invoke('minimize_window');
 	}
 
 	static async maximizeWindow(): Promise<void> {
-		await invoke('maximize_window');
+		await backend.invoke('maximize_window');
 	}
 
 	static async closeWindow(): Promise<void> {
-		await invoke('close_window');
+		await backend.invoke('close_window');
 	}
 
 	static async saveSessionState(sessionData: string): Promise<void> {
-		return await invoke('save_session_state', { sessionData });
+		return await backend.invoke('save_session_state', { sessionData });
 	}
 
 	static async getSessionState(): Promise<string | null> {
-		return await invoke('get_session_state');
+		return await backend.invoke('get_session_state');
 	}
 
 	static async pickSqliteDbDialog(): Promise<string | null> {
-		return await invoke('open_sqlite_db');
+		return await backend.invoke('open_sqlite_db');
 	}
 
 	static async saveSqliteDbDialog(): Promise<string | null> {
-		return await invoke('save_sqlite_db');
+		return await backend.invoke('save_sqlite_db');
 	}
 
 	static async pickCaCert(): Promise<string | null> {
-		return await invoke('pick_ca_cert');
+		return await backend.invoke('pick_ca_cert');
 	}
 
 	static async submitQuery(connectionId: string, query: string): Promise<QueryId[]> {
-		return await invoke('submit_query', { connectionId, query });
+		return await backend.invoke('submit_query', { connectionId, query });
 	}
 
 	static async isQueryReadOnly(connectionId: string, query: string): Promise<boolean> {
-		return await invoke('is_query_read_only', { connectionId, query });
+		return await backend.invoke('is_query_read_only', { connectionId, query });
 	}
 
 	static async waitUntilRenderable(queryId: QueryId): Promise<QuerySnapshot> {
-		return await invoke('wait_until_renderable', { queryId });
+		return await backend.invoke('wait_until_renderable', { queryId });
 	}
 
 	static async fetchPage(queryId: QueryId, pageIndex: number): Promise<Page | null> {
-		return await invoke('fetch_page', { queryId, pageIndex });
+		return await backend.invoke('fetch_page', { queryId, pageIndex });
 	}
 
 	static async getQueryStatus(queryId: QueryId): Promise<QueryStatus> {
-		return await invoke('get_query_status', { queryId });
+		return await backend.invoke('get_query_status', { queryId });
 	}
 
 	static async getPageCount(queryId: QueryId): Promise<number> {
-		return await invoke('get_page_count', { queryId });
+		return await backend.invoke('get_page_count', { queryId });
 	}
 
 	static async formatSql(query: string): Promise<string> {
-		return await invoke('format_sql', { query });
+		return await backend.invoke('format_sql', { query });
 	}
 
 	static async exportPage(queryId: QueryId, pageIndex: number): Promise<string> {
-		return await invoke('export_page', { queryId, pageIndex });
+		return await backend.invoke('export_page', { queryId, pageIndex });
 	}
 }

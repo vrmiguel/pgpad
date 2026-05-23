@@ -15,7 +15,7 @@
 		type QueryHistoryEntry
 	} from '$lib/commands.svelte';
 	import { onMount, onDestroy } from 'svelte';
-	import { listen } from '@tauri-apps/api/event';
+	import { backend } from '$lib/backend';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { tabs, type ScriptTab, type SidebarTabState } from '$lib/stores/tabs.svelte';
 
@@ -243,10 +243,10 @@
 
 			tabs.onSessionSave(() => markSessionDirty());
 
-			unlistenDisconnect = await listen('end-of-connection', (event) => {
-				const connectionId = event.payload as string;
-				handleConnectionDisconnect(connectionId);
-			});
+			unlistenDisconnect = await backend.listen<string>(
+				'end-of-connection',
+				handleConnectionDisconnect
+			);
 
 			// checks if we should auto-save the session, every 20 secs
 			sessionSaveTimer = setInterval(() => {
