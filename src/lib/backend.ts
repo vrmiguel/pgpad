@@ -1,5 +1,6 @@
 import { invoke as tauriInvoke, isTauri } from '@tauri-apps/api/core';
 import { listen as tauriListen } from '@tauri-apps/api/event';
+import { getWebToken } from '$lib/webToken';
 
 type CommandArgs = Record<string, unknown>;
 type Unlisten = () => void;
@@ -27,9 +28,7 @@ class HttpBackend implements Backend {
 	async invoke<T>(command: string, args?: CommandArgs): Promise<T> {
 		const response = await fetch(`/api/commands/${encodeURIComponent(command)}`, {
 			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
+			headers: this.commandHeaders(),
 			body: JSON.stringify(args ?? {})
 		});
 
@@ -49,6 +48,18 @@ class HttpBackend implements Backend {
 		void event;
 		void handler;
 		return () => {};
+	}
+
+	private commandHeaders(): HeadersInit {
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json'
+		};
+		const token = getWebToken();
+		if (token) {
+			headers['x-pgpad-token'] = token;
+		}
+
+		return headers;
 	}
 
 	private async readError(response: Response) {

@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
     let state = pgpad_web::WebState::new(db_path())?;
 
     println!("Serving pgpad from {}", static_dir.display());
-    println!("Listening on http://{addr}");
+    println!("Listening on http://{addr}/?token={}", state.auth_token());
 
     axum::serve(listener, pgpad_web::router(static_dir, state)).await?;
 

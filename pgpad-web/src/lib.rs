@@ -2,8 +2,9 @@ use std::{path::PathBuf, sync::Arc};
 
 use axum::{
     extract::{rejection::JsonRejection, FromRequest, Path, Request, State},
-    http::StatusCode,
-    response::IntoResponse,
+    http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::post,
     Json, Router,
 };
@@ -17,6 +18,7 @@ use pgpad_core::{
     },
     AppState, Certificates, ConnectionMonitor, QueryHistoryEntry,
 };
+use rand::distr::{Alphanumeric, SampleString};
 use rfd::FileDialog;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -28,6 +30,7 @@ pub struct WebState {
     pub app_state: Arc<AppState>,
     pub certificates: Certificates,
     pub connection_monitor: ConnectionMonitor,
+    auth_token: String,
 }
 
 impl WebState {
@@ -40,6 +43,7 @@ impl WebState {
             app_state,
             certificates,
             connection_monitor,
+            auth_token: generate_auth_token(),
         };
 
         let certificates = state.certificates.clone();
@@ -63,6 +67,14 @@ impl WebState {
 
         Ok(state)
     }
+
+    pub fn auth_token(&self) -> &str {
+        &self.auth_token
+    }
+}
+
+fn generate_auth_token() -> String {
+    Alphanumeric.sample_string(&mut rand::rng(), 22)
 }
 
 pub fn default_db_path() -> PathBuf {
@@ -76,57 +88,58 @@ pub fn router(static_dir: PathBuf, state: WebState) -> Router {
     let index = static_dir.join("index.html");
     let static_files = ServeDir::new(static_dir).fallback(ServeFile::new(index));
 
-    Router::new()
+    let api = Router::new()
         .route(
-            "/api/commands/initialize_connections",
+            "/commands/initialize_connections",
             post(initialize_connections),
         )
-        .route("/api/commands/get_connections", post(get_connections))
-        .route("/api/commands/get_session_state", post(get_session_state))
-        .route("/api/commands/save_session_state", post(save_session_state))
-        .route("/api/commands/test_connection", post(test_connection))
-        .route("/api/commands/add_connection", post(add_connection))
-        .route("/api/commands/update_connection", post(update_connection))
-        .route("/api/commands/remove_connection", post(remove_connection))
+        .route("/commands/get_connections", post(get_connections))
+        .route("/commands/get_session_state", post(get_session_state))
+        .route("/commands/save_session_state", post(save_session_state))
+        .route("/commands/test_connection", post(test_connection))
+        .route("/commands/add_connection", post(add_connection))
+        .route("/commands/update_connection", post(update_connection))
+        .route("/commands/remove_connection", post(remove_connection))
+        .route("/commands/connect_to_database", post(connect_to_database))
         .route(
-            "/api/commands/connect_to_database",
-            post(connect_to_database),
-        )
-        .route(
-            "/api/commands/disconnect_from_database",
+            "/commands/disconnect_from_database",
             post(disconnect_from_database),
         )
-        .route("/api/commands/submit_query", post(submit_query))
+        .route("/commands/submit_query", post(submit_query))
         .route(
-            "/api/commands/wait_until_renderable",
+            "/commands/wait_until_renderable",
             post(wait_until_renderable),
         )
-        .route("/api/commands/fetch_page", post(fetch_page))
-        .route("/api/commands/get_query_status", post(get_query_status))
-        .route("/api/commands/get_page_count", post(get_page_count))
-        .route("/api/commands/is_query_read_only", post(is_query_read_only))
+        .route("/commands/fetch_page", post(fetch_page))
+        .route("/commands/get_query_status", post(get_query_status))
+        .route("/commands/get_page_count", post(get_page_count))
+        .route("/commands/is_query_read_only", post(is_query_read_only))
+        .route("/commands/get_database_schema", post(get_database_schema))
         .route(
-            "/api/commands/get_database_schema",
-            post(get_database_schema),
-        )
-        .route(
-            "/api/commands/save_query_to_history",
+            "/commands/save_query_to_history",
             post(save_query_to_history),
         )
-        .route("/api/commands/export_page", post(export_page))
-        .route("/api/commands/save_script", post(save_script))
-        .route("/api/commands/update_script", post(update_script))
-        .route("/api/commands/get_scripts", post(get_scripts))
-        .route("/api/commands/delete_script", post(delete_script))
-        .route("/api/commands/get_query_history", post(get_query_history))
-        .route("/api/commands/format_sql", post(format_sql))
-        .route("/api/commands/minimize_window", post(noop_command))
-        .route("/api/commands/maximize_window", post(noop_command))
-        .route("/api/commands/close_window", post(noop_command))
-        .route("/api/commands/open_sqlite_db", post(open_sqlite_db))
-        .route("/api/commands/save_sqlite_db", post(save_sqlite_db))
-        .route("/api/commands/pick_ca_cert", post(pick_ca_cert))
-        .route("/api/commands/{command}", post(fallback_command))
+        .route("/commands/export_page", post(export_page))
+        .route("/commands/save_script", post(save_script))
+        .route("/commands/update_script", post(update_script))
+        .route("/commands/get_scripts", post(get_scripts))
+        .route("/commands/delete_script", post(delete_script))
+        .route("/commands/get_query_history", post(get_query_history))
+        .route("/commands/format_sql", post(format_sql))
+        .route("/commands/minimize_window", post(noop_command))
+        .route("/commands/maximize_window", post(noop_command))
+        .route("/commands/close_window", post(noop_command))
+        .route("/commands/open_sqlite_db", post(open_sqlite_db))
+        .route("/commands/save_sqlite_db", post(save_sqlite_db))
+        .route("/commands/pick_ca_cert", post(pick_ca_cert))
+        .route("/commands/{command}", post(fallback_command))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_auth_token,
+        ));
+
+    Router::new()
+        .nest("/api", api)
         .fallback_service(static_files)
         .with_state(state)
 }
@@ -142,6 +155,7 @@ enum CommandHttpError {
     Join(tokio::task::JoinError),
     NotImplemented(String),
     Serialize(serde_json::Error),
+    Unauthorized,
 }
 
 impl CommandHttpError {
@@ -150,6 +164,7 @@ impl CommandHttpError {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::Core(_) | Self::Join(_) | Self::Serialize(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
         }
     }
 
@@ -159,6 +174,7 @@ impl CommandHttpError {
             Self::Core(error) => error.to_string(),
             Self::Join(error) => error.to_string(),
             Self::Serialize(error) => error.to_string(),
+            Self::Unauthorized => "Missing or invalid pgpad-web token".to_string(),
         }
     }
 }
@@ -194,6 +210,23 @@ impl From<tokio::task::JoinError> for CommandHttpError {
 impl From<JsonRejection> for CommandHttpError {
     fn from(error: JsonRejection) -> Self {
         Self::BadRequest(error.body_text())
+    }
+}
+
+async fn require_auth_token(
+    State(state): State<WebState>,
+    headers: HeaderMap,
+    request: Request,
+    next: Next,
+) -> Result<Response, CommandHttpError> {
+    if headers
+        .get("x-pgpad-token")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|token| token == state.auth_token())
+    {
+        Ok(next.run(request).await)
+    } else {
+        Err(CommandHttpError::Unauthorized)
     }
 }
 

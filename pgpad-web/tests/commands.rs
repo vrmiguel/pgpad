@@ -9,6 +9,11 @@ use serde_json::{json, Value};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
+struct TestApp {
+    router: Router,
+    token: String,
+}
+
 fn make_static_dir() -> TempDir {
     let dir = tempfile::tempdir().expect("failed to create static dir");
     std::fs::write(
@@ -39,9 +44,29 @@ fn make_sqlite_db() -> TempDir {
     dir
 }
 
-async fn command(app: Router, name: &str, payload: Value) -> (StatusCode, Bytes) {
-    let request = Request::post(format!("/api/commands/{name}"))
+fn make_app(static_dir: &TempDir, app_db: impl Into<std::path::PathBuf>) -> TestApp {
+    let state = pgpad_web::WebState::new(app_db).expect("failed to create web state");
+    let token = state.auth_token().to_string();
+    let router = pgpad_web::router(static_dir.path().to_path_buf(), state);
+
+    TestApp { router, token }
+}
+
+async fn command_with_token(
+    app: Router,
+    name: &str,
+    payload: Value,
+    token: Option<&str>,
+) -> (StatusCode, Bytes) {
+    let mut request = Request::post(format!("/api/commands/{name}"))
         .header("content-type", "application/json")
+        .header("accept", "application/json");
+
+    if let Some(token) = token {
+        request = request.header("x-pgpad-token", token);
+    }
+
+    let request = request
         .body(Body::from(payload.to_string()))
         .expect("failed to build request");
 
@@ -57,7 +82,11 @@ async fn command(app: Router, name: &str, payload: Value) -> (StatusCode, Bytes)
     (status, body)
 }
 
-async fn command_ok<T>(app: Router, name: &str, payload: Value) -> T
+async fn command(app: &TestApp, name: &str, payload: Value) -> (StatusCode, Bytes) {
+    command_with_token(app.router.clone(), name, payload, Some(&app.token)).await
+}
+
+async fn command_ok<T>(app: &TestApp, name: &str, payload: Value) -> T
 where
     T: DeserializeOwned,
 {
@@ -78,13 +107,12 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     let app_db = app_dir.path().join("pgpad.db");
     let user_db = sqlite_dir.path().join("user.sqlite");
 
-    let state = pgpad_web::WebState::new(app_db).expect("failed to create web state");
-    let app = pgpad_web::router(static_dir.path().to_path_buf(), state);
+    let app = make_app(&static_dir, app_db);
 
-    let _: Value = command_ok(app.clone(), "initialize_connections", json!({})).await;
+    let _: Value = command_ok(&app, "initialize_connections", json!({})).await;
 
     let connection: Value = command_ok(
-        app.clone(),
+        &app,
         "add_connection",
         json!({
             "name": "Smoke SQLite",
@@ -103,23 +131,23 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
         .and_then(Value::as_str)
         .expect("connection id missing");
 
-    let connections: Vec<Value> = command_ok(app.clone(), "get_connections", json!({})).await;
+    let connections: Vec<Value> = command_ok(&app, "get_connections", json!({})).await;
     assert_eq!(connections.len(), 1);
     assert_eq!(connections[0]["connected"], false);
 
     let connected: bool = command_ok(
-        app.clone(),
+        &app,
         "connect_to_database",
         json!({ "connectionId": connection_id }),
     )
     .await;
     assert!(connected);
 
-    let connections: Vec<Value> = command_ok(app.clone(), "get_connections", json!({})).await;
+    let connections: Vec<Value> = command_ok(&app, "get_connections", json!({})).await;
     assert_eq!(connections[0]["connected"], true);
 
     let schema: Value = command_ok(
-        app.clone(),
+        &app,
         "get_database_schema",
         json!({ "connectionId": connection_id }),
     )
@@ -127,7 +155,7 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     assert_eq!(schema["tables"][0]["name"], "items");
 
     let read_only: bool = command_ok(
-        app.clone(),
+        &app,
         "is_query_read_only",
         json!({
             "connectionId": connection_id,
@@ -138,7 +166,7 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     assert!(read_only);
 
     let query_ids: Vec<usize> = command_ok(
-        app.clone(),
+        &app,
         "submit_query",
         json!({
             "connectionId": connection_id,
@@ -149,7 +177,7 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     assert_eq!(query_ids, vec![0]);
 
     let snapshot: Value = command_ok(
-        app.clone(),
+        &app,
         "wait_until_renderable",
         json!({ "queryId": query_ids[0] }),
     )
@@ -158,24 +186,16 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     assert_eq!(snapshot["columns"], json!(["id", "name"]));
     assert_eq!(snapshot["first_page"], json!([[1, "alpha"], [2, "beta"]]));
 
-    let status: String = command_ok(
-        app.clone(),
-        "get_query_status",
-        json!({ "queryId": query_ids[0] }),
-    )
-    .await;
+    let status: String =
+        command_ok(&app, "get_query_status", json!({ "queryId": query_ids[0] })).await;
     assert_eq!(status, "Completed");
 
-    let page_count: usize = command_ok(
-        app.clone(),
-        "get_page_count",
-        json!({ "queryId": query_ids[0] }),
-    )
-    .await;
+    let page_count: usize =
+        command_ok(&app, "get_page_count", json!({ "queryId": query_ids[0] })).await;
     assert_eq!(page_count, 1);
 
     let page: Value = command_ok(
-        app.clone(),
+        &app,
         "fetch_page",
         json!({ "queryId": query_ids[0], "pageIndex": 0 }),
     )
@@ -183,7 +203,7 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     assert_eq!(page, json!([[1, "alpha"], [2, "beta"]]));
 
     let csv: String = command_ok(
-        app.clone(),
+        &app,
         "export_page",
         json!({ "queryId": query_ids[0], "pageIndex": 0 }),
     )
@@ -191,7 +211,7 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     assert_eq!(csv, "id,name\n1,\"alpha\"\n2,\"beta\"\n");
 
     let _: Value = command_ok(
-        app.clone(),
+        &app,
         "save_query_to_history",
         json!({
             "connectionId": connection_id,
@@ -205,7 +225,7 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     .await;
 
     let history: Vec<Value> = command_ok(
-        app.clone(),
+        &app,
         "get_query_history",
         json!({ "connectionId": connection_id, "limit": 10 }),
     )
@@ -217,7 +237,7 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     );
 
     let script_id: i64 = command_ok(
-        app.clone(),
+        &app,
         "save_script",
         json!({
             "name": "Smoke script",
@@ -229,7 +249,7 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     .await;
 
     let scripts: Vec<Value> = command_ok(
-        app.clone(),
+        &app,
         "get_scripts",
         json!({ "connectionId": connection_id }),
     )
@@ -239,7 +259,7 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     assert_eq!(scripts[0]["name"], "Smoke script");
 
     let _: Value = command_ok(
-        app.clone(),
+        &app,
         "update_script",
         json!({
             "id": script_id,
@@ -252,7 +272,7 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     .await;
 
     let scripts: Vec<Value> = command_ok(
-        app.clone(),
+        &app,
         "get_scripts",
         json!({ "connectionId": connection_id }),
     )
@@ -264,10 +284,10 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
         "SELECT name FROM items ORDER BY id"
     );
 
-    let _: Value = command_ok(app.clone(), "delete_script", json!({ "id": script_id })).await;
+    let _: Value = command_ok(&app, "delete_script", json!({ "id": script_id })).await;
 
     let scripts: Vec<Value> = command_ok(
-        app.clone(),
+        &app,
         "get_scripts",
         json!({ "connectionId": connection_id }),
     )
@@ -275,25 +295,50 @@ async fn sqlite_connection_query_flow_works_over_http_commands() {
     assert!(scripts.is_empty());
 
     let _: Value = command_ok(
-        app.clone(),
+        &app,
         "disconnect_from_database",
         json!({ "connectionId": connection_id }),
     )
     .await;
 
-    let connections: Vec<Value> = command_ok(app.clone(), "get_connections", json!({})).await;
+    let connections: Vec<Value> = command_ok(&app, "get_connections", json!({})).await;
     assert_eq!(connections[0]["connected"], false);
 
     for command_name in ["minimize_window", "maximize_window", "close_window"] {
-        let response: Value = command_ok(app.clone(), command_name, json!({})).await;
+        let response: Value = command_ok(&app, command_name, json!({})).await;
         assert_eq!(response, Value::Null);
     }
 
-    let (status, body) = command(app, "not_real", json!({})).await;
+    let (status, body) = command(&app, "not_real", json!({})).await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
     let error: Value = serde_json::from_slice(&body).expect("failed to parse error body");
     assert_eq!(
         error["message"],
         "Command 'not_real' is not implemented yet"
     );
+}
+
+#[tokio::test]
+async fn api_commands_require_auth_token() {
+    let static_dir = make_static_dir();
+    let app_dir = tempfile::tempdir().expect("failed to create app dir");
+    let app_db = app_dir.path().join("pgpad.db");
+
+    let app = make_app(&static_dir, app_db);
+
+    for token in [None, Some("wrong-token")] {
+        let (status, body) = command_with_token(
+            app.router.clone(),
+            "initialize_connections",
+            json!({}),
+            token,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let error: Value = serde_json::from_slice(&body).expect("failed to parse error body");
+        assert_eq!(error["message"], "Missing or invalid pgpad-web token");
+    }
+
+    let (status, _) = command(&app, "initialize_connections", json!({})).await;
+    assert_eq!(status, StatusCode::OK);
 }
