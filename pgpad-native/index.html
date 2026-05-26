@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>PgPad Native Web Preview</title>
+		<link data-trunk rel="rust" href="Cargo.toml" data-bin="pgpad-native" data-wasm-opt="2" />
+		<style>
+			html,
+			body {
+				width: 100%;
+				height: 100%;
+				margin: 0;
+				overflow: hidden;
+				background: #000;
+			}
+
+			canvas {
+				display: block;
+				position: absolute;
+				inset: 0;
+				width: 100vw;
+				height: 100vh;
+			}
+
+			#loading {
+				position: fixed;
+				inset: 0;
+				display: grid;
+				place-items: center;
+				color: #aeb6c2;
+				font: 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+				background: #1f1f1f;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id="pgpad-native-canvas"></canvas>
+		<div id="loading">Loading PgPad Native...</div>
+	</body>
+</html>
