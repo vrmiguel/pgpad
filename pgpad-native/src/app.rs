@@ -1,7 +1,6 @@
 use eframe::egui;
 use egui::{
-    Align, Align2, CentralPanel, Color32, FontId, Layout, Panel, RichText, ScrollArea, TextEdit,
-    Vec2,
+    Align, Align2, Color32, FontId, Layout, Rect, RichText, ScrollArea, TextEdit, UiBuilder, Vec2,
 };
 use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular;
@@ -11,10 +10,48 @@ use crate::model::{result_columns, result_rows, AppModel, SidebarTab};
 use crate::style::{fill_rect, setup_styling, PgTokens};
 use crate::widgets;
 
+const TOP_BAR_HEIGHT: f32 = 42.0;
+const SIDEBAR_COLLAPSED_WIDTH: f32 = 56.0;
+const SIDEBAR_EXPANDED_WIDTH: f32 = 320.0;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum WorkspacePane {
     Editor,
     Results,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ShellRects {
+    root: Rect,
+    top_bar: Rect,
+    sidebar: Rect,
+    workspace: Rect,
+}
+
+impl ShellRects {
+    fn new(root: Rect, sidebar_width: f32) -> Self {
+        let top_bar = Rect::from_min_max(
+            root.min,
+            egui::pos2(root.right(), root.top() + TOP_BAR_HEIGHT),
+        );
+        let body = Rect::from_min_max(
+            egui::pos2(root.left(), top_bar.bottom()),
+            root.right_bottom(),
+        );
+        let sidebar = Rect::from_min_max(
+            body.min,
+            egui::pos2(body.left() + sidebar_width, body.bottom()),
+        );
+        let workspace =
+            Rect::from_min_max(egui::pos2(sidebar.right(), body.top()), body.right_bottom());
+
+        Self {
+            root,
+            top_bar,
+            sidebar,
+            workspace,
+        }
+    }
 }
 
 pub struct App {
@@ -35,57 +72,93 @@ impl App {
     }
 
     fn top_command_bar(&mut self, root_ui: &mut egui::Ui) {
-        Panel::top("top_command_bar")
-            .exact_size(42.0)
-            .frame(
-                egui::Frame::NONE
-                    .fill(PgTokens::titlebar())
-                    .stroke(egui::Stroke::new(1.0, PgTokens::border()))
-                    .inner_margin(egui::Margin::symmetric(14, 6)),
-            )
-            .show_inside(root_ui, |ui| {
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.add_space(360.0);
-                    widgets::command_button(ui, regular::PLAY, "Run Query");
-                    widgets::command_button(ui, regular::FLOPPY_DISK, "Save Script");
-                    ui.add_space(8.0);
+        fill_rect(root_ui, root_ui.max_rect(), PgTokens::titlebar());
 
-                    if let Some(connection) = self.model.selected_connection() {
-                        widgets::connection_pill(ui, connection.name, connection.connected);
-                    } else {
-                        widgets::connection_pill(ui, "No connection", false);
-                    }
+        let content_rect = root_ui.max_rect().shrink2(Vec2::new(14.0, 6.0));
+        let mut ui = child_ui(
+            root_ui,
+            "top_command_bar_content",
+            content_rect,
+            Layout::left_to_right(Align::Center),
+        );
 
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let _ = widgets::icon_button(ui, regular::SUN, false);
-                    });
-                });
-            });
+        ui.add_space(360.0);
+        widgets::command_button(&mut ui, regular::PLAY, "Run Query");
+        widgets::command_button(&mut ui, regular::FLOPPY_DISK, "Save Script");
+        ui.add_space(8.0);
+
+        if let Some(connection) = self.model.selected_connection() {
+            widgets::connection_pill(&mut ui, connection.name, connection.connected);
+        } else {
+            widgets::connection_pill(&mut ui, "No connection", false);
+        }
+
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let _ = widgets::icon_button(ui, regular::SUN, false);
+        });
     }
 
     fn sidebar(&mut self, root_ui: &mut egui::Ui) {
-        let width = if self.model.sidebar_collapsed {
-            56.0
-        } else {
-            320.0
-        };
+        let rect = root_ui.max_rect();
+        fill_rect(root_ui, rect, PgTokens::sidebar());
+        root_ui.painter().vline(
+            rect.right() - 0.5,
+            rect.y_range(),
+            egui::Stroke::new(1.0, PgTokens::border()),
+        );
 
-        Panel::left("sidebar")
-            .exact_size(width)
-            .resizable(false)
-            .frame(
-                egui::Frame::NONE
-                    .fill(PgTokens::sidebar())
-                    .stroke(egui::Stroke::new(1.0, PgTokens::border()))
-                    .inner_margin(egui::Margin::ZERO),
-            )
-            .show_inside(root_ui, |ui| {
-                if self.model.sidebar_collapsed {
-                    self.collapsed_sidebar_ui(ui);
-                } else {
-                    self.expanded_sidebar_ui(ui);
-                }
-            });
+        let mut ui = child_ui(
+            root_ui,
+            "sidebar_content",
+            rect,
+            Layout::top_down(Align::Min),
+        );
+
+        if self.model.sidebar_collapsed {
+            self.collapsed_sidebar_ui(&mut ui);
+        } else {
+            self.expanded_sidebar_ui(&mut ui);
+        }
+    }
+
+    fn shell_layout(&mut self, ui: &mut egui::Ui) {
+        let rects = ShellRects::new(ui.max_rect(), self.sidebar_width());
+        fill_rect(ui, rects.root, PgTokens::background());
+
+        let mut top_ui = child_ui(
+            ui,
+            "top_command_bar",
+            rects.top_bar,
+            Layout::top_down(Align::Min),
+        );
+        self.top_command_bar(&mut top_ui);
+
+        let mut sidebar_ui = child_ui(ui, "sidebar", rects.sidebar, Layout::top_down(Align::Min));
+        self.sidebar(&mut sidebar_ui);
+
+        let mut workspace_ui = child_ui(
+            ui,
+            "main_workspace",
+            rects.workspace,
+            Layout::top_down(Align::Min),
+        );
+        self.main_workspace(&mut workspace_ui);
+    }
+
+    fn sidebar_width(&self) -> f32 {
+        if self.model.sidebar_collapsed {
+            SIDEBAR_COLLAPSED_WIDTH
+        } else {
+            SIDEBAR_EXPANDED_WIDTH
+        }
+    }
+
+    fn main_workspace(&mut self, root_ui: &mut egui::Ui) {
+        fill_rect(root_ui, root_ui.max_rect(), PgTokens::background());
+        let mut behavior = WorkspaceBehavior {
+            model: &mut self.model,
+        };
+        self.workspace.ui(&mut behavior, root_ui);
     }
 
     fn collapsed_sidebar_ui(&mut self, ui: &mut egui::Ui) {
@@ -208,25 +281,23 @@ impl App {
                 }
             });
     }
-
-    fn main_workspace(&mut self, root_ui: &mut egui::Ui) {
-        CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(PgTokens::background()))
-            .show_inside(root_ui, |ui| {
-                let mut behavior = WorkspaceBehavior {
-                    model: &mut self.model,
-                };
-                self.workspace.ui(&mut behavior, ui);
-            });
-    }
 }
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.top_command_bar(ui);
-        self.sidebar(ui);
-        self.main_workspace(ui);
+        self.shell_layout(ui);
     }
+}
+
+fn child_ui(parent: &mut egui::Ui, id_salt: &'static str, rect: Rect, layout: Layout) -> egui::Ui {
+    let mut ui = parent.new_child(
+        UiBuilder::new()
+            .id_salt(id_salt)
+            .max_rect(rect)
+            .layout(layout),
+    );
+    ui.set_clip_rect(rect);
+    ui
 }
 
 fn workspace_tree() -> Tree<WorkspacePane> {
