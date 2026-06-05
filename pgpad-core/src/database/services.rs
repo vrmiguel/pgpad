@@ -167,8 +167,18 @@ pub async fn connect_to_database(
                 }
             }
         }
-        ConnectionConfig::SQLite { db_path } => match rusqlite::Connection::open(db_path) {
+        ConnectionConfig::SQLite { db_path } => match rusqlite::Connection::open(&db_path) {
             Ok(conn) => {
+                // Set busy timeout so concurrent writers wait instead of
+                // immediately returning SQLITE_BUSY.
+                if let Err(e) = conn.execute_batch("PRAGMA busy_timeout = 5000;") {
+                    log::error!(
+                        "Failed to set busy_timeout on SQLite database {}: {}",
+                        db_path,
+                        e
+                    );
+                }
+
                 connection.runtime = ConnectionRuntime::Connected(RuntimeClient::SQLite {
                     connection: Arc::new(Mutex::new(conn)),
                 });
