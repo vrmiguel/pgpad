@@ -167,7 +167,7 @@ pub async fn connect_to_database(
                 }
             }
         }
-        ConnectionConfig::SQLite { db_path } => match rusqlite::Connection::open(&db_path) {
+        ConnectionConfig::SQLite { db_path } => match rusqlite::Connection::open(db_path) {
             Ok(conn) => {
                 // Set busy timeout so concurrent writers wait instead of
                 // immediately returning SQLITE_BUSY.
