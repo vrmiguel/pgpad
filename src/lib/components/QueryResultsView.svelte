@@ -117,7 +117,7 @@
 		{#if executor.resultTabs.length > 0 && executor.activeResultTabId}
 			{@const activeTab = executor.resultTabs.find((t) => t.id === executor.activeResultTabId)}
 			{#if activeTab}
-				{#if activeTab.columns && activeTab.currentPageData && activeTab.currentPageData.length > 0}
+				{#if !activeTab.error && activeTab.columns && activeTab.currentPageData && activeTab.currentPageData.length > 0}
 					<div class="relative flex min-h-0 flex-1 flex-col">
 						<CardContent class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-0">
 							<Table

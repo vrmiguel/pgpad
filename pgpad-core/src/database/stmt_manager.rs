@@ -1,8 +1,14 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex, MutexGuard,
+};
 
 use anyhow::Context;
 use serde_json::value::RawValue;
-use tokio::task::{self, JoinHandle};
+use tokio::{
+    sync::broadcast,
+    task::{self, JoinHandle},
+};
 
 use dashmap::DashMap;
 
@@ -10,7 +16,7 @@ use crate::{
     database::{
         parser::ParsedStatement,
         postgres, sqlite,
-        types::{channel, Page, QueryId, QuerySnapshot, QueryStatus, RuntimeClient},
+        types::{channel, Page, QueryEvent, QueryId, QuerySnapshot, QueryStatus, RuntimeClient},
         QueryExecEvent,
     },
     utils::Condvar,
@@ -86,7 +92,7 @@ impl ExecState {
         }
     }
 
-    fn push_page(&self, page: Page) {
+    fn push_page(&self, page: Page) -> (usize, usize) {
         {
             let mut inner = self.inner();
 
@@ -96,15 +102,22 @@ impl ExecState {
                         columns: None,
                         pages: vec![page],
                     };
+                    self.renderable.set();
+                    return (0, 1);
                 }
                 ExecOutput::ResultSet { pages, .. } => {
                     pages.push(page);
+                    let page_index = pages.len() - 1;
+                    let page_count = pages.len();
+                    self.renderable.set();
+                    return (page_index, page_count);
                 }
                 ExecOutput::Modification { .. } => {}
             }
         }
 
         self.renderable.set();
+        (0, 0)
     }
 
     fn finish(&self, affected_rows: usize, error: Option<String>) {
@@ -204,6 +217,8 @@ pub struct StatementManager {
     queries: DashMap<QueryId, Arc<ExecState>>,
     /// Handles for tasks spawned by the current batch of queries
     task_handles: Mutex<Vec<JoinHandle<()>>>,
+    query_events: broadcast::Sender<QueryEvent>,
+    next_query_id: AtomicUsize,
 }
 
 impl std::fmt::Debug for StatementManager {
@@ -218,7 +233,13 @@ impl StatementManager {
         Self {
             queries: DashMap::new(),
             task_handles: Mutex::new(Vec::new()),
+            query_events: broadcast::channel(1024).0,
+            next_query_id: AtomicUsize::new(0),
         }
+    }
+
+    pub fn subscribe_query_events(&self) -> broadcast::Receiver<QueryEvent> {
+        self.query_events.subscribe()
     }
 
     fn stop_workers(&self) {
@@ -239,13 +260,28 @@ impl StatementManager {
         };
 
         let statements = parse_statements(query)?;
-        let mut query_ids = Vec::with_capacity(statements.len());
-        let mut handles = self.task_handles.lock().unwrap();
 
-        for (idx, statement) in statements.into_iter().enumerate() {
-            let new_handles = self.create_worker(idx as QueryId, client.clone(), statement);
+        let pending_workers: Vec<_> = statements
+            .into_iter()
+            .map(|stmt| {
+                let query_id = self.next_query_id.fetch_add(1, Ordering::Relaxed);
+                (query_id, stmt)
+            })
+            .collect();
+
+        let query_ids = pending_workers
+            .iter()
+            .map(|(query_id, _)| *query_id)
+            .collect::<Vec<_>>();
+
+        let _ = self.query_events.send(QueryEvent::Submitted {
+            query_ids: query_ids.clone(),
+        });
+
+        let mut handles = self.task_handles.lock().unwrap();
+        for (query_id, statement) in pending_workers {
+            let new_handles = self.create_worker(query_id, client.clone(), statement);
             handles.extend(new_handles);
-            query_ids.push(idx);
         }
 
         Ok(query_ids)
@@ -293,6 +329,7 @@ impl StatementManager {
         let exec_storage = ExecState::new(stmt.returns_values);
         let exec_storage = Arc::new(exec_storage);
         self.queries.insert(id, exec_storage.clone());
+        let query_events = self.query_events.clone();
 
         let (sender, recv) = channel();
 
@@ -318,20 +355,37 @@ impl StatementManager {
             while let Some(event) = recv.recv().await {
                 match event {
                     QueryExecEvent::TypesResolved { columns } => {
+                        let event_columns = columns.clone();
                         exec_storage.set_columns(columns);
+                        let _ = query_events.send(QueryEvent::ColumnsReady {
+                            query_id: id,
+                            columns: event_columns,
+                        });
                     }
                     QueryExecEvent::Page {
                         page_amount: _,
                         page,
                     } => {
-                        exec_storage.push_page(page);
+                        let (page_index, page_count) = exec_storage.push_page(page);
+                        let _ = query_events.send(QueryEvent::PageReady {
+                            query_id: id,
+                            page_index,
+                            page_count,
+                        });
                     }
                     QueryExecEvent::Finished {
                         elapsed_ms: _,
                         affected_rows,
                         error,
                     } => {
+                        let event_error = error.clone();
                         exec_storage.finish(affected_rows, error);
+                        let _ = query_events.send(QueryEvent::Finished {
+                            query_id: id,
+                            status: exec_storage.get_query_status(),
+                            affected_rows: (!exec_storage.returns_values).then_some(affected_rows),
+                            error: event_error,
+                        });
 
                         // TODO(vini): fingerprint query here, and save it?
 

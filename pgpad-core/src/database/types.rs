@@ -31,6 +31,27 @@ pub struct QuerySnapshot {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum QueryEvent {
+    Submitted { query_ids: Vec<QueryId> },
+    ColumnsReady {
+        query_id: QueryId,
+        columns: Box<RawValue>,
+    },
+    PageReady {
+        query_id: QueryId,
+        page_index: usize,
+        page_count: usize,
+    },
+    Finished {
+        query_id: QueryId,
+        status: QueryStatus,
+        affected_rows: Option<usize>,
+        error: Option<String>,
+    },
+}
+
 pub enum Database {
     Postgres,
     Sqlite,

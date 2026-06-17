@@ -51,6 +51,31 @@ fn handle_dropped_connections(
     });
 }
 
+fn handle_query_events(handle: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let Some(state) = handle.try_state::<AppState>() else {
+            log::error!("No state manager found!");
+            return;
+        };
+
+        let mut query_events = state.stmt_manager.subscribe_query_events();
+
+        loop {
+            match query_events.recv().await {
+                Ok(event) => {
+                    if let Err(e) = handle.emit_to(EventTarget::App, "query-event", event) {
+                        log::error!("Error emitting query event: {e}");
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    log::warn!("Query event listener lagged and skipped {skipped} events");
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+}
+
 #[allow(clippy::missing_panics_doc)]
 pub fn builder() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
@@ -77,6 +102,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             let handle = app.handle();
             let (connection_monitor, dropped_connections) = ConnectionMonitor::new();
             handle_dropped_connections(handle.clone(), dropped_connections);
+            handle_query_events(handle.clone());
             handle.manage(connection_monitor);
             Ok(())
         })

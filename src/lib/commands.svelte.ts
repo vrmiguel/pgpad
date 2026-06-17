@@ -18,6 +18,30 @@ export interface QuerySnapshot {
 	error: string | null;
 }
 
+export type QueryEvent =
+	| {
+			type: 'submitted';
+			query_ids: QueryId[];
+	  }
+	| {
+			type: 'columns_ready';
+			query_id: QueryId;
+			columns: string[];
+	  }
+	| {
+			type: 'page_ready';
+			query_id: QueryId;
+			page_index: number;
+			page_count: number;
+	  }
+	| {
+			type: 'finished';
+			query_id: QueryId;
+			status: QueryStatus;
+			affected_rows: number | null;
+			error: string | null;
+	  };
+
 export type ConnectionConfig =
 	| { Postgres: { connection_string: string; ca_cert_path?: string | null } }
 	| { SQLite: { db_path: string } };
@@ -239,6 +263,10 @@ export class Commands {
 
 	static async getPageCount(queryId: QueryId): Promise<number> {
 		return await backend.invoke('get_page_count', { queryId });
+	}
+
+	static async listenQueryEvents(handler: (event: QueryEvent) => void): Promise<() => void> {
+		return await backend.listen<QueryEvent>('query-event', handler);
 	}
 
 	static async formatSql(query: string): Promise<string> {
