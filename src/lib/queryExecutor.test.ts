@@ -6,6 +6,7 @@ vi.mock('$lib/commands.svelte', () => ({
 	Commands: {
 		submitQuery: vi.fn(),
 		fetchPage: vi.fn(),
+		releaseQueries: vi.fn(),
 		listenQueryEvents: vi.fn()
 	}
 }));
@@ -15,6 +16,7 @@ import { Commands } from '$lib/commands.svelte';
 const mockCommands = Commands as unknown as {
 	submitQuery: ReturnType<typeof vi.fn>;
 	fetchPage: ReturnType<typeof vi.fn>;
+	releaseQueries: ReturnType<typeof vi.fn>;
 	listenQueryEvents: ReturnType<typeof vi.fn>;
 };
 
@@ -61,6 +63,7 @@ describe('QueryExecutor', () => {
 			return unlistenQueryEvents;
 		});
 		mockCommands.fetchPage.mockResolvedValue(page([[1]]));
+		mockCommands.releaseQueries.mockResolvedValue(undefined);
 		executor = new QueryExecutor();
 	});
 
@@ -131,6 +134,17 @@ describe('QueryExecutor', () => {
 			status: 'Running'
 		});
 		expect(executor.activeResultTabId).toBe(executor.resultTabs[0].id);
+	});
+
+	it('releases previous result queries when replacing tabs', async () => {
+		mockCommands.submitQuery.mockResolvedValueOnce([1, 2]).mockResolvedValueOnce([3]);
+
+		await executor.executeQuery('SELECT 1; SELECT 2', 'conn-1');
+		await executor.executeQuery('SELECT 3', 'conn-1');
+
+		expect(mockCommands.releaseQueries).toHaveBeenCalledWith([1, 2]);
+		expect(executor.resultTabs).toHaveLength(1);
+		expect(executor.resultTabs[0].queryId).toBe(3);
 	});
 
 	it('ignores duplicate submitted events after tabs already exist', async () => {
@@ -305,10 +319,12 @@ describe('QueryExecutor', () => {
 		expect(executor.activeResultTabId).toBe(secondTab.id);
 
 		executor.handleResultTabClose(secondTab.id);
+		expect(mockCommands.releaseQueries).toHaveBeenCalledWith([2]);
 		expect(executor.resultTabs).toHaveLength(1);
 		expect(executor.activeResultTabId).toBe(firstTab.id);
 
 		executor.handleResultTabClose(firstTab.id);
+		expect(mockCommands.releaseQueries).toHaveBeenCalledWith([1]);
 		expect(executor.resultTabs).toHaveLength(0);
 		expect(executor.activeResultTabId).toBeNull();
 	});

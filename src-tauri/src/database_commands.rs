@@ -66,6 +66,11 @@ pub async fn submit_query(
 }
 
 #[tauri::command]
+pub async fn release_queries(query_ids: Vec<usize>, state: tauri::State<'_, AppState>) -> Result {
+    Ok(core::release_queries(&query_ids, &state).await?)
+}
+
+#[tauri::command]
 pub async fn wait_until_renderable(
     query_id: usize,
     state: tauri::State<'_, AppState>,

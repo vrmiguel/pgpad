@@ -107,6 +107,7 @@ pub fn router(state: WebState) -> Router {
             post(disconnect_from_database),
         )
         .route("/commands/submit_query", post(submit_query))
+        .route("/commands/release_queries", post(release_queries))
         .route(
             "/commands/wait_until_renderable",
             post(wait_until_renderable),
@@ -477,6 +478,20 @@ async fn submit_query(
     Ok(Json(
         services::submit_query(connection_id, &query, state.app_state.as_ref()).await?,
     ))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleaseQueriesArgs {
+    query_ids: Vec<usize>,
+}
+
+async fn release_queries(
+    State(state): State<WebState>,
+    CommandJson(ReleaseQueriesArgs { query_ids }): CommandJson<ReleaseQueriesArgs>,
+) -> CommandResult<()> {
+    services::release_queries(&query_ids, state.app_state.as_ref()).await?;
+    Ok(Json(()))
 }
 
 #[derive(Debug, Deserialize)]

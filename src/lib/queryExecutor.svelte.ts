@@ -45,6 +45,7 @@ export class QueryExecutor {
 	dispose() {
 		this.disposed = true;
 		this.stopQueryEventListener();
+		this.releaseResultTabs();
 		this.generation++;
 		this.latestPageRequests.clear();
 		this.trackedQueries.clear();
@@ -81,6 +82,7 @@ export class QueryExecutor {
 			}
 			console.error('Failed to execute query:', error);
 
+			this.releaseResultTabs();
 			this.latestPageRequests.clear();
 			this.trackedQueries.clear();
 
@@ -152,6 +154,22 @@ export class QueryExecutor {
 		this.unlistenQueryEvents = null;
 	}
 
+	private releaseQueryIds(queryIds: QueryId[]) {
+		const releasableQueryIds = queryIds.filter((queryId) => queryId >= 0);
+		if (releasableQueryIds.length === 0) return;
+
+		for (const queryId of releasableQueryIds) {
+			this.latestPageRequests.delete(queryId);
+			this.trackedQueries.delete(queryId);
+		}
+
+		void Commands.releaseQueries(releasableQueryIds);
+	}
+
+	private releaseResultTabs(tabs = this.resultTabs) {
+		this.releaseQueryIds(tabs.map((tab) => tab.queryId));
+	}
+
 	private async handleQueryEvent(event: QueryEvent) {
 		const generation = this.generation;
 
@@ -182,6 +200,7 @@ export class QueryExecutor {
 	}
 
 	private createResultTabs(queryIds: QueryId[], queryText: string) {
+		this.releaseResultTabs();
 		this.latestPageRequests.clear();
 		this.resultTabs = [];
 		this.activeResultTabId = null;
@@ -275,6 +294,11 @@ export class QueryExecutor {
 
 	// Note: for these functions that get passed as callbacks, do use arrow functions to preserve the binding of `this`
 	handleResultTabClose = (tabId: number) => {
+		const tab = this.resultTabs.find((tab) => tab.id === tabId);
+		if (tab) {
+			this.releaseQueryIds([tab.queryId]);
+		}
+
 		this.resultTabs = this.resultTabs.filter((tab) => tab.id !== tabId);
 
 		if (this.activeResultTabId === tabId) {

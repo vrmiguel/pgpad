@@ -113,6 +113,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             database_commands::connect_to_database,
             database_commands::disconnect_from_database,
             database_commands::submit_query,
+            database_commands::release_queries,
             database_commands::is_query_read_only,
             database_commands::wait_until_renderable,
             database_commands::fetch_page,

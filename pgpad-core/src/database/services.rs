@@ -228,6 +228,11 @@ pub async fn submit_query(
     Ok(query_ids)
 }
 
+pub async fn release_queries(query_ids: &[usize], state: &AppState) -> Result<(), Error> {
+    state.stmt_manager.release_queries(query_ids);
+    Ok(())
+}
+
 pub async fn wait_until_renderable(
     query_id: usize,
     state: &AppState,

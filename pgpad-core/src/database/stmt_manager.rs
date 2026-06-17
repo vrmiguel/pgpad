@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc, Mutex, MutexGuard,
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex, MutexGuard,
+    },
 };
 
 use anyhow::Context;
@@ -215,8 +218,7 @@ impl ExecState {
 /// Executes and keeps track of the execution of queries.
 pub struct StatementManager {
     queries: DashMap<QueryId, Arc<ExecState>>,
-    /// Handles for tasks spawned by the current batch of queries
-    task_handles: Mutex<Vec<JoinHandle<()>>>,
+    task_handles: Mutex<HashMap<QueryId, Vec<JoinHandle<()>>>>,
     query_events_sender: broadcast::Sender<QueryEvent>,
     next_query_id: AtomicUsize,
 }
@@ -232,7 +234,7 @@ impl StatementManager {
     pub fn new() -> Self {
         Self {
             queries: DashMap::new(),
-            task_handles: Mutex::new(Vec::new()),
+            task_handles: Mutex::new(HashMap::new()),
             query_events_sender: broadcast::channel(1024).0,
             next_query_id: AtomicUsize::new(0),
         }
@@ -242,18 +244,26 @@ impl StatementManager {
         self.query_events_sender.subscribe()
     }
 
-    fn stop_workers(&self) {
+    /// drop in-memory query state and ask worker tasks for those queries to stop
+    /// TODO(vini): implement actual real DB cancelling/interrupts
+    pub fn release_queries(&self, query_ids: &[QueryId]) {
+        log::info!("Releasing query state for query IDs: {query_ids:?}");
+
         let mut handles = self.task_handles.lock().unwrap();
-        for handle in handles.drain(..) {
-            handle.abort();
+
+        for query_id in query_ids {
+            self.queries.remove(query_id);
+
+            if let Some(query_handles) = handles.remove(query_id) {
+                for handle in query_handles {
+                    handle.abort();
+                }
+            }
         }
     }
 
     /// Submits a new query (possibly containing multiple statements) for execution
     pub fn submit_query(&self, client: RuntimeClient, query: &str) -> Result<Vec<QueryId>, Error> {
-        self.stop_workers();
-        self.queries.clear();
-
         let parse_statements = match &client {
             RuntimeClient::Postgres { .. } => postgres::parser::parse_statements,
             RuntimeClient::SQLite { .. } => sqlite::parser::parse_statements,
@@ -278,10 +288,12 @@ impl StatementManager {
             query_ids: query_ids.clone(),
         });
 
-        let mut handles = self.task_handles.lock().unwrap();
         for (query_id, statement) in pending_workers {
             let new_handles = self.create_worker(query_id, client.clone(), statement);
-            handles.extend(new_handles);
+            self.task_handles
+                .lock()
+                .unwrap()
+                .insert(query_id, new_handles.into());
         }
 
         Ok(query_ids)
@@ -612,6 +624,45 @@ mod tests {
                 (query_ids[0], 3, 4),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn keeps_previous_queries_until_released() {
+        let stmt_manager = StatementManager::new();
+        let client = sqlite_client();
+
+        let first_query_ids = stmt_manager
+            .submit_query(client.clone(), "SELECT 1 AS value")
+            .unwrap();
+        stmt_manager
+            .fetch_initial_renderable_state(first_query_ids[0])
+            .await
+            .unwrap();
+
+        let second_query_ids = stmt_manager
+            .submit_query(client, "SELECT 2 AS value")
+            .unwrap();
+        stmt_manager
+            .fetch_initial_renderable_state(second_query_ids[0])
+            .await
+            .unwrap();
+
+        assert!(stmt_manager
+            .fetch_page(first_query_ids[0], 0)
+            .unwrap()
+            .is_some());
+        assert!(stmt_manager
+            .fetch_page(second_query_ids[0], 0)
+            .unwrap()
+            .is_some());
+
+        stmt_manager.release_queries(&first_query_ids);
+
+        assert!(stmt_manager.fetch_page(first_query_ids[0], 0).is_err());
+        assert!(stmt_manager
+            .fetch_page(second_query_ids[0], 0)
+            .unwrap()
+            .is_some());
     }
 
     fn sqlite_client() -> RuntimeClient {

@@ -245,6 +245,10 @@ export class Commands {
 		return await backend.invoke('submit_query', { connectionId, query });
 	}
 
+	static async releaseQueries(queryIds: QueryId[]): Promise<void> {
+		return await backend.invoke('release_queries', { queryIds });
+	}
+
 	static async isQueryReadOnly(connectionId: string, query: string): Promise<boolean> {
 		return await backend.invoke('is_query_read_only', { connectionId, query });
 	}
