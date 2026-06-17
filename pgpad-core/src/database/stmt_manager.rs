@@ -1,7 +1,4 @@
-use std::sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc, Mutex, RwLock,
-};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::Context;
 use serde_json::value::RawValue;
@@ -22,19 +19,184 @@ use crate::{
 
 /// The storage/state for an individual statement being executed
 struct ExecState {
-    status: AtomicU8,
-    pages: RwLock<Vec<Page>>,
-    error: RwLock<Option<String>>,
-    columns: RwLock<Option<Box<RawValue>>>,
     /// True if this query is expected to return some amount of rows
     /// False if this is a query that will never return anything (e.g. an UPDATE without a RETURNING clause)
-    // TODO(vini): we could refactor this into an enum with a variant with `pages`, `columns`, and one with just `rows_affected`
     returns_values: bool,
-    rows_affected: RwLock<Option<usize>>,
+    inner: Mutex<ExecInner>,
 
     /// If set, the UI can now render the results of this query,
     /// even if it's still on-going (e.g. we already have enough data to render the first page)
     renderable: Condvar,
+}
+
+struct ExecInner {
+    status: QueryStatus,
+    output: ExecOutput,
+    error: Option<String>,
+}
+
+enum ExecOutput {
+    Pending,
+    ResultSet {
+        columns: Option<Box<RawValue>>,
+        pages: Vec<Page>,
+    },
+    Modification {
+        affected_rows: Option<usize>,
+    },
+}
+
+impl ExecState {
+    fn new(returns_values: bool) -> Self {
+        Self {
+            returns_values,
+            inner: Mutex::new(ExecInner {
+                status: QueryStatus::Pending,
+                output: ExecOutput::Pending,
+                error: None,
+            }),
+            renderable: Condvar::new(),
+        }
+    }
+
+    fn inner(&self) -> MutexGuard<'_, ExecInner> {
+        self.inner.lock().expect("Mutex poisoned")
+    }
+
+    fn mark_running(&self) {
+        self.inner().status = QueryStatus::Running;
+    }
+
+    fn set_columns(&self, columns: Box<RawValue>) {
+        let mut inner = self.inner();
+
+        match &mut inner.output {
+            ExecOutput::Pending => {
+                inner.output = ExecOutput::ResultSet {
+                    columns: Some(columns),
+                    pages: vec![],
+                };
+            }
+            ExecOutput::ResultSet {
+                columns: existing, ..
+            } => {
+                *existing = Some(columns);
+            }
+            ExecOutput::Modification { .. } => {}
+        }
+    }
+
+    fn push_page(&self, page: Page) {
+        {
+            let mut inner = self.inner();
+
+            match &mut inner.output {
+                ExecOutput::Pending => {
+                    inner.output = ExecOutput::ResultSet {
+                        columns: None,
+                        pages: vec![page],
+                    };
+                }
+                ExecOutput::ResultSet { pages, .. } => {
+                    pages.push(page);
+                }
+                ExecOutput::Modification { .. } => {}
+            }
+        }
+
+        self.renderable.set();
+    }
+
+    fn finish(&self, affected_rows: usize, error: Option<String>) {
+        {
+            let mut inner = self.inner();
+
+            if let Some(message) = error {
+                inner.status = QueryStatus::Error;
+                inner.error = Some(message);
+            } else {
+                inner.status = QueryStatus::Completed;
+                inner.error = None;
+
+                if self.returns_values {
+                    if matches!(inner.output, ExecOutput::Pending) {
+                        inner.output = ExecOutput::ResultSet {
+                            columns: None,
+                            pages: vec![],
+                        };
+                    }
+                } else {
+                    inner.output = ExecOutput::Modification {
+                        affected_rows: Some(affected_rows),
+                    };
+                }
+            }
+        }
+
+        self.renderable.set();
+    }
+
+    fn snapshot(&self) -> QuerySnapshot {
+        let inner = self.inner();
+
+        match &inner.output {
+            ExecOutput::Pending => QuerySnapshot {
+                returns_values: self.returns_values,
+                status: inner.status,
+                first_page: None,
+                affected_rows: None,
+                error: inner.error.clone(),
+                columns: None,
+            },
+            ExecOutput::ResultSet { columns, pages } => QuerySnapshot {
+                returns_values: true,
+                status: inner.status,
+                first_page: pages.first().cloned(),
+                affected_rows: None,
+                error: inner.error.clone(),
+                columns: columns.clone(),
+            },
+            ExecOutput::Modification { affected_rows } => QuerySnapshot {
+                returns_values: false,
+                status: inner.status,
+                first_page: None,
+                affected_rows: *affected_rows,
+                error: inner.error.clone(),
+                columns: None,
+            },
+        }
+    }
+
+    fn get_columns(&self) -> Option<Box<RawValue>> {
+        let inner = self.inner();
+
+        match &inner.output {
+            ExecOutput::ResultSet { columns, .. } => columns.clone(),
+            ExecOutput::Pending | ExecOutput::Modification { .. } => None,
+        }
+    }
+
+    fn fetch_page(&self, page_idx: usize) -> Option<Page> {
+        let inner = self.inner();
+
+        match &inner.output {
+            ExecOutput::ResultSet { pages, .. } => pages.get(page_idx).cloned(),
+            ExecOutput::Pending | ExecOutput::Modification { .. } => None,
+        }
+    }
+
+    fn get_query_status(&self) -> QueryStatus {
+        self.inner().status
+    }
+
+    fn get_page_count(&self) -> usize {
+        let inner = self.inner();
+
+        match &inner.output {
+            ExecOutput::ResultSet { pages, .. } => pages.len(),
+            ExecOutput::Pending | ExecOutput::Modification { .. } => 0,
+        }
+    }
 }
 
 /// Executes and keeps track of the execution of queries.
@@ -99,51 +261,24 @@ impl StatementManager {
         // Wait for the data to load in
         exec_state.renderable.wait().await;
 
-        let returns_values = exec_state.returns_values;
-
-        let info = QuerySnapshot {
-            returns_values,
-            status: exec_state.status.load(Ordering::Relaxed).into(),
-            first_page: if returns_values {
-                let pages = exec_state.pages.read().expect("RwLock poisoned");
-                pages.first().cloned()
-            } else {
-                None
-            },
-            affected_rows: *exec_state.rows_affected.read().expect("RwLock poisoned"),
-            error: exec_state.error.read().expect("RwLock poisoned").clone(),
-            columns: exec_state.columns.read().expect("RwLock poisoned").clone(),
-        };
-
-        Ok(info)
+        Ok(exec_state.snapshot())
     }
 
     pub fn get_columns(&self, query_id: QueryId) -> Result<Option<Box<RawValue>>, Error> {
-        Ok(self
-            .get(query_id)?
-            .columns
-            .read()
-            .expect("RwLock poisoned")
-            .clone())
+        Ok(self.get(query_id)?.get_columns())
     }
 
     /// Fetches a page of results for a given query.
     pub fn fetch_page(&self, query_id: QueryId, page_idx: usize) -> Result<Option<Page>, Error> {
-        let exec_state = self.get(query_id)?;
-        let pages = exec_state.pages.read().expect("RwLock poisoned");
-        Ok(pages.get(page_idx).cloned())
+        Ok(self.get(query_id)?.fetch_page(page_idx))
     }
 
     pub fn get_query_status(&self, query_id: QueryId) -> Result<QueryStatus, Error> {
-        let exec_state = self.get(query_id)?;
-
-        Ok(exec_state.status.load(Ordering::Relaxed).into())
+        Ok(self.get(query_id)?.get_query_status())
     }
 
     pub fn get_page_count(&self, query_id: QueryId) -> Result<usize, Error> {
-        let exec_state = self.get(query_id)?;
-        let page_count = exec_state.pages.read().expect("RwLock poisoned").len();
-        Ok(page_count)
+        Ok(self.get(query_id)?.get_page_count())
     }
 }
 
@@ -155,16 +290,7 @@ impl StatementManager {
         client: RuntimeClient,
         stmt: ParsedStatement,
     ) -> [JoinHandle<()>; 2] {
-        let exec_storage = ExecState {
-            status: AtomicU8::new(QueryStatus::Pending as u8),
-            pages: RwLock::new(vec![]),
-            error: RwLock::new(None),
-            columns: RwLock::new(None),
-            returns_values: stmt.returns_values,
-            rows_affected: RwLock::new(None),
-            renderable: Condvar::new(),
-        };
-
+        let exec_storage = ExecState::new(stmt.returns_values);
         let exec_storage = Arc::new(exec_storage);
         self.queries.insert(id, exec_storage.clone());
 
@@ -187,41 +313,25 @@ impl StatementManager {
         let receiver_handle = task::spawn(async move {
             let mut recv = recv;
 
-            exec_storage
-                .status
-                .store(QueryStatus::Running as u8, Ordering::Relaxed);
+            exec_storage.mark_running();
 
             while let Some(event) = recv.recv().await {
                 match event {
                     QueryExecEvent::TypesResolved { columns } => {
-                        *exec_storage.columns.write().unwrap() = Some(columns);
+                        exec_storage.set_columns(columns);
                     }
                     QueryExecEvent::Page {
                         page_amount: _,
                         page,
                     } => {
-                        exec_storage.pages.write().unwrap().push(page);
-                        exec_storage.renderable.set();
+                        exec_storage.push_page(page);
                     }
                     QueryExecEvent::Finished {
                         elapsed_ms: _,
                         affected_rows,
                         error,
                     } => {
-                        if let Some(err) = error {
-                            *exec_storage.error.write().unwrap() = Some(err);
-                            exec_storage
-                                .status
-                                .store(QueryStatus::Error as u8, Ordering::Relaxed);
-                        } else {
-                            exec_storage
-                                .status
-                                .store(QueryStatus::Completed as u8, Ordering::Relaxed);
-
-                            *exec_storage.rows_affected.write().unwrap() = Some(affected_rows);
-                        }
-
-                        exec_storage.renderable.set();
+                        exec_storage.finish(affected_rows, error);
 
                         // TODO(vini): fingerprint query here, and save it?
 
