@@ -35,10 +35,16 @@ export class QueryExecutor {
 	private activeQueryIds: Set<QueryId> | null = null;
 	private completedQueryIds = new Set<QueryId>();
 	private currentQueryText = '';
+	private queryEventListenerReady: Promise<void>;
+	private queryEventListenerError: unknown = null;
+	private disposed = false;
 
-	constructor() {}
+	constructor() {
+		this.queryEventListenerReady = this.startQueryEventListener();
+	}
 
 	dispose() {
+		this.disposed = true;
 		this.stopQueryEventListener();
 		this.generation++;
 		this.latestPageRequests.clear();
@@ -58,9 +64,13 @@ export class QueryExecutor {
 		this.latestPageRequests.clear();
 		this.activeQueryIds = null;
 		this.completedQueryIds.clear();
-		await this.ensureQueryEventListener();
 
 		try {
+			await this.queryEventListenerReady;
+			if (this.queryEventListenerError) {
+				throw this.queryEventListenerError;
+			}
+
 			const queryIds = await Commands.submitQuery(connectionId, queryText.trim());
 
 			if (currentGeneration !== this.generation) return;
@@ -120,12 +130,24 @@ export class QueryExecutor {
 		}
 	}
 
-	private async ensureQueryEventListener() {
+	private async startQueryEventListener() {
 		if (this.unlistenQueryEvents) return;
 
-		this.unlistenQueryEvents = await Commands.listenQueryEvents((event) => {
-			void this.handleQueryEvent(event);
-		});
+		try {
+			const unlisten = await Commands.listenQueryEvents((event) => {
+				void this.handleQueryEvent(event);
+			});
+
+			if (this.disposed) {
+				unlisten();
+				return;
+			}
+
+			this.unlistenQueryEvents = unlisten;
+		} catch (error) {
+			this.queryEventListenerError = error;
+			console.error('Failed to listen for query events:', error);
+		}
 	}
 
 	private stopQueryEventListener() {

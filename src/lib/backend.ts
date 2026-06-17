@@ -58,6 +58,7 @@ class HttpBackend implements Backend {
 		const source = new EventSource(
 			`/api/events/query?token=${encodeURIComponent(token)}`
 		);
+		const close = () => source.close();
 
 		source.addEventListener(event, (message) => {
 			try {
@@ -67,11 +68,23 @@ class HttpBackend implements Backend {
 			}
 		});
 
-		source.onerror = (error) => {
-			console.error(`${event} stream error:`, error);
-		};
+		return await new Promise<Unlisten>((resolve, reject) => {
+			let opened = false;
 
-		return () => source.close();
+			source.onopen = () => {
+				opened = true;
+				resolve(close);
+			};
+
+			source.onerror = (error) => {
+				console.error(`${event} stream error:`, error);
+
+				if (!opened) {
+					close();
+					reject(new Error(`Failed to open ${event} stream`));
+				}
+			};
+		});
 	}
 
 	private commandHeaders(): HeadersInit {
