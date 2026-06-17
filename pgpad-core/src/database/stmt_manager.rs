@@ -217,7 +217,7 @@ pub struct StatementManager {
     queries: DashMap<QueryId, Arc<ExecState>>,
     /// Handles for tasks spawned by the current batch of queries
     task_handles: Mutex<Vec<JoinHandle<()>>>,
-    query_events: broadcast::Sender<QueryEvent>,
+    query_events_sender: broadcast::Sender<QueryEvent>,
     next_query_id: AtomicUsize,
 }
 
@@ -233,13 +233,13 @@ impl StatementManager {
         Self {
             queries: DashMap::new(),
             task_handles: Mutex::new(Vec::new()),
-            query_events: broadcast::channel(1024).0,
+            query_events_sender: broadcast::channel(1024).0,
             next_query_id: AtomicUsize::new(0),
         }
     }
 
-    pub fn subscribe_query_events(&self) -> broadcast::Receiver<QueryEvent> {
-        self.query_events.subscribe()
+    pub fn query_events_receiver(&self) -> broadcast::Receiver<QueryEvent> {
+        self.query_events_sender.subscribe()
     }
 
     fn stop_workers(&self) {
@@ -274,7 +274,7 @@ impl StatementManager {
             .map(|(query_id, _)| *query_id)
             .collect::<Vec<_>>();
 
-        let _ = self.query_events.send(QueryEvent::Submitted {
+        let _ = self.query_events_sender.send(QueryEvent::Submitted {
             query_ids: query_ids.clone(),
         });
 
@@ -329,7 +329,7 @@ impl StatementManager {
         let exec_storage = ExecState::new(stmt.returns_values);
         let exec_storage = Arc::new(exec_storage);
         self.queries.insert(id, exec_storage.clone());
-        let query_events = self.query_events.clone();
+        let query_events_sender = self.query_events_sender.clone();
 
         let (sender, recv) = channel();
 
@@ -357,7 +357,7 @@ impl StatementManager {
                     QueryExecEvent::TypesResolved { columns } => {
                         let event_columns = columns.clone();
                         exec_storage.set_columns(columns);
-                        let _ = query_events.send(QueryEvent::ColumnsReady {
+                        let _ = query_events_sender.send(QueryEvent::ColumnsReady {
                             query_id: id,
                             columns: event_columns,
                         });
@@ -367,7 +367,7 @@ impl StatementManager {
                         page,
                     } => {
                         let (page_index, page_count) = exec_storage.push_page(page);
-                        let _ = query_events.send(QueryEvent::PageReady {
+                        let _ = query_events_sender.send(QueryEvent::PageReady {
                             query_id: id,
                             page_index,
                             page_count,
@@ -380,7 +380,7 @@ impl StatementManager {
                     } => {
                         let event_error = error.clone();
                         exec_storage.finish(affected_rows, error);
-                        let _ = query_events.send(QueryEvent::Finished {
+                        let _ = query_events_sender.send(QueryEvent::Finished {
                             query_id: id,
                             status: exec_storage.get_query_status(),
                             affected_rows: (!exec_storage.returns_values).then_some(affected_rows),
@@ -412,8 +412,9 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use serde_json::{json, value::RawValue};
+    use tokio::sync::broadcast;
 
-    use crate::database::types::RuntimeClient;
+    use crate::database::types::{QueryEvent, QueryStatus, RuntimeClient};
 
     use super::StatementManager;
 
@@ -433,9 +434,7 @@ mod tests {
     async fn run_query(query: &str) -> (Box<RawValue>, Box<RawValue>) {
         let stmt_manager = StatementManager::new();
 
-        let client = RuntimeClient::SQLite {
-            connection: Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap())),
-        };
+        let client = sqlite_client();
         let query_ids = stmt_manager.submit_query(client, query).unwrap();
         assert_eq!(query_ids, vec![0]);
 
@@ -474,5 +473,176 @@ mod tests {
             csv_export,
             "id,name,price\n1,\"apple\",0.99\n2,\"banana\",1.25\n3,\"cherry\",2.5\n"
         );
+    }
+
+    #[tokio::test]
+    async fn emits_events_for_select_query() {
+        let stmt_manager = StatementManager::new();
+        let mut events = stmt_manager.query_events_receiver();
+        let query_ids = stmt_manager
+            .submit_query(sqlite_client(), "SELECT 1 AS value")
+            .unwrap();
+
+        let events = collect_events_until_finished(&mut events, query_ids[0]).await;
+
+        assert!(matches!(
+            &events[0],
+            QueryEvent::Submitted { query_ids: ids } if ids == &query_ids
+        ));
+        assert!(matches!(
+            &events[1],
+            QueryEvent::ColumnsReady { query_id, columns }
+                if *query_id == query_ids[0]
+                    && serde_json::from_str::<serde_json::Value>(columns.get()).unwrap()
+                        == json!(["value"])
+        ));
+        assert!(matches!(
+            &events[2],
+            QueryEvent::PageReady {
+                query_id,
+                page_index,
+                page_count,
+            } if *query_id == query_ids[0] && *page_index == 0 && *page_count == 1
+        ));
+        assert!(matches!(
+            &events[3],
+            QueryEvent::Finished {
+                query_id,
+                status: QueryStatus::Completed,
+                affected_rows: None,
+                error: None,
+            } if *query_id == query_ids[0]
+        ));
+    }
+
+    #[tokio::test]
+    async fn submitted_event_precedes_multi_statement_result_events() {
+        let stmt_manager = StatementManager::new();
+        let mut events = stmt_manager.query_events_receiver();
+        let query_ids = stmt_manager
+            .submit_query(sqlite_client(), "SELECT 1; SELECT 2; SELECT 3; SELECT 4;")
+            .unwrap();
+
+        let first_event = events.recv().await.unwrap();
+
+        assert!(matches!(
+            first_event,
+            QueryEvent::Submitted { query_ids: ids } if ids == query_ids
+        ));
+    }
+
+    #[tokio::test]
+    async fn emits_events_for_modification_query() {
+        let stmt_manager = StatementManager::new();
+        let mut events = stmt_manager.query_events_receiver();
+        let query_ids = stmt_manager
+            .submit_query(sqlite_client(), "CREATE TABLE items (id INTEGER);")
+            .unwrap();
+
+        let events = collect_events_until_finished(&mut events, query_ids[0]).await;
+
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            &events[0],
+            QueryEvent::Submitted { query_ids: ids } if ids == &query_ids
+        ));
+        assert!(matches!(
+            &events[1],
+            QueryEvent::Finished {
+                query_id,
+                status: QueryStatus::Completed,
+                affected_rows: Some(0),
+                error: None,
+            } if *query_id == query_ids[0]
+        ));
+    }
+
+    #[tokio::test]
+    async fn emits_error_event_for_invalid_query() {
+        let stmt_manager = StatementManager::new();
+        let mut events = stmt_manager.query_events_receiver();
+        let query_ids = stmt_manager
+            .submit_query(sqlite_client(), "SELECT * FROM missing_table")
+            .unwrap();
+
+        let events = collect_events_until_finished(&mut events, query_ids[0]).await;
+        let finished = events.last().unwrap();
+
+        assert!(matches!(
+            finished,
+            QueryEvent::Finished {
+                query_id,
+                status: QueryStatus::Error,
+                affected_rows: None,
+                error: Some(message),
+            } if *query_id == query_ids[0] && message.contains("missing_table")
+        ));
+    }
+
+    #[tokio::test]
+    async fn emits_page_ready_for_each_result_page() {
+        let stmt_manager = StatementManager::new();
+        let mut events = stmt_manager.query_events_receiver();
+        let query_ids = stmt_manager
+            .submit_query(
+                sqlite_client(),
+                "WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t WHERE x < 155) SELECT * FROM t;",
+            )
+            .unwrap();
+
+        let events = collect_events_until_finished(&mut events, query_ids[0]).await;
+        let page_events = events
+            .iter()
+            .filter_map(|event| match event {
+                QueryEvent::PageReady {
+                    query_id,
+                    page_index,
+                    page_count,
+                } => Some((*query_id, *page_index, *page_count)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            page_events,
+            vec![
+                (query_ids[0], 0, 1),
+                (query_ids[0], 1, 2),
+                (query_ids[0], 2, 3),
+                (query_ids[0], 3, 4),
+            ]
+        );
+    }
+
+    fn sqlite_client() -> RuntimeClient {
+        RuntimeClient::SQLite {
+            connection: Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap())),
+        }
+    }
+
+    async fn collect_events_until_finished(
+        events: &mut broadcast::Receiver<QueryEvent>,
+        query_id: usize,
+    ) -> Vec<QueryEvent> {
+        let mut collected = vec![];
+
+        loop {
+            let event = events.recv().await.unwrap();
+            let is_finished = matches!(
+                &event,
+                QueryEvent::Finished {
+                    query_id: finished_query_id,
+                    ..
+                } if *finished_query_id == query_id
+            );
+
+            collected.push(event);
+
+            if is_finished {
+                break;
+            }
+        }
+
+        collected
     }
 }

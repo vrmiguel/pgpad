@@ -1,11 +1,14 @@
-use std::{borrow::Cow, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, convert::Infallible, path::PathBuf, sync::Arc};
 
 use axum::{
-    extract::{rejection::JsonRejection, FromRequest, Path, Request, State},
+    extract::{rejection::JsonRejection, FromRequest, Path, Query, Request, State},
     http::{header, HeaderMap, StatusCode, Uri},
     middleware::{self, Next},
-    response::{IntoResponse, Response},
-    routing::post,
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
+    routing::{get, post},
     Json, Router,
 };
 use pgpad_core::{
@@ -23,6 +26,7 @@ use rfd::FileDialog;
 use rust_embed::Embed;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::value::RawValue;
+use tokio_stream::{wrappers::BroadcastStream, Stream, StreamExt};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -137,6 +141,7 @@ pub fn router(state: WebState) -> Router {
 
     Router::new()
         .nest("/api", api)
+        .route("/api/events/query", get(query_events))
         .fallback(static_handler)
         .with_state(state)
 }
@@ -270,6 +275,43 @@ async fn require_auth_token(
     } else {
         Err(CommandHttpError::Unauthorized)
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct EventTokenArgs {
+    token: String,
+}
+
+async fn query_events(
+    State(state): State<WebState>,
+    Query(EventTokenArgs { token }): Query<EventTokenArgs>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, CommandHttpError> {
+    if token != state.auth_token() {
+        return Err(CommandHttpError::Unauthorized);
+    }
+
+    let query_events_receiver = state.app_state.stmt_manager.query_events_receiver();
+    let stream = BroadcastStream::new(query_events_receiver).filter_map(|event| {
+        let event = match event {
+            Ok(event) => event,
+            Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(skipped)) => {
+                log::warn!("Query event stream lagged and skipped {skipped} events");
+                return None;
+            }
+        };
+
+        let data = match serde_json::to_string(&event) {
+            Ok(data) => data,
+            Err(error) => {
+                log::error!("Failed to serialize query event: {error}");
+                return None;
+            }
+        };
+
+        Some(Ok(Event::default().event("query-event").data(data)))
+    });
+
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 /// `Json<T>` from Axum, but that converts any errors into the Tauri-compatible error structure that the frontend expects

@@ -45,9 +45,33 @@ class HttpBackend implements Backend {
 	}
 
 	async listen<T>(event: string, handler: (payload: T) => void): Promise<Unlisten> {
-		void event;
-		void handler;
-		return () => {};
+		if (event !== 'query-event') {
+			return () => {};
+		}
+
+		const token = getWebToken();
+		if (!token) {
+			console.warn(`Cannot listen for ${event}: missing pgpad-web token`);
+			return () => {};
+		}
+
+		const source = new EventSource(
+			`/api/events/query?token=${encodeURIComponent(token)}`
+		);
+
+		source.addEventListener(event, (message) => {
+			try {
+				handler(JSON.parse(message.data) as T);
+			} catch (error) {
+				console.error(`Failed to parse ${event} event:`, error);
+			}
+		});
+
+		source.onerror = (error) => {
+			console.error(`${event} stream error:`, error);
+		};
+
+		return () => source.close();
 	}
 
 	private commandHeaders(): HeadersInit {

@@ -58,10 +58,10 @@ fn handle_query_events(handle: tauri::AppHandle) {
             return;
         };
 
-        let mut query_events = state.stmt_manager.subscribe_query_events();
+        let mut query_events_receiver = state.stmt_manager.query_events_receiver();
 
         loop {
-            match query_events.recv().await {
+            match query_events_receiver.recv().await {
                 Ok(event) => {
                     if let Err(e) = handle.emit_to(EventTarget::App, "query-event", event) {
                         log::error!("Error emitting query event: {e}");

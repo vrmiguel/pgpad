@@ -34,7 +34,9 @@ pub struct QuerySnapshot {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum QueryEvent {
-    Submitted { query_ids: Vec<QueryId> },
+    Submitted {
+        query_ids: Vec<QueryId>,
+    },
     ColumnsReady {
         query_id: QueryId,
         columns: Box<RawValue>,
