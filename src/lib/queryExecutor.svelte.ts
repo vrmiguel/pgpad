@@ -5,7 +5,7 @@ import {
 	type QueryStatus,
 	type QueryEvent
 } from '$lib/commands.svelte';
-import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { SvelteMap } from 'svelte/reactivity';
 
 export interface QueryResultTab {
 	id: number;
@@ -32,8 +32,7 @@ export class QueryExecutor {
 	private onComplete?: (totalRows: number) => void;
 	private generation = 0;
 	private unlistenQueryEvents: (() => void) | null = null;
-	private activeQueryIds: SvelteSet<QueryId> | null = null;
-	private completedQueryIds = new SvelteSet<QueryId>();
+	private trackedQueries = new SvelteMap<QueryId, QueryStatus>();
 	private currentQueryText = '';
 	private queryEventListenerReady: Promise<void>;
 	private queryEventListenerError: unknown = null;
@@ -48,8 +47,7 @@ export class QueryExecutor {
 		this.stopQueryEventListener();
 		this.generation++;
 		this.latestPageRequests.clear();
-		this.activeQueryIds = null;
-		this.completedQueryIds.clear();
+		this.trackedQueries.clear();
 	}
 
 	async executeQuery(
@@ -62,8 +60,7 @@ export class QueryExecutor {
 		this.onComplete = onComplete;
 		this.currentQueryText = queryText;
 		this.latestPageRequests.clear();
-		this.activeQueryIds = null;
-		this.completedQueryIds.clear();
+		this.trackedQueries.clear();
 
 		try {
 			await this.queryEventListenerReady;
@@ -75,7 +72,7 @@ export class QueryExecutor {
 
 			if (currentGeneration !== this.generation) return;
 
-			if (!this.activeQueryIds) {
+			if (this.trackedQueries.size === 0) {
 				this.createResultTabs(queryIds, queryText);
 			}
 		} catch (error) {
@@ -85,7 +82,7 @@ export class QueryExecutor {
 			console.error('Failed to execute query:', error);
 
 			this.latestPageRequests.clear();
-			this.activeQueryIds = null;
+			this.trackedQueries.clear();
 
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			const tabId = this.nextResultTabId++;
@@ -159,17 +156,17 @@ export class QueryExecutor {
 		const generation = this.generation;
 
 		if (event.type === 'submitted') {
-			if (!this.activeQueryIds) {
+			if (this.trackedQueries.size === 0) {
 				this.createResultTabs(event.query_ids, this.currentQueryText);
 			}
 			return;
 		}
 
-		if (!this.activeQueryIds) {
+		if (this.trackedQueries.size === 0) {
 			return;
 		}
 
-		if (!this.activeQueryIds.has(event.query_id)) return;
+		if (!this.trackedQueries.has(event.query_id)) return;
 
 		switch (event.type) {
 			case 'columns_ready':
@@ -211,7 +208,7 @@ export class QueryExecutor {
 
 		this.resultTabs = newTabs;
 		this.activeResultTabId = newTabs[0]?.id ?? null;
-		this.activeQueryIds = new SvelteSet(queryIds);
+		this.trackedQueries = new SvelteMap(queryIds.map((queryId) => [queryId, 'Running']));
 	}
 
 	private applyColumnsReady(event: Extract<QueryEvent, { type: 'columns_ready' }>) {
@@ -260,8 +257,8 @@ export class QueryExecutor {
 		};
 		this.resultTabs = [...this.resultTabs];
 
-		if (event.status === 'Completed' && !this.completedQueryIds.has(event.query_id)) {
-			this.completedQueryIds.add(event.query_id);
+		if (event.status === 'Completed' && this.trackedQueries.get(event.query_id) !== 'Completed') {
+			this.trackedQueries.set(event.query_id, 'Completed');
 			if (event.affected_rows != null) {
 				this.onComplete?.(event.affected_rows);
 			} else {
