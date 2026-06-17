@@ -55,9 +55,7 @@ class HttpBackend implements Backend {
 			return () => {};
 		}
 
-		const source = new EventSource(
-			`/api/events/query?token=${encodeURIComponent(token)}`
-		);
+		const source = new EventSource(`/api/events/query?token=${encodeURIComponent(token)}`);
 		const close = () => source.close();
 
 		source.addEventListener(event, (message) => {

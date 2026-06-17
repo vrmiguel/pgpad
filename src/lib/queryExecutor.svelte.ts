@@ -5,7 +5,7 @@ import {
 	type QueryStatus,
 	type QueryEvent
 } from '$lib/commands.svelte';
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 export interface QueryResultTab {
 	id: number;
@@ -32,8 +32,8 @@ export class QueryExecutor {
 	private onComplete?: (totalRows: number) => void;
 	private generation = 0;
 	private unlistenQueryEvents: (() => void) | null = null;
-	private activeQueryIds: Set<QueryId> | null = null;
-	private completedQueryIds = new Set<QueryId>();
+	private activeQueryIds: SvelteSet<QueryId> | null = null;
+	private completedQueryIds = new SvelteSet<QueryId>();
 	private currentQueryText = '';
 	private queryEventListenerReady: Promise<void>;
 	private queryEventListenerError: unknown = null;
@@ -211,7 +211,7 @@ export class QueryExecutor {
 
 		this.resultTabs = newTabs;
 		this.activeResultTabId = newTabs[0]?.id ?? null;
-		this.activeQueryIds = new Set(queryIds);
+		this.activeQueryIds = new SvelteSet(queryIds);
 	}
 
 	private applyColumnsReady(event: Extract<QueryEvent, { type: 'columns_ready' }>) {
@@ -226,7 +226,10 @@ export class QueryExecutor {
 		this.resultTabs = [...this.resultTabs];
 	}
 
-	private async applyPageReady(event: Extract<QueryEvent, { type: 'page_ready' }>, generation: number) {
+	private async applyPageReady(
+		event: Extract<QueryEvent, { type: 'page_ready' }>,
+		generation: number
+	) {
 		const tabIndex = this.resultTabs.findIndex((t) => t.queryId === event.query_id);
 		if (tabIndex < 0) return;
 
