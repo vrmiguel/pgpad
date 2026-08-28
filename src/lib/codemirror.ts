@@ -27,6 +27,7 @@ import { indentWithTab, history, historyKeymap, defaultKeymap } from '@codemirro
 import { mount, unmount } from 'svelte';
 import type { DatabaseSchema } from './commands.svelte';
 import { Commands } from './commands.svelte';
+import { getSystemTheme } from './platform/theme';
 import { registerEditorThemeCallback, theme } from './stores/theme';
 import { fontSize, fontSizeUtils } from './stores/fontSize';
 import { get } from 'svelte/store';
@@ -573,10 +574,11 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		schema = null
 	} = options;
 
-	// TODO(vini): is this right?
 	let currentTheme: 'light' | 'dark' = 'light';
 	const $theme = get(theme);
-	if ($theme !== 'auto') {
+	if ($theme === 'auto') {
+		currentTheme = getSystemTheme();
+	} else {
 		currentTheme = $theme;
 	}
 
