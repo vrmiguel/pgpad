@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "pgpad-core",
+    "pgpad-mcp",
     "pgpad-web",
     "src-tauri"
 ]
