@@ -5,17 +5,18 @@
 	import { Button } from '$lib/components/ui/button';
 
 	interface TabItem {
-		id: number;
+		id: string | number;
 		name: string;
+		canRename?: boolean;
 	}
 
 	interface Props<T extends TabItem> {
 		tabs: T[];
-		activeTabId: number | null;
-		onTabSelect: (tabId: number) => void;
-		onTabClose?: (tabId: number) => void;
+		activeTabId: T['id'] | null;
+		onTabSelect: (tabId: T['id']) => void;
+		onTabClose?: (tabId: T['id']) => void;
 		onNewTab?: () => void;
-		onTabRename?: (tabId: number, newName: string) => void;
+		onTabRename?: (tabId: T['id'], newName: string) => void;
 		showCloseButton?: boolean;
 		showNewTabButton?: boolean;
 		allowRename?: boolean;
@@ -43,11 +44,11 @@
 		closeTabLabel = 'Close tab'
 	}: Props<T> = $props();
 
-	let editingTabId = $state<number | null>(null);
+	let editingTabId = $state<T['id'] | null>(null);
 	let editingName = $state('');
 	let nameInput = $state<HTMLInputElement>();
 
-	function handleTabClick(tabId: number) {
+	function handleTabClick(tabId: T['id']) {
 		// Don't switch tabs while editing
 		if (editingTabId === tabId) return;
 
@@ -60,16 +61,16 @@
 		onTabSelect(tabId);
 	}
 
-	function handleTabClose(e: Event, tabId: number) {
+	function handleTabClose(e: Event, tabId: T['id']) {
 		e.stopPropagation();
 		onTabClose?.(tabId);
 	}
 
-	function startEditingName(tabId: number, currentName: string) {
-		if (!allowRename) return;
+	function startEditingName(tab: T) {
+		if (!allowRename || tab.canRename === false) return;
 
-		editingTabId = tabId;
-		editingName = currentName;
+		editingTabId = tab.id;
+		editingName = tab.name;
 		// Focus the input after it renders
 		setTimeout(() => {
 			if (nameInput) {
@@ -143,7 +144,7 @@
 						? 'text-foreground font-medium'
 						: 'text-muted-foreground hover:text-foreground'}"
 					onclick={() => handleTabClick(tab.id)}
-					ondblclick={() => startEditingName(tab.id, tab.name)}
+					ondblclick={() => startEditingName(tab)}
 					onauxclick={(e) => {
 						// https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button
 						// 1: middle button

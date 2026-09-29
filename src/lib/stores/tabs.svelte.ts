@@ -23,7 +23,6 @@ export interface ScriptTab extends BaseTab {
 
 export interface TableViewTab extends BaseTab {
 	type: 'table-view';
-	tableTabId: number; // Numeric ID for the tab bar
 	tableName: string;
 	schema: string;
 	connectionId: string;
@@ -318,14 +317,11 @@ export const tabs = {
 			return;
 		}
 
-		// Generate a new numeric ID
-		const tableTabId = tabStore.nextTableTabId++;
-		const tabId = `table-${tableTabId}`;
+		const tabId = `table-${tabStore.nextTableTabId++}`;
 
 		const tableTab: TableViewTab = {
 			id: tabId,
 			type: 'table-view',
-			tableTabId,
 			title: `${schema}.${tableName}`,
 			isDirty: false,
 			canClose: true,
