@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   node:
-    name: Node (Svelte) - format & lint
+    name: Node (Svelte) - format, lint, check & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +23,8 @@ jobs:
       - run: npm ci
       - run: npm run format
       - run: npm run lint
+      - run: npm run check
+      - run: npm run test:run
       - name: Fail if formatting changed files
         run: |
           if ! git diff --quiet; then
