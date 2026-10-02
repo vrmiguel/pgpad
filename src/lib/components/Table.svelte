@@ -29,9 +29,6 @@
 
 	let tableContainer: HTMLDivElement;
 	let hasFocus = $state(false);
-	let processedData = $state<Row[]>([]);
-	let sortCache = $state(new Map<string, Row[]>());
-	let lastDataLength = $state(0);
 
 	let selectedCell = $state<{ rowId: number; columnId: number } | null>(null);
 
@@ -86,49 +83,10 @@
 		}
 	});
 
-	const getSortCacheKey = (sorting: Array<{ columnIndex: number; desc: boolean }>) => {
-		if (sorting.length === 0) return 'unsorted';
-		return sorting.map((s) => `${s.columnIndex}:${s.desc ? 'desc' : 'asc'}`).join(',');
-	};
+	const processedData = $derived.by(() => {
+		if (tableState.sorting.length === 0) return data;
 
-	$effect(() => {
-		if (data.length !== lastDataLength) {
-			// TODO: update with changes?
-			sortCache.clear();
-			lastDataLength = data.length;
-		}
-
-		if (tableState.sorting.length === 0) {
-			processedData = data;
-			return;
-		}
-
-		const cacheKey = getSortCacheKey(tableState.sorting);
-
-		if (sortCache.has(cacheKey)) {
-			console.log(`Sort cache hit for ${cacheKey}`);
-			processedData = sortCache.get(cacheKey)!;
-			return;
-		}
-
-		// Check if we're sorting a column we already sorted before, in the opposite direction
-		if (tableState.sorting.length === 1) {
-			const currentSort = tableState.sorting[0];
-			const reverseKey = `${currentSort.columnIndex}:${currentSort.desc ? 'asc' : 'desc'}`;
-
-			if (sortCache.has(reverseKey)) {
-				console.log(
-					`Fast reverse sort for column ${currentSort.columnIndex}: ${reverseKey} → ${cacheKey}`
-				);
-				const reversedData = [...sortCache.get(reverseKey)!].reverse();
-				sortCache.set(cacheKey, reversedData);
-				processedData = reversedData;
-				return;
-			}
-		}
-
-		let sortedData = [...data];
-		sortedData.sort((a, b) => {
+		return [...data].sort((a, b) => {
 			for (const sort of tableState.sorting) {
 				const aVal = a[sort.columnIndex];
 				const bVal = b[sort.columnIndex];
@@ -150,10 +108,6 @@
 			}
 			return 0;
 		});
-
-		console.log(`Full sort performed for: ${cacheKey} (${data.length} rows)`);
-		sortCache.set(cacheKey, sortedData);
-		processedData = sortedData;
 	});
 
 	const pageCount = $derived.by(() => {
