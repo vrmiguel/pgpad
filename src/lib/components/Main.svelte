@@ -182,9 +182,8 @@
 	});
 
 	$effect(() => {
-		if (sqlEditorRef) {
-			tabs.setSqlEditorRef(sqlEditorRef);
-		}
+		tabs.setSqlEditorRef(sqlEditorRef ?? null);
+		return () => tabs.setSqlEditorRef(null);
 	});
 
 	$effect(() => {

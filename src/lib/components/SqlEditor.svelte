@@ -168,16 +168,22 @@
 
 	async function loadDatabaseSchema() {
 		if (!selectedConnection || !sqlEditor) return;
+		const editor = sqlEditor;
+		const connectionId = selectedConnection;
 
 		try {
 			const connection = connections.find((c) => c.id === selectedConnection);
 			if (connection?.connected) {
 				// Get schema information for autocomplete
-				const schema = await Commands.getDatabaseSchema(selectedConnection);
-				sqlEditor.updateSchema(schema);
+				const schema = await Commands.getDatabaseSchema(connectionId);
+				if (sqlEditor === editor && selectedConnection === connectionId && isConnected) {
+					editor.updateSchema(schema);
+				}
 			}
 		} catch (error) {
-			console.error('Failed to load database schema:', error);
+			if (sqlEditor === editor && selectedConnection === connectionId) {
+				console.error('Failed to load database schema:', error);
+			}
 		}
 	}
 
@@ -188,6 +194,7 @@
 	});
 
 	onMount(() => {
+		let initializationRetry: ReturnType<typeof setTimeout> | undefined;
 		const initializeEditor = () => {
 			if (editorContainer && editorContainer.offsetParent !== null) {
 				sqlEditor = createEditor({
@@ -207,11 +214,17 @@
 
 				loadDatabaseSchema();
 			} else {
-				setTimeout(initializeEditor, 100);
+				initializationRetry = setTimeout(initializeEditor, 100);
 			}
 		};
 
 		initializeEditor();
+		return () => {
+			clearTimeout(initializationRetry);
+			const editor = sqlEditor;
+			sqlEditor = null;
+			editor?.dispose();
+		};
 	});
 </script>
 

@@ -47,14 +47,6 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view';
 import { highlightSelectionMatches } from '@codemirror/search';
 
-function createThemeExtensions(theme: 'light' | 'dark') {
-	if (theme === 'light') {
-		return [syntaxHighlighting(defaultHighlightStyle, { fallback: true })];
-	}
-
-	return [oneDark];
-}
-
 function createTheme(theme: 'light' | 'dark') {
 	return EditorView.theme(
 		{
@@ -496,8 +488,12 @@ function createTableHoverTooltip(schema: DatabaseSchema | null) {
 	});
 }
 
-function createFontSizeTheme(size: number) {
-	return EditorView.theme({
+const fontSizeThemes = new Map<number, Extension>();
+
+function getFontSizeTheme(size: number): Extension {
+	const cached = fontSizeThemes.get(size);
+	if (cached) return cached;
+	const extension = EditorView.theme({
 		'.cm-content': {
 			fontSize: `${size}px`
 		},
@@ -508,6 +504,8 @@ function createFontSizeTheme(size: number) {
 			fontSize: `${size - 1}px`
 		}
 	});
+	fontSizeThemes.set(size, extension);
+	return extension;
 }
 
 function editorTooltipSpace(view: EditorView) {
@@ -562,35 +560,23 @@ export interface CreateEditorOptions {
 	schema?: DatabaseSchema | null;
 }
 
-export function createEditorInstance(options: CreateEditorOptions) {
-	const {
-		container,
-		value,
-		onChange,
-		onExecute,
-		onExecuteSelection,
-		disabled = false,
-		schema = null
-	} = options;
+// CodeMirror keeps CSS rules mounted for the document's lifetime, so
+// we cache them here for reuse
+const editorThemes: Record<'light' | 'dark', Extension> = {
+	light: [createTheme('light'), syntaxHighlighting(defaultHighlightStyle, { fallback: true })],
+	dark: [createTheme('dark'), oneDark]
+};
 
-	// TODO(vini): is this right?
-	let currentTheme: 'light' | 'dark' = 'light';
-	const $theme = get(theme);
-	if ($theme !== 'auto') {
-		currentTheme = $theme;
-	}
+const editorCallbacksCompartment = new Compartment();
+const themeCompartment = new Compartment();
+const readOnlyCompartment = new Compartment();
+const schemaCompartment = new Compartment();
+const fontSizeCompartment = new Compartment();
+const hoverTooltipCompartment = new Compartment();
+type EditorCallbacks = Pick<CreateEditorOptions, 'onChange' | 'onExecute' | 'onExecuteSelection'>;
 
-	let currentSchema = schema;
-	let currentFontSize = get(fontSize);
-
-	// Create compartments for dynamic reconfiguration
-	const themeCompartment = new Compartment();
-	const readOnlyCompartment = new Compartment();
-	const schemaCompartment = new Compartment();
-	const fontSizeCompartment = new Compartment();
-	const hoverTooltipCompartment = new Compartment();
-
-	const extensions: Extension[] = [
+function createEditorCallbacks(callbacks: EditorCallbacks): Extension {
+	return [
 		keymap.of([
 			{
 				key: 'Ctrl-Enter',
@@ -600,11 +586,11 @@ export function createEditorInstance(options: CreateEditorOptions) {
 					if (!selection.empty) {
 						const selectedText = view.state.doc.sliceString(selection.from, selection.to);
 						if (selectedText.trim()) {
-							onExecuteSelection?.(selectedText.trim());
+							callbacks.onExecuteSelection?.(selectedText.trim());
 							return true;
 						}
 					}
-					onExecute?.();
+					callbacks.onExecute?.();
 					return true;
 				}
 			},
@@ -613,7 +599,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 				key: 'Ctrl-r',
 				mac: 'Cmd-r',
 				run: () => {
-					onExecute?.();
+					callbacks.onExecute?.();
 					return true;
 				}
 			},
@@ -664,6 +650,41 @@ export function createEditorInstance(options: CreateEditorOptions) {
 				run: closeCompletion
 			}
 		]),
+		EditorView.updateListener.of((update) => {
+			if (update.docChanged) {
+				callbacks.onChange?.(update.state.doc.toString());
+			}
+		})
+	];
+}
+
+export function createEditorInstance(options: CreateEditorOptions) {
+	const {
+		container,
+		value,
+		onChange,
+		onExecute,
+		onExecuteSelection,
+		disabled = false,
+		schema = null
+	} = options;
+
+	// TODO(vini): is this right?
+	let currentTheme: 'light' | 'dark' = 'light';
+	const $theme = get(theme);
+	if ($theme !== 'auto') {
+		currentTheme = $theme;
+	}
+
+	let completionExtension = createSqlAutocompletion(schema);
+	let hoverExtension = createTableHoverTooltip(schema);
+	let currentFontSize = get(fontSize);
+	let currentDisabled = disabled;
+
+	const callbacks: EditorCallbacks = { onChange, onExecute, onExecuteSelection };
+	const callbackExtensions = createEditorCallbacks(callbacks);
+	const extensions: Extension[] = [
+		editorCallbacksCompartment.of(callbackExtensions),
 		history(),
 		lineNumbers(),
 		drawSelection(),
@@ -684,17 +705,12 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		}),
 		keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
 		sql({ dialect: PostgreSQL }),
-		schemaCompartment.of(createSqlAutocompletion(currentSchema)),
-		hoverTooltipCompartment.of(createTableHoverTooltip(currentSchema)),
+		schemaCompartment.of(completionExtension),
+		hoverTooltipCompartment.of(hoverExtension),
 		EditorView.lineWrapping,
-		EditorView.updateListener.of((update) => {
-			if (update.docChanged) {
-				onChange?.(update.state.doc.toString());
-			}
-		}),
-		themeCompartment.of([createTheme(currentTheme), ...createThemeExtensions(currentTheme)]),
+		themeCompartment.of(editorThemes[currentTheme]),
 		readOnlyCompartment.of(disabled ? EditorState.readOnly.of(true) : []),
-		fontSizeCompartment.of(createFontSizeTheme(currentFontSize))
+		fontSizeCompartment.of(getFontSizeTheme(currentFontSize))
 	];
 
 	const state = EditorState.create({
@@ -724,15 +740,23 @@ export function createEditorInstance(options: CreateEditorOptions) {
 	};
 
 	const restoreState = (savedState: EditorState) => {
-		view.setState(savedState);
-		const sharedFontSize = get(fontSize);
-		currentFontSize = sharedFontSize;
-		view.dispatch({
-			effects: fontSizeCompartment.reconfigure(createFontSizeTheme(currentFontSize))
-		});
+		currentFontSize = get(fontSize);
+		view.setState(
+			savedState.update({
+				effects: [
+					editorCallbacksCompartment.reconfigure(callbackExtensions),
+					themeCompartment.reconfigure(editorThemes[currentTheme]),
+					schemaCompartment.reconfigure(completionExtension),
+					hoverTooltipCompartment.reconfigure(hoverExtension),
+					fontSizeCompartment.reconfigure(getFontSizeTheme(currentFontSize)),
+					readOnlyCompartment.reconfigure(currentDisabled ? EditorState.readOnly.of(true) : [])
+				]
+			}).state
+		);
 	};
 
 	const updateDisabled = (isDisabled: boolean) => {
+		currentDisabled = isDisabled;
 		view.dispatch({
 			effects: readOnlyCompartment.reconfigure(isDisabled ? EditorState.readOnly.of(true) : [])
 		});
@@ -741,10 +765,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 	const updateTheme = (newTheme: 'light' | 'dark') => {
 		currentTheme = newTheme;
 		view.dispatch({
-			effects: themeCompartment.reconfigure([
-				createTheme(newTheme),
-				...createThemeExtensions(newTheme)
-			])
+			effects: themeCompartment.reconfigure(editorThemes[newTheme])
 		});
 	};
 
@@ -759,7 +780,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		if (sharedFontSize !== currentFontSize) {
 			currentFontSize = sharedFontSize;
 			view.dispatch({
-				effects: fontSizeCompartment.reconfigure(createFontSizeTheme(currentFontSize))
+				effects: fontSizeCompartment.reconfigure(getFontSizeTheme(currentFontSize))
 			});
 		}
 	};
@@ -770,7 +791,7 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		if (newSize !== currentFontSize) {
 			currentFontSize = newSize;
 			view.dispatch({
-				effects: fontSizeCompartment.reconfigure(createFontSizeTheme(currentFontSize))
+				effects: fontSizeCompartment.reconfigure(getFontSizeTheme(currentFontSize))
 			});
 		}
 	});
@@ -796,11 +817,12 @@ export function createEditorInstance(options: CreateEditorOptions) {
 	};
 
 	const updateSchema = (newSchema: DatabaseSchema | null) => {
-		currentSchema = newSchema;
+		completionExtension = createSqlAutocompletion(newSchema);
+		hoverExtension = createTableHoverTooltip(newSchema);
 		view.dispatch({
 			effects: [
-				schemaCompartment.reconfigure(createSqlAutocompletion(currentSchema)),
-				hoverTooltipCompartment.reconfigure(createTableHoverTooltip(currentSchema))
+				schemaCompartment.reconfigure(completionExtension),
+				hoverTooltipCompartment.reconfigure(hoverExtension)
 			]
 		});
 	};
@@ -822,6 +844,9 @@ export function createEditorInstance(options: CreateEditorOptions) {
 		syncFontSize,
 		getFontSize: () => currentFontSize,
 		dispose: () => {
+			callbacks.onChange = undefined;
+			callbacks.onExecute = undefined;
+			callbacks.onExecuteSelection = undefined;
 			unregisterThemeCallback();
 			unsubscribeFontSize();
 			view.destroy();

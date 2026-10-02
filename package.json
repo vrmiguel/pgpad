@@ -32,6 +32,7 @@
 		"eslint": "^9.27.0",
 		"eslint-config-prettier": "^10.1.5",
 		"eslint-plugin-svelte": "^3.8.1",
+		"happy-dom": "^20.14.5",
 		"paneforge": "^1.0.0",
 		"prettier": "^3.5.3",
 		"prettier-plugin-svelte": "^3.4.0",
