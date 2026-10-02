@@ -24,7 +24,7 @@ export interface QueryResultTab {
 }
 
 export class QueryExecutor {
-	resultTabs = $state<QueryResultTab[]>([]);
+	resultTabs = $state.raw<QueryResultTab[]>([]);
 	activeResultTabId = $state<number | null>(null);
 
 	private nextResultTabId = 1;

@@ -34,8 +34,10 @@
 		showResultTabs = true
 	}: Props = $props();
 
-	let selectedCellData = $state<Json | null>(null);
-	let jsonInspectorData = $state<{ data: Json; position: { x: number; y: number } } | null>(null);
+	let selectedCellData = $state.raw<Json | null>(null);
+	let jsonInspectorData = $state.raw<{ data: Json; position: { x: number; y: number } } | null>(
+		null
+	);
 
 	const COPY_SUCCESS_DURATION = 2000;
 	let copySuccess = $state(false);
