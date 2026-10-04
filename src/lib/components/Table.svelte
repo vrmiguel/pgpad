@@ -15,17 +15,10 @@
 		data: Row[];
 		columns: string[];
 		globalFilter?: string;
-		selectedCellData?: Json | null;
 		onJsonInspect?: (data: Json, position: { x: number; y: number }) => void;
 	}
 
-	let {
-		data,
-		columns,
-		globalFilter = $bindable(''),
-		selectedCellData = $bindable(null),
-		onJsonInspect
-	}: Props = $props();
+	let { data, columns, globalFilter = $bindable(''), onJsonInspect }: Props = $props();
 
 	let tableContainer: HTMLDivElement;
 	let hasFocus = $state(false);
@@ -139,7 +132,6 @@
 	$effect(() => {
 		void data;
 		selectedCell = null;
-		selectedCellData = null;
 
 		if (data.length > 0 && columns.length > 0) {
 			const newColumnSizing: Record<string, number> = {};
@@ -183,19 +175,14 @@
 		document.removeEventListener('mouseup', stopColumnResize);
 	}
 
-	function handleSimpleCellClick(cellValue: Json, rowId: number, columnId: number) {
+	function handleSimpleCellClick(rowId: number, columnId: number) {
 		// Deselect when clicking the selected cell
 		if (selectedCell && selectedCell.rowId === rowId && selectedCell.columnId === columnId) {
 			selectedCell = null;
-			selectedCellData = null;
 			return;
 		}
 
 		selectedCell = { rowId, columnId };
-		const cellType = CellFormatter.getCellType(cellValue);
-		if (cellType !== 'object') {
-			selectedCellData = cellValue;
-		}
 	}
 
 	function handleJsonInspectorOpen(cellValue: Json, event: MouseEvent) {
@@ -262,7 +249,6 @@
 
 		if (event.key === 'Escape') {
 			selectedCell = null;
-			selectedCellData = null;
 			return;
 		}
 
@@ -362,9 +348,6 @@
 		}
 
 		selectedCell = { rowId: newRowIndex, columnId: newColIndex };
-		if (newRowIndex < data.length && newColIndex < columns.length) {
-			selectedCellData = data[newRowIndex][newColIndex];
-		}
 
 		setTimeout(() => scrollCellIntoView(newRowIndex - startRowIndex, newColIndex), 0);
 	}
@@ -471,7 +454,7 @@
 											<button
 												class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
 												title={CellFormatter.formatCellTitle(cellValue)}
-												onclick={() => handleSimpleCellClick(cellValue, rowId, columnId)}
+												onclick={() => handleSimpleCellClick(rowId, columnId)}
 											>
 												<div class="cell-content flex items-center pr-6">
 													<span class="min-w-0 flex-1 truncate font-mono text-xs"
@@ -494,7 +477,7 @@
 										<button
 											class="hover:bg-accent/50 group-hover:bg-accent/40 focus:ring-primary/40 h-full w-full cursor-pointer border-none bg-transparent px-2 py-1 text-left transition-colors select-none focus:ring-1 focus:outline-none"
 											title={CellFormatter.formatCellTitle(cellValue)}
-											onclick={() => handleSimpleCellClick(cellValue, rowId, columnId)}
+											onclick={() => handleSimpleCellClick(rowId, columnId)}
 										>
 											{#if cellType === 'null'}
 												<span class="cell-content text-muted-foreground text-xs italic"

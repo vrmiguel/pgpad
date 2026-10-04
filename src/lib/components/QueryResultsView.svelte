@@ -34,7 +34,6 @@
 		showResultTabs = true
 	}: Props = $props();
 
-	let selectedCellData = $state.raw<Json | null>(null);
 	let jsonInspectorData = $state.raw<{ data: Json; position: { x: number; y: number } } | null>(
 		null
 	);
@@ -125,7 +124,6 @@
 							<Table
 								data={activeTab.currentPageData}
 								columns={activeTab.columns}
-								bind:selectedCellData
 								onJsonInspect={(data, position) => {
 									jsonInspectorData = { data, position };
 								}}
