@@ -11,11 +11,11 @@ name = "pgpad_tauri"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.3.1", features = [] }
+tauri-build = { version = "2.7.1", features = [] }
 
 [dependencies]
 pgpad-core = { path = "../pgpad-core" }
-tauri = { version = "2.10.1", features = ["macos-private-api"] }
+tauri = { version = "2.12.1", features = ["macos-private-api"] }
 anyhow = "1.0.98"
 dirs = "6.0.0"
 env_logger = "0.11.8"
