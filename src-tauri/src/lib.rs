@@ -2,6 +2,7 @@ mod database_commands;
 mod error;
 mod init;
 mod window;
+mod window_state;
 
 use pgpad_core::{AppState, Certificates, ConnectionMonitor};
 use tauri::{Emitter, EventTarget, Manager};
@@ -81,6 +82,13 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .manage(app_state())
         .manage(Certificates::new())
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && matches!(event, tauri::WindowEvent::CloseRequested { .. })
+            {
+                window_state::save(window.app_handle());
+            }
+        })
         .setup(|app| {
             if cfg!(debug_assertions) {
                 env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(
@@ -145,6 +153,11 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     builder()
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                window_state::save(app);
+            }
+        });
 }

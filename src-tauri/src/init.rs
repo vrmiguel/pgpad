@@ -34,6 +34,7 @@ pub fn build_window(app: &tauri::App) -> tauri::Result<()> {
         .expect("main window config missing");
 
     let window_builder = WebviewWindowBuilder::from_config(app.handle(), cfg)?
+        .visible(false)
         .initialization_script(init_script())
         .prevent_overflow();
 
@@ -54,7 +55,11 @@ pub fn build_window(app: &tauri::App) -> tauri::Result<()> {
             .hidden_title(true)
     };
 
-    window_builder.build()?;
+    let window = window_builder.build()?;
+    if let Err(error) = crate::window_state::restore(&window) {
+        log::warn!("Failed to restore window state: {error}");
+    }
+    window.show()?;
 
     Ok(())
 }
