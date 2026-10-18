@@ -15,7 +15,7 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 thiserror = "2.0.17"
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1", "with-uuid-1"] }
-tokio = { version = "1.0" }
+tokio = { version = "1.0", features = ["rt", "macros", "sync", "time"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 dashmap = "6.0"
 anyhow = "1.0.98"
@@ -35,5 +35,7 @@ url = "2.5.7"
 sqlformat = "0.5.0"
 jsax = "0.1.1"
 
-[dev-dependencies]
+# Only the Postgres integration tests use this, and they only build on Unix.
+# Ungated, it makes `cargo test -p pgpad-core` fail to compile on Windows.
+[target.'cfg(unix)'.dev-dependencies]
 pgtemp = "0.6.0"
