@@ -5,12 +5,13 @@ use std::{
 
 use anyhow::Context;
 use serde_json::value::RawValue;
+use url::Url;
 use uuid::Uuid;
 
 use crate::{
     credentials,
     database::{
-        self,
+        self, mssql, oracle,
         postgres::{self, connect::connect},
         sqlite,
         types::{
@@ -23,6 +24,14 @@ use crate::{
     storage::{QueryHistoryEntry, SavedQuery},
     AppState,
 };
+
+/// The wallet directory of an Oracle connection string, if it has one.
+fn oracle_wallet(connection_string: &str) -> Option<String> {
+    let url = Url::parse(connection_string).ok()?;
+    url.query_pairs()
+        .find(|(key, _)| key.eq_ignore_ascii_case("wallet"))
+        .map(|(_, value)| value.into_owned())
+}
 
 pub async fn add_connection(
     name: String,
@@ -162,6 +171,76 @@ pub async fn connect_to_database(
                 }
                 Err(e) => {
                     log::error!("Failed to connect to Postgres: {}", e);
+                    connection.runtime = ConnectionRuntime::Disconnected;
+                    Ok(false)
+                }
+            }
+        }
+
+        ConnectionConfig::Mssql {
+            connection_string,
+            ca_cert_path,
+        } => {
+            let password = credentials::get_password(&connection_id)?;
+
+            match mssql::connect::connect(
+                connection_string,
+                certificates,
+                ca_cert_path.as_deref(),
+                password,
+            )
+            .await
+            {
+                Ok(client) => {
+                    connection.runtime = ConnectionRuntime::Connected(RuntimeClient::Mssql {
+                        client: Arc::new(tokio::sync::Mutex::new(client)),
+                    });
+
+                    if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                        log::warn!("Failed to update last connected timestamp: {}", e);
+                    }
+
+                    Ok(true)
+                }
+                Err(e) => {
+                    log::error!("Failed to connect to MSSQL: {}", e);
+                    connection.runtime = ConnectionRuntime::Disconnected;
+                    Ok(false)
+                }
+            }
+        }
+
+        ConnectionConfig::Oracle { connection_string } => {
+            let password = credentials::get_password(&connection_id)?;
+            let target = oracle::connect::parse_target(connection_string, password)?;
+
+            // A wallet is read through TNS_ADMIN, so it is set for the length
+            // of the connection and then restored.
+            let prev_tns = std::env::var("TNS_ADMIN").ok();
+            if let Some(path) = oracle_wallet(connection_string) {
+                std::env::set_var("TNS_ADMIN", path);
+            }
+
+            let connect_res =
+                oracle::connect::connect(&target.user, &target.password, &target.connect_str);
+            match &prev_tns {
+                Some(v) => std::env::set_var("TNS_ADMIN", v),
+                None => std::env::remove_var("TNS_ADMIN"),
+            }
+            match connect_res {
+                Ok(conn) => {
+                    connection.runtime = ConnectionRuntime::Connected(RuntimeClient::Oracle {
+                        connection: Arc::new(Mutex::new(conn)),
+                    });
+
+                    if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                        log::warn!("Failed to update last connected timestamp: {}", e);
+                    }
+
+                    Ok(true)
+                }
+                Err(e) => {
+                    log::error!("Failed to connect to Oracle: {}", e);
                     connection.runtime = ConnectionRuntime::Disconnected;
                     Ok(false)
                 }
@@ -323,6 +402,51 @@ pub async fn test_connection(
                 Ok(false)
             }
         },
+
+        ConnectionConfig::Mssql {
+            connection_string,
+            ca_cert_path,
+        } => {
+            log::info!("Testing MSSQL connection");
+            match mssql::connect::connect(
+                &connection_string,
+                certificates,
+                ca_cert_path.as_deref(),
+                None,
+            )
+            .await
+            {
+                Ok(_) => Ok(true),
+                Err(e) => {
+                    log::error!("MSSQL connection test failed: {}", e);
+                    Ok(false)
+                }
+            }
+        }
+
+        ConnectionConfig::Oracle { connection_string } => {
+            log::info!("Testing Oracle connection");
+            let target = oracle::connect::parse_target(&connection_string, None)?;
+
+            let prev_tns = std::env::var("TNS_ADMIN").ok();
+            if let Some(path) = oracle_wallet(&connection_string) {
+                std::env::set_var("TNS_ADMIN", path);
+            }
+
+            let connect_res =
+                oracle::connect::connect(&target.user, &target.password, &target.connect_str);
+            match &prev_tns {
+                Some(v) => std::env::set_var("TNS_ADMIN", v),
+                None => std::env::remove_var("TNS_ADMIN"),
+            }
+            match connect_res {
+                Ok(_) => Ok(true),
+                Err(e) => {
+                    log::error!("Oracle connection test failed: {}", e);
+                    Ok(false)
+                }
+            }
+        }
     }
 }
 
@@ -401,6 +525,10 @@ pub async fn is_query_read_only(
     let stmts = match db {
         Database::Postgres => database::postgres::parser::parse_statements(query)?,
         Database::Sqlite => database::sqlite::parser::parse_statements(query)?,
+
+        Database::Mssql => database::mssql::parser::parse_statements(query)?,
+
+        Database::Oracle => database::oracle::parser::parse_statements(query)?,
     };
 
     Ok(stmts.into_iter().all(|stmt| stmt.is_read_only))
@@ -427,6 +555,14 @@ pub async fn get_database_schema(
         }
         ConnectionRuntime::Connected(RuntimeClient::SQLite { connection }) => {
             sqlite::schema::get_database_schema(Arc::clone(connection)).await?
+        }
+
+        ConnectionRuntime::Connected(RuntimeClient::Mssql { client }) => {
+            let mut client = client.lock().await;
+            database::mssql::schema::get_database_schema(&mut client).await?
+        }
+        ConnectionRuntime::Connected(RuntimeClient::Oracle { connection }) => {
+            database::oracle::schema::get_database_schema(Arc::clone(connection)).await?
         }
         ConnectionRuntime::Disconnected => {
             return Err(Error::Any(anyhow::anyhow!("Connection not active")))

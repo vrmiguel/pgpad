@@ -10,6 +10,10 @@ use uuid::Uuid;
 const DB_TYPE_POSTGRES: i32 = 1;
 const DB_TYPE_SQLITE: i32 = 2;
 
+const DB_TYPE_MSSQL: i32 = 5;
+
+const DB_TYPE_ORACLE: i32 = 4;
+
 use crate::{
     database::types::{ConnectionConfig, ConnectionInfo, Permissions},
     Result,
@@ -26,6 +30,8 @@ impl Migrator {
                 include_str!("../migrations/001.sql"),
                 include_str!("../migrations/002.sql"),
                 include_str!("../migrations/003.sql"),
+                include_str!("../migrations/005.sql"),
+                include_str!("../migrations/006.sql"),
             ],
         }
     }
@@ -163,6 +169,18 @@ impl Storage {
                 ca_cert_path.as_deref(),
             ),
             ConnectionConfig::SQLite { db_path } => (DB_TYPE_SQLITE, db_path.as_str(), None),
+
+            ConnectionConfig::Mssql {
+                connection_string,
+                ca_cert_path,
+            } => (
+                DB_TYPE_MSSQL,
+                connection_string.as_str(),
+                ca_cert_path.as_deref(),
+            ),
+            ConnectionConfig::Oracle { connection_string } => {
+                (DB_TYPE_ORACLE, connection_string.as_str(), None)
+            }
         };
 
         conn.execute(
@@ -200,6 +218,18 @@ impl Storage {
                 ca_cert_path.as_deref(),
             ),
             ConnectionConfig::SQLite { db_path } => (DB_TYPE_SQLITE, db_path.as_str(), None),
+
+            ConnectionConfig::Mssql {
+                connection_string,
+                ca_cert_path,
+            } => (
+                DB_TYPE_MSSQL,
+                connection_string.as_str(),
+                ca_cert_path.as_deref(),
+            ),
+            ConnectionConfig::Oracle { connection_string } => {
+                (DB_TYPE_ORACLE, connection_string.as_str(), None)
+            }
         };
 
         let updated_rows = conn
@@ -258,6 +288,14 @@ impl Storage {
                     },
                     "sqlite" => ConnectionConfig::SQLite {
                         db_path: connection_data,
+                    },
+
+                    "mssql" => ConnectionConfig::Mssql {
+                        connection_string: connection_data,
+                        ca_cert_path,
+                    },
+                    "oracle" => ConnectionConfig::Oracle {
+                        connection_string: connection_data,
                     },
                     _ => ConnectionConfig::Postgres {
                         connection_string: connection_data, // Default to postgres for unknown types

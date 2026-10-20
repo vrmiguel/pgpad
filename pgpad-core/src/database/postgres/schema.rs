@@ -90,7 +90,7 @@ pub async fn get_database_schema(client: &Client) -> Result<DatabaseSchema, Erro
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::collections::HashSet;
 

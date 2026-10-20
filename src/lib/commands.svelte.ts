@@ -44,7 +44,9 @@ export type QueryEvent =
 
 export type ConnectionConfig =
 	| { Postgres: { connection_string: string; ca_cert_path?: string | null } }
-	| { SQLite: { db_path: string } };
+	| { SQLite: { db_path: string } }
+	| { Mssql: { connection_string: string; ca_cert_path?: string | null } }
+	| { Oracle: { connection_string: string } };
 
 export type Permissions = 'read_write' | 'protected_write' | 'read_only';
 

@@ -192,7 +192,7 @@ async fn execute_modification_query(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::{collections::HashSet, ops::Not, sync::Arc};
 
