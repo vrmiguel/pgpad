@@ -29,6 +29,23 @@ pub fn extract_sensitive_data(
             Ok((config, password))
         }
         ConnectionConfig::SQLite { .. } => Ok((config, None)),
+        ConnectionConfig::Mssql {
+            connection_string, ..
+        } => {
+            let mut url =
+                Url::parse(connection_string).context("Failed to parse connection string")?;
+            let password = url.password().map(ToOwned::to_owned);
+            url.set_password(None).map_err(|_| {
+                Error::Any(anyhow::anyhow!(
+                    "Failed to remove password from connection string",
+                ))
+            })?;
+
+            connection_string.clear();
+            write!(connection_string, "{}", url)?;
+
+            Ok((config, password))
+        }
     }
 }
 

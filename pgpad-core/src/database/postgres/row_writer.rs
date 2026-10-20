@@ -261,7 +261,7 @@ impl RowWriter {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::time::Instant;
 

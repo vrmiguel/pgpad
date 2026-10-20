@@ -9,6 +9,7 @@ use uuid::Uuid;
 // Gotta match the IDs in the DB
 const DB_TYPE_POSTGRES: i32 = 1;
 const DB_TYPE_SQLITE: i32 = 2;
+const DB_TYPE_MSSQL: i32 = 5;
 
 use crate::{
     database::types::{ConnectionConfig, ConnectionInfo, Permissions},
@@ -24,6 +25,7 @@ impl Migrator {
         Self {
             migrations: &[
                 include_str!("../migrations/001.sql"),
+                include_str!("../migrations/005.sql"),
                 include_str!("../migrations/002.sql"),
                 include_str!("../migrations/003.sql"),
             ],
@@ -163,6 +165,14 @@ impl Storage {
                 ca_cert_path.as_deref(),
             ),
             ConnectionConfig::SQLite { db_path } => (DB_TYPE_SQLITE, db_path.as_str(), None),
+            ConnectionConfig::Mssql {
+                connection_string,
+                ca_cert_path,
+            } => (
+                DB_TYPE_MSSQL,
+                connection_string.as_str(),
+                ca_cert_path.as_deref(),
+            ),
         };
 
         conn.execute(
@@ -200,6 +210,14 @@ impl Storage {
                 ca_cert_path.as_deref(),
             ),
             ConnectionConfig::SQLite { db_path } => (DB_TYPE_SQLITE, db_path.as_str(), None),
+            ConnectionConfig::Mssql {
+                connection_string,
+                ca_cert_path,
+            } => (
+                DB_TYPE_MSSQL,
+                connection_string.as_str(),
+                ca_cert_path.as_deref(),
+            ),
         };
 
         let updated_rows = conn
@@ -258,6 +276,10 @@ impl Storage {
                     },
                     "sqlite" => ConnectionConfig::SQLite {
                         db_path: connection_data,
+                    },
+                    "mssql" => ConnectionConfig::Mssql {
+                        connection_string: connection_data,
+                        ca_cert_path,
                     },
                     _ => ConnectionConfig::Postgres {
                         connection_string: connection_data, // Default to postgres for unknown types

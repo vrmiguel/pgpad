@@ -12,6 +12,7 @@
 
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+	import IconSimpleIconsMssql from '~icons/simple-icons/microsoftsqlserver';
 
 	import {
 		Commands,
@@ -31,7 +32,7 @@
 
 	let connectionName = $state('');
 	let permissions = $state<Permissions>('read_write');
-	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
+	let databaseType = $state<'postgres' | 'sqlite' | 'mssql'>('postgres');
 	let connectionString = $state('');
 	let caCertPath = $state<string>('');
 	let sqliteFilePath = $state('');
@@ -47,6 +48,10 @@
 		} else if ('SQLite' in editingConnection.config) {
 			databaseType = 'sqlite';
 			sqliteFilePath = editingConnection.config.SQLite.db_path;
+		} else if ('Mssql' in editingConnection.config) {
+			databaseType = 'mssql';
+			connectionString = editingConnection.config.Mssql.connection_string;
+			caCertPath = editingConnection.config.Mssql.ca_cert_path || '';
 		}
 	});
 	let errors = $state<Record<string, string>>({});
@@ -70,6 +75,10 @@
 
 		if (databaseType === 'sqlite' && !sqliteFilePath.trim()) {
 			errors.sqliteFilePath = 'SQLite database file is required';
+		}
+
+		if (databaseType === 'mssql' && !connectionString.trim()) {
+			errors.connectionString = 'Connection string is required';
 		}
 
 		return Object.keys(errors).length === 0;
@@ -136,7 +145,14 @@
 							ca_cert_path: caCertPath.trim() || null
 						}
 					}
-				: { SQLite: { db_path: sqliteFilePath.trim() } };
+				: databaseType === 'sqlite'
+					? { SQLite: { db_path: sqliteFilePath.trim() } }
+					: {
+							Mssql: {
+								connection_string: connectionString.trim(),
+								ca_cert_path: caCertPath.trim() || null
+							}
+						};
 
 		try {
 			const success = await Commands.testConnection(config);
@@ -161,7 +177,14 @@
 								ca_cert_path: caCertPath.trim() || null
 							}
 						}
-					: { SQLite: { db_path: sqliteFilePath.trim() } };
+					: databaseType === 'sqlite'
+						? { SQLite: { db_path: sqliteFilePath.trim() } }
+						: {
+								Mssql: {
+									connection_string: connectionString.trim(),
+									ca_cert_path: caCertPath.trim() || null
+								}
+							};
 
 			onSubmit(connectionName.trim(), config, permissions);
 		}
@@ -266,7 +289,7 @@
 			</div>
 
 			<Tabs.Root bind:value={databaseType} class="w-full">
-				<Tabs.List class="bg-muted/20 grid w-full grid-cols-2 gap-1 rounded-lg p-1">
+				<Tabs.List class="bg-muted/20 grid w-full grid-cols-3 gap-1 rounded-lg p-1">
 					<Tabs.Trigger
 						value="postgres"
 						disabled={isEditing}
@@ -282,6 +305,14 @@
 					>
 						<IconSimpleIconsSqlite class="h-4 w-4" />
 						SQLite
+					</Tabs.Trigger>
+					<Tabs.Trigger
+						value="mssql"
+						disabled={isEditing}
+						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
+					>
+						<IconSimpleIconsMssql class="h-4 w-4" />
+						MSSQL
 					</Tabs.Trigger>
 				</Tabs.List>
 
@@ -313,6 +344,81 @@
 								<div class="flex gap-2">
 									<Input
 										id="caCertPath"
+										type="text"
+										bind:value={caCertPath}
+										placeholder="No certificate selected..."
+										readonly
+										class="flex-1 shadow-sm transition-shadow"
+									/>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onclick={selectCaCert}
+										class="gap-2 shadow-sm hover:shadow-md"
+									>
+										<FileCheck class="h-4 w-4" />
+										Select
+									</Button>
+									{#if caCertPath}
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={clearCaCert}
+											title="Clear certificate"
+											class="px-2"
+										>
+											<X class="h-4 w-4" />
+										</Button>
+									{/if}
+								</div>
+
+								<div class="bg-muted/20 border-muted/40 rounded-lg border p-2.5">
+									<div class="flex items-start gap-2">
+										<Info class="text-muted-foreground mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+										<p class="text-muted-foreground text-xs leading-relaxed">
+											Provide a custom CA certificate file (.pem, .crt, .cer) for SSL/TLS
+											connections if required.
+										</p>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</Tabs.Content>
+
+				<Tabs.Content value="mssql" class="mt-3">
+					<div class="bg-card rounded-xl border p-5 shadow-sm">
+						<label
+							for="mssqlConnectionString"
+							class="text-foreground mb-2 block text-sm font-semibold"
+						>
+							Connection String <span class="text-error">*</span>
+						</label>
+						<Input
+							id="mssqlConnectionString"
+							type="text"
+							bind:value={connectionString}
+							placeholder="sqlserver://user:pass@host:1433;database=dbname"
+							class={`shadow-sm transition-shadow focus:shadow-md ${errors.connectionString ? 'border-error focus:ring-error/30' : 'focus:ring-primary/30'}`}
+						/>
+						{#if errors.connectionString}
+							<p class="text-error mt-2 flex items-center gap-2 text-sm">
+								<AlertCircle class="h-4 w-4" />
+								{errors.connectionString}
+							</p>
+						{/if}
+
+						<div class="mt-4">
+							<label for="mssqlCaCertPath" class="text-foreground mb-2 block text-sm font-semibold">
+								CA Certificate
+							</label>
+
+							<div class="space-y-2">
+								<div class="flex gap-2">
+									<Input
+										id="mssqlCaCertPath"
 										type="text"
 										bind:value={caCertPath}
 										placeholder="No certificate selected..."

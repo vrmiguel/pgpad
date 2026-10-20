@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::{
     credentials,
     database::{
-        self,
+        self, mssql,
         postgres::{self, connect::connect},
         sqlite,
         types::{
@@ -162,6 +162,38 @@ pub async fn connect_to_database(
                 }
                 Err(e) => {
                     log::error!("Failed to connect to Postgres: {}", e);
+                    connection.runtime = ConnectionRuntime::Disconnected;
+                    Ok(false)
+                }
+            }
+        }
+        ConnectionConfig::Mssql {
+            connection_string,
+            ca_cert_path,
+        } => {
+            let password = credentials::get_password(&connection_id)?;
+
+            match mssql::connect::connect(
+                connection_string,
+                certificates,
+                ca_cert_path.as_deref(),
+                password,
+            )
+            .await
+            {
+                Ok(client) => {
+                    connection.runtime = ConnectionRuntime::Connected(RuntimeClient::Mssql {
+                        client: Arc::new(tokio::sync::Mutex::new(client)),
+                    });
+
+                    if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                        log::warn!("Failed to update last connected timestamp: {}", e);
+                    }
+
+                    Ok(true)
+                }
+                Err(e) => {
+                    log::error!("Failed to connect to MSSQL: {}", e);
                     connection.runtime = ConnectionRuntime::Disconnected;
                     Ok(false)
                 }
@@ -323,6 +355,26 @@ pub async fn test_connection(
                 Ok(false)
             }
         },
+        ConnectionConfig::Mssql {
+            connection_string,
+            ca_cert_path,
+        } => {
+            log::info!("Testing MSSQL connection");
+            match mssql::connect::connect(
+                &connection_string,
+                certificates,
+                ca_cert_path.as_deref(),
+                None,
+            )
+            .await
+            {
+                Ok(_) => Ok(true),
+                Err(e) => {
+                    log::error!("MSSQL connection test failed: {}", e);
+                    Ok(false)
+                }
+            }
+        }
     }
 }
 
@@ -401,6 +453,7 @@ pub async fn is_query_read_only(
     let stmts = match db {
         Database::Postgres => database::postgres::parser::parse_statements(query)?,
         Database::Sqlite => database::sqlite::parser::parse_statements(query)?,
+        Database::Mssql => database::mssql::parser::parse_statements(query)?,
     };
 
     Ok(stmts.into_iter().all(|stmt| stmt.is_read_only))
@@ -427,6 +480,10 @@ pub async fn get_database_schema(
         }
         ConnectionRuntime::Connected(RuntimeClient::SQLite { connection }) => {
             sqlite::schema::get_database_schema(Arc::clone(connection)).await?
+        }
+        ConnectionRuntime::Connected(RuntimeClient::Mssql { client }) => {
+            let mut client = client.lock().await;
+            database::mssql::schema::get_database_schema(&mut client).await?
         }
         ConnectionRuntime::Disconnected => {
             return Err(Error::Any(anyhow::anyhow!("Connection not active")))
