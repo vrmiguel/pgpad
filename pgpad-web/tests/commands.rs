@@ -1,3 +1,5 @@
+use std::sync::Once;
+
 use axum::{
     body::{Body, Bytes},
     http::{Request, StatusCode},
@@ -34,7 +36,22 @@ fn make_sqlite_db() -> TempDir {
     dir
 }
 
+/// The app database is encrypted with a key taken from the OS keyring, which a
+/// CI runner and a container do not have. Supplying `PGPAD_APP_KEY` is the
+/// supported way to run without one, and these tests exercise that path.
+static APP_KEY: Once = Once::new();
+
+fn ensure_app_key() {
+    APP_KEY.call_once(|| {
+        std::env::set_var(
+            "PGPAD_APP_KEY",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        );
+    });
+}
+
 fn make_app(app_db: impl Into<std::path::PathBuf>) -> TestApp {
+    ensure_app_key();
     let state = pgpad_web::WebState::new(app_db).expect("failed to create web state");
     let token = state.auth_token().to_string();
     let router = pgpad_web::router(state);

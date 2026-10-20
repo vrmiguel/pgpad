@@ -57,8 +57,20 @@ pub async fn update_connection(
     state: &AppState,
 ) -> Result<ConnectionInfo, Error> {
     let (config, password) = credentials::extract_sensitive_data(config)?;
+
+    // The secret kept in the keyring belongs to the target of the connection,
+    // not to the connection slot. A SQLite passphrase belongs to the database
+    // file it opens, so it stops being valid as soon as the file changes, and
+    // applying it to another file breaks the connection with a "file is not a
+    // database" that nothing in the form can clear.
+    let stale_secret = previous_config(conn_id, state)
+        .map(|old| stored_secret_is_stale(&old, &config))
+        .unwrap_or(false);
+
     if let Some(password) = password {
         credentials::store_sensitive_data(&conn_id, &password)?;
+    } else if stale_secret {
+        credentials::delete_password(&conn_id)?;
     }
 
     if let Some(mut connection_entry) = state.connections.get_mut(&conn_id) {
@@ -76,8 +88,8 @@ pub async fn update_connection(
                 },
             ) => old != new || old_cert != new_cert,
             (
-                ConnectionConfig::SQLite { db_path: old },
-                ConnectionConfig::SQLite { db_path: new },
+                ConnectionConfig::SQLite { db_path: old, .. },
+                ConnectionConfig::SQLite { db_path: new, .. },
             ) => old != new,
             _ => true,
         };
@@ -100,6 +112,42 @@ pub async fn update_connection(
     state.storage.update_connection(&updated_info)?;
 
     Ok(updated_info)
+}
+
+/// The configuration a connection had before this update.
+///
+/// The in-memory map is the fast path; the stored connection is the fallback
+/// for a connection that was never loaded into this session.
+fn previous_config(conn_id: Uuid, state: &AppState) -> Option<ConnectionConfig> {
+    if let Some(entry) = state.connections.get(&conn_id) {
+        return Some(entry.value().config.clone());
+    }
+    state
+        .storage
+        .get_connections()
+        .ok()?
+        .into_iter()
+        .find(|c| c.id == conn_id)
+        .map(|c| c.config)
+}
+
+/// Whether the secret kept in the keyring still belongs to the connection.
+///
+/// The keyring slot is shared by both database kinds. A SQLite passphrase
+/// belongs to the file it opens, so it goes stale when the file changes, and
+/// a connection that switched between the two kinds stops using the secret it
+/// had. A Postgres connection keeps its stored password the way it always
+/// did: it is the fallback for a connection string that carries no password.
+fn stored_secret_is_stale(old: &ConnectionConfig, new: &ConnectionConfig) -> bool {
+    match (old, new) {
+        (
+            ConnectionConfig::SQLite { db_path: old, .. },
+            ConnectionConfig::SQLite { db_path: new, .. },
+        ) => old != new,
+        (ConnectionConfig::SQLite { .. }, ConnectionConfig::Postgres { .. }) => true,
+        (ConnectionConfig::Postgres { .. }, ConnectionConfig::SQLite { .. }) => true,
+        _ => false,
+    }
 }
 
 pub async fn connect_to_database(
@@ -167,35 +215,40 @@ pub async fn connect_to_database(
                 }
             }
         }
-        ConnectionConfig::SQLite { db_path } => match rusqlite::Connection::open(db_path) {
-            Ok(conn) => {
-                // Set busy timeout so concurrent writers wait instead of
-                // immediately returning SQLITE_BUSY.
-                if let Err(e) = conn.execute_batch("PRAGMA busy_timeout = 5000;") {
-                    log::error!(
-                        "Failed to set busy_timeout on SQLite database {}: {}",
-                        db_path,
-                        e
-                    );
+        ConnectionConfig::SQLite { db_path, .. } => {
+            // The passphrase was stripped from the stored config and lives in
+            // the keyring, exactly like a Postgres password.
+            let passphrase = credentials::get_password(&connection_id)?;
+            match sqlite::connect::open(db_path, passphrase.as_deref()) {
+                Ok(conn) => {
+                    // Set busy timeout so concurrent writers wait instead of
+                    // immediately returning SQLITE_BUSY.
+                    if let Err(e) = conn.execute_batch("PRAGMA busy_timeout = 5000;") {
+                        log::error!(
+                            "Failed to set busy_timeout on SQLite database {}: {}",
+                            db_path,
+                            e
+                        );
+                    }
+
+                    connection.runtime = ConnectionRuntime::Connected(RuntimeClient::SQLite {
+                        connection: Arc::new(Mutex::new(conn)),
+                    });
+
+                    if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                        log::warn!("Failed to update last connected timestamp: {}", e);
+                    }
+
+                    log::info!("Successfully connected to SQLite database: {}", db_path);
+                    Ok(true)
                 }
-
-                connection.runtime = ConnectionRuntime::Connected(RuntimeClient::SQLite {
-                    connection: Arc::new(Mutex::new(conn)),
-                });
-
-                if let Err(e) = state.storage.update_last_connected(&connection_id) {
-                    log::warn!("Failed to update last connected timestamp: {}", e);
+                Err(e) => {
+                    log::error!("Failed to connect to SQLite database {}: {}", db_path, e);
+                    connection.runtime = ConnectionRuntime::Disconnected;
+                    Ok(false)
                 }
-
-                log::info!("Successfully connected to SQLite database: {}", db_path);
-                Ok(true)
             }
-            Err(e) => {
-                log::error!("Failed to connect to SQLite database {}: {}", db_path, e);
-                connection.runtime = ConnectionRuntime::Disconnected;
-                Ok(false)
-            }
-        },
+        }
     }
 }
 
@@ -316,7 +369,10 @@ pub async fn test_connection(
                 }
             }
         }
-        ConnectionConfig::SQLite { db_path } => match rusqlite::Connection::open(db_path) {
+        ConnectionConfig::SQLite {
+            db_path,
+            passphrase,
+        } => match sqlite::connect::open(&db_path, passphrase.as_deref()) {
             Ok(_) => Ok(true),
             Err(e) => {
                 log::error!("SQLite connection test failed: {}", e);
@@ -537,4 +593,52 @@ pub async fn export_page(
     );
 
     Ok(csv_export)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sqlite(path: &str) -> ConnectionConfig {
+        ConnectionConfig::SQLite {
+            db_path: path.to_string(),
+            passphrase: None,
+        }
+    }
+
+    fn postgres() -> ConnectionConfig {
+        ConnectionConfig::Postgres {
+            connection_string: "postgres://postgres@localhost:5432/postgres".to_string(),
+            ca_cert_path: None,
+        }
+    }
+
+    /// A SQLite passphrase belongs to the file it opens, so it goes stale as
+    /// soon as the file changes. A stale passphrase is applied to the new file
+    /// and breaks the connection, and nothing in the form can clear it.
+    #[test]
+    fn sqlite_passphrase_goes_stale_when_the_file_changes() {
+        assert!(!stored_secret_is_stale(
+            &sqlite("/tmp/a.db"),
+            &sqlite("/tmp/a.db")
+        ));
+        assert!(stored_secret_is_stale(
+            &sqlite("/tmp/a.db"),
+            &sqlite("/tmp/b.db")
+        ));
+    }
+
+    /// Switching between the two kinds changes which secret the slot holds.
+    #[test]
+    fn switching_kinds_makes_the_secret_stale() {
+        assert!(stored_secret_is_stale(&sqlite("/tmp/a.db"), &postgres()));
+        assert!(stored_secret_is_stale(&postgres(), &sqlite("/tmp/a.db")));
+    }
+
+    /// A Postgres connection keeps its stored password, the way it always did:
+    /// it is the fallback for a connection string that carries no password.
+    #[test]
+    fn postgres_keeps_its_stored_password() {
+        assert!(!stored_secret_is_stale(&postgres(), &postgres()));
+    }
 }

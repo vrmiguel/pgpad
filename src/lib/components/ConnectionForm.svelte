@@ -7,6 +7,7 @@
 	import AlertCircle from '~icons/lucide/alert-circle';
 	import Info from '~icons/lucide/info';
 	import FolderOpen from '~icons/lucide/folder-open';
+	import Lock from '~icons/lucide/lock';
 	import FilePlus from '~icons/lucide/file-plus';
 	import FileCheck from '~icons/lucide/file-check';
 
@@ -35,6 +36,8 @@
 	let connectionString = $state('');
 	let caCertPath = $state<string>('');
 	let sqliteFilePath = $state('');
+	let sqliteSqlcipher = $state(false);
+	let sqlitePassphrase = $state('');
 
 	$effect.pre(() => {
 		if (!editingConnection) return;
@@ -47,6 +50,7 @@
 		} else if ('SQLite' in editingConnection.config) {
 			databaseType = 'sqlite';
 			sqliteFilePath = editingConnection.config.SQLite.db_path;
+			sqliteSqlcipher = !!editingConnection.config.SQLite.passphrase;
 		}
 	});
 	let errors = $state<Record<string, string>>({});
@@ -72,6 +76,10 @@
 			errors.sqliteFilePath = 'SQLite database file is required';
 		}
 
+		if (databaseType === 'sqlite' && sqliteSqlcipher && !sqlitePassphrase.trim()) {
+			errors.sqlitePassphrase = 'Passphrase is required for SQLCipher databases';
+		}
+
 		return Object.keys(errors).length === 0;
 	}
 
@@ -80,6 +88,24 @@
 			const selectedPath = await Commands.pickSqliteDbDialog();
 			if (selectedPath) {
 				sqliteFilePath = selectedPath;
+				sqliteSqlcipher = false;
+
+				if (errors.sqliteFilePath) {
+					errors = { ...errors };
+					delete errors.sqliteFilePath;
+				}
+			}
+		} catch (error) {
+			console.error('Failed to open file dialog:', error);
+		}
+	}
+
+	async function openExistingSqlcipher() {
+		try {
+			const selectedPath = await Commands.pickSqliteDbDialog();
+			if (selectedPath) {
+				sqliteFilePath = selectedPath;
+				sqliteSqlcipher = true;
 
 				if (errors.sqliteFilePath) {
 					errors = { ...errors };
@@ -96,6 +122,7 @@
 			const selectedPath = await Commands.saveSqliteDbDialog();
 			if (selectedPath) {
 				sqliteFilePath = selectedPath;
+				sqliteSqlcipher = false;
 
 				if (errors.sqliteFilePath) {
 					errors = { ...errors };
@@ -136,7 +163,12 @@
 							ca_cert_path: caCertPath.trim() || null
 						}
 					}
-				: { SQLite: { db_path: sqliteFilePath.trim() } };
+				: {
+						SQLite: {
+							db_path: sqliteFilePath.trim(),
+							passphrase: sqliteSqlcipher ? sqlitePassphrase.trim() : null
+						}
+					};
 
 		try {
 			const success = await Commands.testConnection(config);
@@ -161,7 +193,12 @@
 								ca_cert_path: caCertPath.trim() || null
 							}
 						}
-					: { SQLite: { db_path: sqliteFilePath.trim() } };
+					: {
+							SQLite: {
+								db_path: sqliteFilePath.trim(),
+								passphrase: sqliteSqlcipher ? sqlitePassphrase.trim() : null
+							}
+						};
 
 			onSubmit(connectionName.trim(), config, permissions);
 		}
@@ -386,6 +423,15 @@
 								<Button
 									type="button"
 									variant="outline"
+									onclick={openExistingSqlcipher}
+									class="flex-1 gap-2 shadow-sm hover:shadow-md"
+								>
+									<Lock class="h-4 w-4" />
+									Open SQLCipher
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
 									onclick={createNewDatabase}
 									class="flex-1 gap-2 shadow-sm hover:shadow-md"
 								>
@@ -401,6 +447,46 @@
 								{errors.sqliteFilePath}
 							</p>
 						{/if}
+
+						<div class="bg-card mt-4 rounded-xl border p-5 shadow-sm">
+							<div class="flex items-center justify-between gap-4">
+								<label for="sqliteSqlcipher" class="text-foreground text-sm font-semibold">
+									SQLCipher
+								</label>
+								<input
+									id="sqliteSqlcipher"
+									type="checkbox"
+									bind:checked={sqliteSqlcipher}
+									class="accent-primary h-4 w-4"
+								/>
+							</div>
+
+							{#if sqliteSqlcipher}
+								<div class="mt-4">
+									<label
+										for="sqlitePassphrase"
+										class="text-foreground mb-2 block text-sm font-semibold"
+									>
+										Passphrase <span class="text-error">*</span>
+									</label>
+
+									<Input
+										id="sqlitePassphrase"
+										type="password"
+										bind:value={sqlitePassphrase}
+										placeholder="Enter passphrase"
+										class={`shadow-sm transition-shadow ${errors.sqlitePassphrase ? 'border-error' : ''}`}
+									/>
+
+									{#if errors.sqlitePassphrase}
+										<p class="text-error mt-2 flex items-center gap-2 text-sm">
+											<AlertCircle class="h-4 w-4" />
+											{errors.sqlitePassphrase}
+										</p>
+									{/if}
+								</div>
+							{/if}
+						</div>
 
 						<div class="bg-primary/5 border-primary/20 mt-3 rounded-lg border p-3">
 							<div class="flex items-start gap-3">

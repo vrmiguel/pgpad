@@ -123,6 +123,8 @@ pub enum ConnectionConfig {
     },
     SQLite {
         db_path: String,
+        /// SQLCipher passphrase; `None` opens the database unencrypted.
+        passphrase: Option<String>,
     },
 }
 

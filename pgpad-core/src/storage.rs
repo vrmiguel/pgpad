@@ -2,13 +2,20 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use anyhow::Context;
+use keyring::Entry;
+use rand::RngCore;
 use rusqlite::{types::Type, Connection};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 // Gotta match the IDs in the DB
 const DB_TYPE_POSTGRES: i32 = 1;
 const DB_TYPE_SQLITE: i32 = 2;
+
+/// Keyring service and account holding the app database encryption key.
+const SERVICE_NAME: &str = "pgpad";
+const APP_KEY_ACCOUNT: &str = "app_storage_key";
 
 use crate::{
     database::types::{ConnectionConfig, ConnectionInfo, Permissions},
@@ -126,9 +133,141 @@ impl Storage {
             })?;
         }
 
-        let mut conn = Connection::open(&db_path)
-            .with_context(|| format!("Failed to open SQLite database at {}", db_path.display()))?;
+        let key = Self::get_or_create_app_key()?;
+        let mut conn = Self::open_or_migrate_encrypted(&db_path, &key)?;
 
+        let migrator = Migrator::new();
+        migrator.migrate(&mut conn)?;
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// Returns the application storage key, generating it on first use.
+    ///
+    /// The key lives in the OS keyring. `PGPAD_APP_KEY` overrides it with a 64
+    /// character hexadecimal value, which is the supported way to run where
+    /// there is no keyring to talk to, such as a container.
+    ///
+    /// Refuses to run rather than continuing when the key cannot be persisted:
+    /// an unpersisted key would differ on the next start and lock the user out
+    /// of their own database.
+    fn get_or_create_app_key() -> anyhow::Result<SecretString> {
+        match std::env::var("PGPAD_APP_KEY") {
+            Ok(env_key)
+                if env_key.len() == 64 && env_key.chars().all(|c| c.is_ascii_hexdigit()) =>
+            {
+                return Ok(SecretString::new(env_key));
+            }
+            Ok(_) => {
+                anyhow::bail!("PGPAD_APP_KEY must be 64 hexadecimal characters (32 bytes)");
+            }
+            Err(_) => {}
+        }
+
+        let entry = Entry::new(SERVICE_NAME, APP_KEY_ACCOUNT)
+            .context("Failed to create the keyring entry for the app database key")?;
+
+        match entry.get_password() {
+            Ok(pw) if pw.len() == 64 && pw.chars().all(|c| c.is_ascii_hexdigit()) => {
+                return Ok(SecretString::new(pw));
+            }
+            Ok(_) => anyhow::bail!(
+                "The app database key stored in the OS keyring is not 64 hexadecimal \
+                 characters; remove it and restart, or set PGPAD_APP_KEY"
+            ),
+            // A keyring we cannot read is not one we can write to either, so
+            // there is nowhere to keep a newly generated key.
+            Err(keyring::Error::NoEntry) => {}
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Could not read the app database key from the OS keyring ({}). \
+                     Set PGPAD_APP_KEY to 64 hexadecimal characters to run without one.",
+                    e
+                ));
+            }
+        }
+
+        let mut buf = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut buf);
+        let key = hex::encode(buf);
+        entry
+            .set_password(&key)
+            .context("Failed to store the app database key in the OS keyring")?;
+        Ok(SecretString::new(key))
+    }
+
+    /// Cipher tuning for the app database, read from `PGPAD_CIPHER_*`.
+    ///
+    /// These come from the environment rather than from `app_settings` because
+    /// the database cannot be read before its key is applied, and the defaults
+    /// SQLCipher ships with are already the ones we want.
+    fn env_cipher_settings() -> crate::utils::sqlite_cipher::CipherSettings {
+        let num = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<u32>().ok());
+        let flag = |k: &str| {
+            std::env::var(k)
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        };
+        crate::utils::sqlite_cipher::CipherSettings {
+            kdf_iter: num("PGPAD_CIPHER_KDF_ITER"),
+            page_size: num("PGPAD_CIPHER_PAGE_SIZE"),
+            use_hmac: flag("PGPAD_CIPHER_USE_HMAC"),
+            plaintext_header_size: num("PGPAD_CIPHER_PLAINTEXT_HEADER_SIZE"),
+            compatibility: num("PGPAD_CIPHER_COMPATIBILITY"),
+            vacuum_after_pagesize: flag("PGPAD_SQLITE_VACUUM_ON_PAGESIZE"),
+        }
+    }
+
+    /// Reads `key` from `PGPAD_SETTING_<KEY>`.
+    fn get_setting_static(key: &str) -> Option<String> {
+        std::env::var(format!("PGPAD_SETTING_{}", key.to_uppercase())).ok()
+    }
+
+    /// Pragmas applied to the app database on every open, read from
+    /// `PGPAD_SETTING_*` for the same reason as `env_cipher_settings`.
+    fn settings_common_pragmas() -> crate::utils::sqlite_cipher::CommonSettings {
+        let num = |key: &str| Self::get_setting_static(key).and_then(|v| v.parse::<i64>().ok());
+        let flag = |key: &str| {
+            Self::get_setting_static(key).map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        };
+        crate::utils::sqlite_cipher::CommonSettings {
+            journal_mode: std::env::var("PGPAD_SQLITE_JOURNAL_MODE").ok(),
+            synchronous: std::env::var("PGPAD_SQLITE_SYNCHRONOUS").ok(),
+            temp_store: Self::get_setting_static("sqlite_temp_store"),
+            locking_mode: Self::get_setting_static("sqlite_locking_mode"),
+            wal_autocheckpoint: num("sqlite_wal_autocheckpoint"),
+            journal_size_limit: num("sqlite_journal_size_limit"),
+            mmap_size: num("sqlite_mmap_size"),
+            cache_size: num("sqlite_cache_size"),
+            secure_delete: Some(
+                Self::get_setting_static("sqlite_secure_delete")
+                    .unwrap_or_else(|| "ON".to_string()),
+            ),
+            busy_timeout_ms: Self::get_setting_static("sqlite_busy_timeout_ms")
+                .and_then(|v| v.parse::<u64>().ok()),
+            case_sensitive_like: flag("sqlite_case_sensitive_like"),
+            extended_result_codes: flag("sqlite_extended_result_codes"),
+        }
+    }
+
+    fn open_encrypted_with_key(
+        db_path: &PathBuf,
+        key: &SecretString,
+        cfg: &crate::utils::sqlite_cipher::CipherSettings,
+    ) -> anyhow::Result<Connection> {
+        let conn = Connection::open(db_path)
+            .with_context(|| format!("Failed to open SQLite database at {}", db_path.display()))?;
+        crate::utils::sqlite_cipher::apply_cipher_settings_with(&conn, key, cfg)?;
+        let common = Self::settings_common_pragmas();
+        crate::utils::sqlite_cipher::apply_common_settings_with(&conn, &common)?;
+        Ok(conn)
+    }
+
+    fn open_plain(db_path: &PathBuf) -> anyhow::Result<Connection> {
+        let conn = Connection::open(db_path)
+            .with_context(|| format!("Failed to open SQLite database at {}", db_path.display()))?;
         conn.execute_batch(
             "
             PRAGMA foreign_keys = ON;
@@ -140,13 +279,82 @@ impl Storage {
             ",
         )
         .context("Failed to execute database initialization SQL")?;
+        let common = Self::settings_common_pragmas();
+        crate::utils::sqlite_cipher::apply_common_settings_with(&conn, &common)?;
+        Ok(conn)
+    }
 
-        let migrator = Migrator::new();
-        migrator.migrate(&mut conn)?;
+    /// True when the file on disk cannot be read without a key.
+    ///
+    /// Deciding this by opening the file with no key and reading its schema is
+    /// what distinguishes an encrypted app database from a plaintext one that
+    /// happens to be openable.
+    fn is_encrypted(db_path: &PathBuf) -> bool {
+        match Connection::open(db_path) {
+            Ok(conn) => conn
+                .query_row("SELECT count(*) FROM sqlite_master", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .is_err(),
+            Err(_) => false,
+        }
+    }
 
-        Ok(Self {
-            conn: Mutex::new(conn),
-        })
+    /// Opens the app database with SQLCipher, converting an existing plaintext
+    /// database on first run. The original file is kept as `<name>.db.bak`.
+    ///
+    /// Migrations are not applied here; the caller runs them on the result.
+    fn open_or_migrate_encrypted(
+        db_path: &PathBuf,
+        key: &SecretString,
+    ) -> anyhow::Result<Connection> {
+        let exists = std::fs::metadata(db_path).is_ok();
+        let encrypted = exists && Self::is_encrypted(db_path);
+
+        if !exists || encrypted {
+            let cfg = Self::env_cipher_settings();
+            let conn = Self::open_encrypted_with_key(db_path, key, &cfg)?;
+            if encrypted {
+                // Guards against a keyring that no longer holds this app's key.
+                crate::utils::sqlite_cipher::verify_cipher_ok(&conn)
+                    .context("Failed to decrypt the app database with the stored key")?;
+            }
+            return Ok(conn);
+        }
+
+        // Existing plaintext database: rewrite it through an encrypted export.
+        // The original is only moved aside once the export has been verified,
+        // so a failure here leaves the plaintext database untouched.
+        let backup_path = db_path.with_extension("db.bak");
+        let new_path = db_path.with_extension("db.enc");
+        let _ = std::fs::remove_file(&new_path);
+
+        let conn_plain = Self::open_plain(db_path)?;
+        let source_version: i32 =
+            conn_plain.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        let cfg = Self::env_cipher_settings();
+        crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted_with(
+            &conn_plain,
+            &new_path,
+            key,
+            &cfg,
+        )?;
+        drop(conn_plain);
+
+        std::fs::rename(db_path, &backup_path)?;
+        std::fs::rename(&new_path, db_path)?;
+
+        let enc_conn = Self::open_encrypted_with_key(db_path, key, &cfg)?;
+        crate::utils::sqlite_cipher::verify_cipher_ok(&enc_conn)?;
+
+        // `sqlcipher_export` copies the schema and the rows but not the
+        // `user_version` header, so the migrations would run a second time and
+        // trip over the tables that already exist.
+        if source_version > 0 {
+            enc_conn.pragma_update(None, "user_version", source_version)?;
+        }
+
+        Ok(enc_conn)
     }
 
     pub fn save_connection(&self, connection: &ConnectionInfo) -> Result<()> {
@@ -162,7 +370,7 @@ impl Storage {
                 connection_string.as_str(),
                 ca_cert_path.as_deref(),
             ),
-            ConnectionConfig::SQLite { db_path } => (DB_TYPE_SQLITE, db_path.as_str(), None),
+            ConnectionConfig::SQLite { db_path, .. } => (DB_TYPE_SQLITE, db_path.as_str(), None),
         };
 
         conn.execute(
@@ -199,7 +407,7 @@ impl Storage {
                 connection_string.as_str(),
                 ca_cert_path.as_deref(),
             ),
-            ConnectionConfig::SQLite { db_path } => (DB_TYPE_SQLITE, db_path.as_str(), None),
+            ConnectionConfig::SQLite { db_path, .. } => (DB_TYPE_SQLITE, db_path.as_str(), None),
         };
 
         let updated_rows = conn
@@ -258,6 +466,7 @@ impl Storage {
                     },
                     "sqlite" => ConnectionConfig::SQLite {
                         db_path: connection_data,
+                        passphrase: None,
                     },
                     _ => ConnectionConfig::Postgres {
                         connection_string: connection_data, // Default to postgres for unknown types
@@ -529,6 +738,219 @@ impl Storage {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM saved_queries WHERE id = ?1", [id])
             .context("Failed to delete saved query")?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use secrecy::ExposeSecret;
+
+    fn test_key() -> SecretString {
+        SecretString::new(hex::encode([7u8; 32]))
+    }
+
+    fn sqlcipher_available() -> bool {
+        Connection::open_in_memory()
+            .map(|conn| crate::utils::sqlite_cipher::has_sqlcipher(&conn))
+            .unwrap_or(false)
+    }
+
+    fn seeded_value(conn: &Connection) -> anyhow::Result<String> {
+        Ok(conn.query_row(
+            "SELECT value FROM app_settings WHERE key = 'seed'",
+            [],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// A plaintext app database left over from an earlier version is rewritten
+    /// encrypted, the original is kept as `<name>.db.bak`, and the result still
+    /// reopens and answers queries.
+    #[test]
+    fn plaintext_storage_is_migrated_to_cipher() -> anyhow::Result<()> {
+        if !sqlcipher_available() {
+            eprintln!("skipped: SQLCipher is not compiled in");
+            return Ok(());
+        }
+
+        let dir = std::env::temp_dir().join("pgpad-storage-migration");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir)?;
+        let db_path = dir.join("pgpad.db");
+
+        // A plaintext database, as written by a build without SQLCipher.
+        {
+            let mut conn = Connection::open(&db_path)?;
+            Migrator::new().migrate(&mut conn)?;
+            conn.execute(
+                "INSERT INTO app_settings (key, value, updated_at) VALUES ('seed', '1', 0)",
+                [],
+            )?;
+        }
+        assert!(!Storage::is_encrypted(&db_path));
+
+        let conn = Storage::open_or_migrate_encrypted(&db_path, &test_key())?;
+        assert!(Storage::is_encrypted(&db_path));
+        assert!(db_path.with_extension("db.bak").exists());
+        assert_eq!(seeded_value(&conn)?, "1");
+        // The exported copy keeps the source schema version, so the migrations
+        // do not run again and trip over the tables that are already there.
+        let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        assert_eq!(version, Migrator::new().migrations.len() as i32);
+        drop(conn);
+
+        // Reopening must take the encrypted branch and keep working.
+        let conn = Storage::open_or_migrate_encrypted(&db_path, &test_key())?;
+        assert_eq!(seeded_value(&conn)?, "1");
+        drop(conn);
+
+        // A different key must not be able to read it.
+        let other = SecretString::new(hex::encode([9u8; 32]));
+        assert!(Storage::open_or_migrate_encrypted(&db_path, &other).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    /// The key that encrypts the app database has to survive a restart. This
+    /// locks that in: two reads either agree, or the second one refuses
+    /// instead of handing back a different key.
+    #[test]
+    fn app_key_is_stable_or_refused() -> anyhow::Result<()> {
+        match Storage::get_or_create_app_key() {
+            Ok(first) => {
+                let second = Storage::get_or_create_app_key()
+                    .expect("a key that was just read must be readable again");
+                assert_eq!(first.expose_secret(), second.expose_secret());
+                assert_eq!(first.expose_secret().len(), 64);
+                Ok(())
+            }
+            Err(e) => {
+                // No usable keyring here (headless CI, container). Refusing is
+                // the point; silently returning a fresh key would lock the user
+                // out of their database on the next start.
+                eprintln!("skipped: no persistable app key: {}", e);
+                Ok(())
+            }
+        }
+    }
+
+    /// When the encrypted export cannot be produced the conversion must not be
+    /// destructive: the plaintext database stays where it is and stays
+    /// readable, so a platform that cannot do the export is recoverable rather
+    /// than a lost database.
+    #[test]
+    fn failed_export_leaves_plaintext_database_intact() -> anyhow::Result<()> {
+        if !sqlcipher_available() {
+            eprintln!("skipped: SQLCipher is not compiled in");
+            return Ok(());
+        }
+
+        let dir = std::env::temp_dir().join("pgpad-export-failure");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir)?;
+        let db_path = dir.join("pgpad.db");
+
+        {
+            let mut conn = Connection::open(&db_path)?;
+            Migrator::new().migrate(&mut conn)?;
+            conn.execute(
+                "INSERT INTO app_settings (key, value, updated_at) VALUES ('seed', '1', 0)",
+                [],
+            )?;
+        }
+
+        // A destination inside a directory that does not exist fails the export
+        // the same way a platform quirk would. The handle is closed before the
+        // assertions because Windows refuses to delete a file that is open.
+        let unreachable = dir.join("missing").join("out.db");
+        let key = SecretString::new(hex::encode([3u8; 32]));
+        let result = {
+            let plain = Connection::open(&db_path)?;
+            crate::utils::sqlite_cipher::attach_and_export_plain_to_encrypted_with(
+                &plain,
+                &unreachable,
+                &key,
+                &Default::default(),
+            )
+        };
+        assert!(result.is_err(), "the export was expected to fail");
+
+        assert!(db_path.exists(), "the original database must survive");
+        assert!(!Storage::is_encrypted(&db_path));
+        let conn = Connection::open(&db_path)?;
+        assert_eq!(seeded_value(&conn)?, "1");
+        drop(conn);
+
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    /// A database created from scratch has to be created with the configured
+    /// cipher parameters and reopen with the same ones.
+    ///
+    /// The settings are per database, so applying the `cipher_default_*`
+    /// pragmas to an existing database changes the parameters it was created
+    /// with and makes it fail to decrypt.
+    #[test]
+    fn new_database_uses_the_configured_settings() -> anyhow::Result<()> {
+        if !sqlcipher_available() {
+            eprintln!("skipped: SQLCipher is not compiled in");
+            return Ok(());
+        }
+
+        let variants = [
+            crate::utils::sqlite_cipher::CipherSettings {
+                kdf_iter: Some(300000),
+                page_size: Some(4096),
+                use_hmac: Some(true),
+                plaintext_header_size: None,
+                compatibility: Some(3),
+                vacuum_after_pagesize: Some(false),
+            },
+            crate::utils::sqlite_cipher::CipherSettings {
+                kdf_iter: Some(300000),
+                page_size: Some(8192),
+                use_hmac: Some(true),
+                plaintext_header_size: None,
+                compatibility: Some(4),
+                vacuum_after_pagesize: Some(false),
+            },
+        ];
+
+        for (index, cfg) in variants.iter().enumerate() {
+            let dir = std::env::temp_dir().join(format!("pgpad-storage-new-settings-{}", index));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir)?;
+            let db_path = dir.join("pgpad.db");
+            let key = test_key();
+
+            {
+                let conn = Storage::open_encrypted_with_key(&db_path, &key, cfg)?;
+                // The first write is what creates the header, so the database
+                // can only be read back after it.
+                conn.execute_batch("CREATE TABLE t (a INTEGER); INSERT INTO t VALUES (5);")?;
+                crate::utils::sqlite_cipher::verify_cipher_ok(&conn)?;
+            }
+
+            // Reopening with the same settings has to work.
+            {
+                let conn = Storage::open_encrypted_with_key(&db_path, &key, cfg)?;
+                crate::utils::sqlite_cipher::verify_cipher_ok(&conn)?;
+                let value: i64 = conn.query_row("SELECT a FROM t", [], |row| row.get(0))?;
+                assert_eq!(value, 5, "variant {} lost the row", index);
+            }
+
+            // A different key must not be able to read it. Opening alone does
+            // not tell, because the key is only exercised on the first read.
+            let other = SecretString::new(hex::encode([9u8; 32]));
+            let conn = Storage::open_encrypted_with_key(&db_path, &other, cfg)?;
+            assert!(crate::utils::sqlite_cipher::verify_cipher_ok(&conn).is_err());
+
+            let _ = std::fs::remove_dir_all(&dir);
+        }
         Ok(())
     }
 }
