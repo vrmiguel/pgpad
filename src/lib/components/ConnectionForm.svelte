@@ -12,6 +12,7 @@
 
 	import IconCibPostgresql from '~icons/cib/postgresql';
 	import IconSimpleIconsSqlite from '~icons/simple-icons/sqlite';
+	import IconSimpleIconsDuckdb from '~icons/simple-icons/duckdb';
 
 	import {
 		Commands,
@@ -31,10 +32,11 @@
 
 	let connectionName = $state('');
 	let permissions = $state<Permissions>('read_write');
-	let databaseType = $state<'postgres' | 'sqlite'>('postgres');
+	let databaseType = $state<'postgres' | 'sqlite' | 'duckdb'>('postgres');
 	let connectionString = $state('');
 	let caCertPath = $state<string>('');
 	let sqliteFilePath = $state('');
+	let duckdbFilePath = $state('');
 
 	$effect.pre(() => {
 		if (!editingConnection) return;
@@ -47,6 +49,9 @@
 		} else if ('SQLite' in editingConnection.config) {
 			databaseType = 'sqlite';
 			sqliteFilePath = editingConnection.config.SQLite.db_path;
+		} else if ('DuckDB' in editingConnection.config) {
+			databaseType = 'duckdb';
+			duckdbFilePath = editingConnection.config.DuckDB.db_path;
 		}
 	});
 	let errors = $state<Record<string, string>>({});
@@ -70,6 +75,10 @@
 
 		if (databaseType === 'sqlite' && !sqliteFilePath.trim()) {
 			errors.sqliteFilePath = 'SQLite database file is required';
+		}
+
+		if (databaseType === 'duckdb' && !duckdbFilePath.trim()) {
+			errors.duckdbFilePath = 'DuckDB database file is required';
 		}
 
 		return Object.keys(errors).length === 0;
@@ -136,7 +145,9 @@
 							ca_cert_path: caCertPath.trim() || null
 						}
 					}
-				: { SQLite: { db_path: sqliteFilePath.trim() } };
+				: databaseType === 'sqlite'
+					? { SQLite: { db_path: sqliteFilePath.trim() } }
+					: { DuckDB: { db_path: duckdbFilePath.trim() } };
 
 		try {
 			const success = await Commands.testConnection(config);
@@ -161,7 +172,9 @@
 								ca_cert_path: caCertPath.trim() || null
 							}
 						}
-					: { SQLite: { db_path: sqliteFilePath.trim() } };
+					: databaseType === 'sqlite'
+						? { SQLite: { db_path: sqliteFilePath.trim() } }
+						: { DuckDB: { db_path: duckdbFilePath.trim() } };
 
 			onSubmit(connectionName.trim(), config, permissions);
 		}
@@ -266,7 +279,7 @@
 			</div>
 
 			<Tabs.Root bind:value={databaseType} class="w-full">
-				<Tabs.List class="bg-muted/20 grid w-full grid-cols-2 gap-1 rounded-lg p-1">
+				<Tabs.List class="bg-muted/20 grid w-full grid-cols-3 gap-1 rounded-lg p-1">
 					<Tabs.Trigger
 						value="postgres"
 						disabled={isEditing}
@@ -282,6 +295,14 @@
 					>
 						<IconSimpleIconsSqlite class="h-4 w-4" />
 						SQLite
+					</Tabs.Trigger>
+					<Tabs.Trigger
+						value="duckdb"
+						disabled={isEditing}
+						class="data-[state=inactive]:hover:bg-muted/30 data-[state=inactive]:text-muted-foreground flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-[var(--border)] data-[state=active]:shadow-lg"
+					>
+						<IconSimpleIconsDuckdb class="h-4 w-4" />
+						DuckDB
 					</Tabs.Trigger>
 				</Tabs.List>
 

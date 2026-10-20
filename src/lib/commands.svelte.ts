@@ -44,7 +44,8 @@ export type QueryEvent =
 
 export type ConnectionConfig =
 	| { Postgres: { connection_string: string; ca_cert_path?: string | null } }
-	| { SQLite: { db_path: string } };
+	| { SQLite: { db_path: string } }
+	| { DuckDB: { db_path: string } };
 
 export type Permissions = 'read_write' | 'protected_write' | 'read_only';
 
@@ -235,6 +236,14 @@ export class Commands {
 
 	static async saveSqliteDbDialog(): Promise<string | null> {
 		return await backend.invoke('save_sqlite_db');
+	}
+
+	static async pickDuckdbDbDialog(): Promise<string | null> {
+		return await backend.invoke('open_duckdb_db');
+	}
+
+	static async saveDuckdbDbDialog(): Promise<string | null> {
+		return await backend.invoke('save_duckdb_db');
 	}
 
 	static async pickCaCert(): Promise<string | null> {

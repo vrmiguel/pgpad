@@ -167,6 +167,25 @@ pub async fn connect_to_database(
                 }
             }
         }
+        ConnectionConfig::DuckDB { db_path } => match duckdb::Connection::open(db_path) {
+            Ok(conn) => {
+                connection.runtime = ConnectionRuntime::Connected(RuntimeClient::DuckDB {
+                    connection: Arc::new(Mutex::new(conn)),
+                });
+
+                if let Err(e) = state.storage.update_last_connected(&connection_id) {
+                    log::warn!("Failed to update last connected timestamp: {}", e);
+                }
+
+                log::info!("Successfully connected to DuckDB database: {}", db_path);
+                Ok(true)
+            }
+            Err(e) => {
+                log::error!("Failed to connect to DuckDB database {}: {}", db_path, e);
+                connection.runtime = ConnectionRuntime::Disconnected;
+                Ok(false)
+            }
+        },
         ConnectionConfig::SQLite { db_path } => match rusqlite::Connection::open(db_path) {
             Ok(conn) => {
                 // Set busy timeout so concurrent writers wait instead of
@@ -323,6 +342,13 @@ pub async fn test_connection(
                 Ok(false)
             }
         },
+        ConnectionConfig::DuckDB { db_path } => match duckdb::Connection::open(db_path) {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                log::error!("DuckDB connection test failed: {}", e);
+                Ok(false)
+            }
+        },
     }
 }
 
@@ -401,6 +427,7 @@ pub async fn is_query_read_only(
     let stmts = match db {
         Database::Postgres => database::postgres::parser::parse_statements(query)?,
         Database::Sqlite => database::sqlite::parser::parse_statements(query)?,
+        Database::DuckDB => database::duckdb::parser::parse_statements(query)?,
     };
 
     Ok(stmts.into_iter().all(|stmt| stmt.is_read_only))
@@ -427,6 +454,9 @@ pub async fn get_database_schema(
         }
         ConnectionRuntime::Connected(RuntimeClient::SQLite { connection }) => {
             sqlite::schema::get_database_schema(Arc::clone(connection)).await?
+        }
+        ConnectionRuntime::Connected(RuntimeClient::DuckDB { connection }) => {
+            database::duckdb::schema::get_database_schema(Arc::clone(connection)).await?
         }
         ConnectionRuntime::Disconnected => {
             return Err(Error::Any(anyhow::anyhow!("Connection not active")))

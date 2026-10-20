@@ -9,6 +9,7 @@ use uuid::Uuid;
 // Gotta match the IDs in the DB
 const DB_TYPE_POSTGRES: i32 = 1;
 const DB_TYPE_SQLITE: i32 = 2;
+const DB_TYPE_DUCKDB: i32 = 3;
 
 use crate::{
     database::types::{ConnectionConfig, ConnectionInfo, Permissions},
@@ -24,6 +25,7 @@ impl Migrator {
         Self {
             migrations: &[
                 include_str!("../migrations/001.sql"),
+                include_str!("../migrations/004.sql"),
                 include_str!("../migrations/002.sql"),
                 include_str!("../migrations/003.sql"),
             ],
@@ -163,6 +165,7 @@ impl Storage {
                 ca_cert_path.as_deref(),
             ),
             ConnectionConfig::SQLite { db_path } => (DB_TYPE_SQLITE, db_path.as_str(), None),
+            ConnectionConfig::DuckDB { db_path } => (DB_TYPE_DUCKDB, db_path.as_str(), None),
         };
 
         conn.execute(
@@ -200,6 +203,7 @@ impl Storage {
                 ca_cert_path.as_deref(),
             ),
             ConnectionConfig::SQLite { db_path } => (DB_TYPE_SQLITE, db_path.as_str(), None),
+            ConnectionConfig::DuckDB { db_path } => (DB_TYPE_DUCKDB, db_path.as_str(), None),
         };
 
         let updated_rows = conn
@@ -257,6 +261,9 @@ impl Storage {
                         ca_cert_path,
                     },
                     "sqlite" => ConnectionConfig::SQLite {
+                        db_path: connection_data,
+                    },
+                    "duckdb" => ConnectionConfig::DuckDB {
                         db_path: connection_data,
                     },
                     _ => ConnectionConfig::Postgres {

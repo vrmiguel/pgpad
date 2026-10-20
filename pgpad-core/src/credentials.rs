@@ -29,6 +29,7 @@ pub fn extract_sensitive_data(
             Ok((config, password))
         }
         ConnectionConfig::SQLite { .. } => Ok((config, None)),
+        ConnectionConfig::DuckDB { .. } => Ok((config, None)),
     }
 }
 

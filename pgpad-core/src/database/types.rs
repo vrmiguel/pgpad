@@ -57,6 +57,7 @@ pub enum QueryEvent {
 pub enum Database {
     Postgres,
     Sqlite,
+    DuckDB,
 }
 
 #[repr(u8)]
@@ -124,6 +125,9 @@ pub enum ConnectionConfig {
     SQLite {
         db_path: String,
     },
+    DuckDB {
+        db_path: String,
+    },
 }
 
 #[derive(Debug)]
@@ -143,6 +147,9 @@ pub enum RuntimeClient {
     SQLite {
         connection: Arc<Mutex<rusqlite::Connection>>,
     },
+    DuckDB {
+        connection: Arc<Mutex<duckdb::Connection>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +163,7 @@ impl ConnectionConfig {
         match self {
             ConnectionConfig::Postgres { .. } => Database::Postgres,
             ConnectionConfig::SQLite { .. } => Database::Sqlite,
+            ConnectionConfig::DuckDB { .. } => Database::DuckDB,
         }
     }
 }
@@ -195,6 +203,11 @@ impl Connection {
             }
             ConnectionRuntime::Connected(RuntimeClient::SQLite { connection }) => {
                 RuntimeClient::SQLite {
+                    connection: connection.clone(),
+                }
+            }
+            ConnectionRuntime::Connected(RuntimeClient::DuckDB { connection }) => {
+                RuntimeClient::DuckDB {
                     connection: connection.clone(),
                 }
             }

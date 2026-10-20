@@ -14,6 +14,7 @@ use dashmap::DashMap;
 
 use crate::{
     database::{
+        duckdb,
         parser::ParsedStatement,
         postgres, sqlite,
         types::{channel, Page, QueryEvent, QueryId, QuerySnapshot, QueryStatus, RuntimeClient},
@@ -257,6 +258,7 @@ impl StatementManager {
         let parse_statements = match &client {
             RuntimeClient::Postgres { .. } => postgres::parser::parse_statements,
             RuntimeClient::SQLite { .. } => sqlite::parser::parse_statements,
+            RuntimeClient::DuckDB { .. } => duckdb::parser::parse_statements,
         };
 
         let statements = parse_statements(query)?;
@@ -343,6 +345,12 @@ impl StatementManager {
                 let conn = connection.lock().unwrap();
                 if let Err(err) = sqlite::execute::execute_query(&conn, stmt, &sender) {
                     log::error!("Error executing SQLite query: {}", err);
+                }
+            }),
+            RuntimeClient::DuckDB { connection } => task::spawn_blocking(move || {
+                let conn = connection.lock().unwrap();
+                if let Err(err) = duckdb::execute::execute_query(&conn, stmt, &sender) {
+                    log::error!("Error executing DuckDB query: {}", err);
                 }
             }),
         };

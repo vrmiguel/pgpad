@@ -62,6 +62,34 @@ pub async fn save_sqlite_db(app: tauri::AppHandle) -> Result<Option<String>> {
 }
 
 #[tauri::command]
+pub async fn open_duckdb_db(app: tauri::AppHandle) -> Result<Option<String>> {
+    let chosen_file = run_dialog(app, || {
+        AsyncFileDialog::new()
+            .set_title("Pick a DuckDB database file")
+            .add_filter("DuckDB database", &["duckdb", "db"])
+            .pick_file()
+    })
+    .await?
+    .map(|file| file.path().to_string_lossy().to_string());
+
+    Ok(chosen_file)
+}
+
+#[tauri::command]
+pub async fn save_duckdb_db(app: tauri::AppHandle) -> Result<Option<String>> {
+    let chosen_file = run_dialog(app, || {
+        AsyncFileDialog::new()
+            .set_title("Create a new DuckDB database file")
+            .add_filter("DuckDB database", &["duckdb", "db"])
+            .save_file()
+    })
+    .await?
+    .map(|file| file.path().to_string_lossy().to_string());
+
+    Ok(chosen_file)
+}
+
+#[tauri::command]
 pub async fn pick_ca_cert(app: tauri::AppHandle) -> Result<Option<String>> {
     let chosen_file = run_dialog(app, || {
         AsyncFileDialog::new()

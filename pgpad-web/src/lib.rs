@@ -132,6 +132,8 @@ pub fn router(state: WebState) -> Router {
         .route("/commands/close_window", post(noop_command))
         .route("/commands/open_sqlite_db", post(open_sqlite_db))
         .route("/commands/save_sqlite_db", post(save_sqlite_db))
+        .route("/commands/open_duckdb_db", post(open_duckdb_db))
+        .route("/commands/save_duckdb_db", post(save_duckdb_db))
         .route("/commands/pick_ca_cert", post(pick_ca_cert))
         .route("/commands/{command}", post(fallback_command))
         .route_layer(middleware::from_fn_with_state(
@@ -757,6 +759,30 @@ async fn save_sqlite_db() -> CommandResult<Option<String>> {
         run_file_dialog(|| {
             FileDialog::new()
                 .set_title("Create a new SQLite database file")
+                .save_file()
+        })
+        .await?,
+    ))
+}
+
+async fn open_duckdb_db() -> CommandResult<Option<String>> {
+    Ok(Json(
+        run_file_dialog(|| {
+            FileDialog::new()
+                .set_title("Pick a DuckDB database file")
+                .add_filter("DuckDB database", &["duckdb", "db"])
+                .pick_file()
+        })
+        .await?,
+    ))
+}
+
+async fn save_duckdb_db() -> CommandResult<Option<String>> {
+    Ok(Json(
+        run_file_dialog(|| {
+            FileDialog::new()
+                .set_title("Create a new DuckDB database file")
+                .add_filter("DuckDB database", &["duckdb", "db"])
                 .save_file()
         })
         .await?,

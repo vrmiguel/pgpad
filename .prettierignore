@@ -4,3 +4,4 @@ yarn.lock
 bun.lock
 bun.lockb
 /src-tauri/**/*
+vite.config.d.ts
